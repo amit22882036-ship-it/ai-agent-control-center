@@ -1,10 +1,12 @@
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
-from threading import Thread
+from functools import wraps
+from threading import RLock, Thread
 from typing import Literal
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 AgentType = Literal["mock", "codex"]
 CodexSandbox = Literal["read-only", "workspace-write"]
@@ -15,9 +17,23 @@ agent_outputs: dict[str, list[str]] = {}
 agent_tasks: dict[str, str] = {}
 agent_types: dict[str, AgentType] = {}
 agent_sandboxes: dict[str, CodexSandbox | None] = {}
+agent_sessions: dict[str, str | None] = {}
+agent_readers: dict[str, Thread] = {}
+_state_lock = RLock()
+_project_root = Path(__file__).resolve().parents[2]
+_ansi = re.compile(r'\x1b\[[0-?]*[ -/]*[@-~]|\x1b\][^\x07]*(?:\x07|\x1b\\)')
+_session_line = re.compile(r'\bsession id:\s*([0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12})\b', re.I)
 
 
-def _codex_command(sandbox: CodexSandbox = "read-only") -> str:
+def _synchronized(function):
+    @wraps(function)
+    def wrapped(*args, **kwargs):
+        with _state_lock:
+            return function(*args, **kwargs)
+    return wrapped
+
+
+def _codex_command(sandbox: CodexSandbox = "read-only", session_id: str | None = None) -> str:
     if sandbox not in ("read-only", "workspace-write"):
         raise ValueError("Unknown Codex sandbox")
     if os.name != "nt":
@@ -28,7 +44,8 @@ def _codex_command(sandbox: CodexSandbox = "read-only") -> str:
         raise FileNotFoundError("npm Codex CLI not found at %APPDATA%\\npm\\codex.cmd.")
     cmd = Path(os.environ["SystemRoot"]) / "System32" / "cmd.exe"
     # Only validated CLI options enter cmd.exe; the prompt is sent through stdin.
-    command = f'"{launcher}" exec --sandbox {sandbox} --color never --skip-git-repo-check -'
+    prompt_args = f"resume {UUID(session_id)} -" if session_id else "-"
+    command = f'"{launcher}" exec --sandbox {sandbox} --color never --skip-git-repo-check {prompt_args}'
     # cmd /s /c strips the outer quotes, preserving the quoted launcher path.
     return f'"{cmd}" /d /s /v:off /c "{command}"'
 
@@ -37,15 +54,20 @@ def _read_output(agent_id: str, process: subprocess.Popen) -> None:
     with process.stdout as stdout:
         for line in stdout:
             agent_outputs[agent_id].append(line.rstrip("\r\n"))
+            if agent_types[agent_id] == "codex" and agents.get(agent_id) is process:
+                match = _session_line.search(_ansi.sub("", line))
+                if match:
+                    agent_sessions[agent_id] = str(UUID(match[1]))
 
 
-def start_agent(task: str, agent_type: AgentType = "mock", sandbox: CodexSandbox = "read-only") -> str:
-    script_path = Path(__file__).resolve().parent.parent / "mock_agent.py"
-    if agent_type not in ("mock", "codex"):
-        raise ValueError("Unknown agent type")
-    command = _codex_command(sandbox) if agent_type == "codex" else [sys.executable, str(script_path)]
-    agent_id = str(uuid4())
-    process = subprocess.Popen(
+def _start_reader(agent_id: str, process: subprocess.Popen) -> None:
+    reader = Thread(target=_read_output, args=(agent_id, process), daemon=True)
+    agent_readers[agent_id] = reader
+    reader.start()
+
+
+def _spawn_process(command: str | list[str], agent_type: AgentType) -> subprocess.Popen:
+    return subprocess.Popen(
         command,
         stdin=subprocess.PIPE if agent_type == "codex" else None,
         stdout=subprocess.PIPE,
@@ -54,16 +76,27 @@ def start_agent(task: str, agent_type: AgentType = "mock", sandbox: CodexSandbox
         bufsize=1,
         encoding="utf-8" if agent_type == "codex" else None,
         errors="replace",
-        cwd=script_path.parent.parent if agent_type == "codex" else None,
+        cwd=_project_root if agent_type == "codex" else None,
         shell=False,
     )
+
+
+@_synchronized
+def start_agent(task: str, agent_type: AgentType = "mock", sandbox: CodexSandbox = "read-only") -> str:
+    script_path = Path(__file__).resolve().parent.parent / "mock_agent.py"
+    if agent_type not in ("mock", "codex"):
+        raise ValueError("Unknown agent type")
+    command = _codex_command(sandbox) if agent_type == "codex" else [sys.executable, str(script_path)]
+    agent_id = str(uuid4())
+    process = _spawn_process(command, agent_type)
     agent_statuses[agent_id] = "running"
     agent_outputs[agent_id] = []
     agent_tasks[agent_id] = task
     agent_types[agent_id] = agent_type
     agent_sandboxes[agent_id] = sandbox if agent_type == "codex" else None
+    agent_sessions[agent_id] = None
     agents[agent_id] = process
-    Thread(target=_read_output, args=(agent_id, process), daemon=True).start()
+    _start_reader(agent_id, process)
     if agent_type == "codex":
         try:
             with process.stdin:
@@ -74,6 +107,7 @@ def start_agent(task: str, agent_type: AgentType = "mock", sandbox: CodexSandbox
     return agent_id
 
 
+@_synchronized
 def get_agents() -> list[dict[str, str | None]]:
     result = []
     for agent_id, process in list(agents.items()):
@@ -89,6 +123,7 @@ def get_agents() -> list[dict[str, str | None]]:
     return result
 
 
+@_synchronized
 def get_agent(agent_id: str) -> dict[str, str | list[str] | None] | None:
     process = agents.get(agent_id)
     if process is None:
@@ -101,10 +136,12 @@ def get_agent(agent_id: str) -> dict[str, str | list[str] | None] | None:
         "task": agent_tasks[agent_id],
         "agent_type": agent_types[agent_id],
         "sandbox": agent_sandboxes[agent_id],
+        "session_id": agent_sessions[agent_id],
         "output": agent_outputs[agent_id].copy(),
     }
 
 
+@_synchronized
 def stop_agent(agent_id: str) -> dict[str, str] | None:
     process = agents.get(agent_id)
     if process is None:
@@ -126,6 +163,46 @@ def stop_agent(agent_id: str) -> dict[str, str] | None:
 
     agent_statuses[agent_id] = "stopped"
     return {"agent_id": agent_id, "status": "stopped"}
+
+
+@_synchronized
+def redirect_agent(agent_id: str, instruction: str) -> dict[str, str] | None:
+    if not instruction.strip():
+        raise ValueError("Redirect instruction must not be blank.")
+    process = agents.get(agent_id)
+    if process is None:
+        return None
+    if agent_types[agent_id] != "codex":
+        raise ValueError("Only Codex agents can be redirected.")
+    if process.poll() is not None or agent_statuses[agent_id] != "running":
+        raise ValueError("Only running agents can be redirected.")
+    session_id = agent_sessions[agent_id]
+    if not session_id:
+        raise ValueError("Redirect will be available once the Codex session starts.")
+    # Resolve and validate before interrupting the current process.
+    command = _codex_command(agent_sandboxes[agent_id], session_id)
+    _stop_windows_tree(process)
+    try:
+        # Drain the old process before adding the marker or resumed output.
+        reader = agent_readers[agent_id]
+        reader.join(timeout=3)
+        if reader.is_alive():
+            raise RuntimeError("Old process output has not closed; redirect was not started.")
+        replacement = _spawn_process(command, "codex")
+    except (OSError, RuntimeError):
+        agent_statuses[agent_id] = "stopped"
+        raise
+    agent_outputs[agent_id].extend(["--- Redirect ---", instruction])
+    agents[agent_id] = replacement
+    agent_statuses[agent_id] = "running"
+    _start_reader(agent_id, replacement)
+    try:
+        with replacement.stdin:
+            replacement.stdin.write(instruction)
+    except OSError:
+        stop_agent(agent_id)
+        raise
+    return {"agent_id": agent_id, "status": "running"}
 
 
 def _stop_windows_tree(process: subprocess.Popen) -> None:

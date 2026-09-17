@@ -1,8 +1,8 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
-from .agent_manager import AgentType, CodexSandbox, get_agent, get_agents, start_agent, stop_agent
+from .agent_manager import AgentType, CodexSandbox, get_agent, get_agents, redirect_agent, start_agent, stop_agent
 
 app = FastAPI(title="AI Agent Control Center")
 app.add_middleware(
@@ -17,6 +17,17 @@ class StartAgentRequest(BaseModel):
     task: str
     agent_type: AgentType = "mock"
     sandbox: CodexSandbox = "read-only"
+
+
+class RedirectAgentRequest(BaseModel):
+    instruction: str
+
+    @field_validator("instruction")
+    @classmethod
+    def instruction_not_blank(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("Redirect instruction must not be blank.")
+        return value
 
 
 @app.get("/health")
@@ -60,6 +71,19 @@ def stop_mock_agent(agent_id: str):
         result = stop_agent(agent_id)
     except (OSError, RuntimeError) as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
+    if result is None:
+        raise HTTPException(status_code=404, detail="Agent not found")
+    return result
+
+
+@app.post("/agents/{agent_id}/redirect")
+def redirect_codex_agent(agent_id: str, request: RedirectAgentRequest):
+    try:
+        result = redirect_agent(agent_id, request.instruction)
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except (OSError, RuntimeError) as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
     if result is None:
         raise HTTPException(status_code=404, detail="Agent not found")
     return result

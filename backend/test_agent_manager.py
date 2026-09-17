@@ -71,12 +71,16 @@ class AgentTests(unittest.TestCase):
             self.assertNotEqual(agent_id, str(manager.agents[agent_id].pid))
             self.assertEqual((await request("GET", "/agents"))["agents"][0]["agent_id"], agent_id)
             self.assertEqual((await request("GET", f"/agents/{agent_id}"))["agent_id"], agent_id)
+            self.assertIsNone((await request("GET", f"/agents/{agent_id}"))["session_id"])
+            await request("POST", f"/agents/{agent_id}/redirect", {"instruction": "Correct this"}, 409)
+            await request("POST", f"/agents/{agent_id}/redirect", {"instruction": " \n "}, 422)
             self.assertEqual(await request("POST", f"/agents/{agent_id}/stop"),
                              {"agent_id": agent_id, "status": "stopped"})
             self.assertEqual((await request("GET", f"/agents/{agent_id}"))["status"], "stopped")
             missing = str(uuid4())
             await request("GET", f"/agents/{missing}", status=404)
             await request("POST", f"/agents/{missing}/stop", status=404)
+            await request("POST", f"/agents/{missing}/redirect", {"instruction": "Correct this"}, 404)
         asyncio.run(check())
 
     def tearDown(self):
@@ -88,7 +92,8 @@ class AgentTests(unittest.TestCase):
                 self.assertLess(time.monotonic(), deadline)
                 time.sleep(0.02)
         for registry in (manager.agents, manager.agent_outputs, manager.agent_tasks,
-                         manager.agent_statuses, manager.agent_types, manager.agent_sandboxes):
+                         manager.agent_statuses, manager.agent_types, manager.agent_sandboxes,
+                         manager.agent_sessions, manager.agent_readers):
             registry.clear()
 
     def wait_for_output(self, agent_id):
