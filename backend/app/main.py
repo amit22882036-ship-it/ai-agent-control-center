@@ -47,7 +47,7 @@ def list_agents():
 
 
 @app.get("/agents/{agent_id}")
-def get_mock_agent(agent_id: int):
+def get_mock_agent(agent_id: str):
     result = get_agent(agent_id)
     if result is None:
         raise HTTPException(status_code=404, detail="Agent not found")
@@ -55,7 +55,7 @@ def get_mock_agent(agent_id: int):
 
 
 @app.post("/agents/{agent_id}/stop")
-def stop_mock_agent(agent_id: int):
+def stop_mock_agent(agent_id: str):
     try:
         result = stop_agent(agent_id)
     except (OSError, RuntimeError) as exc:

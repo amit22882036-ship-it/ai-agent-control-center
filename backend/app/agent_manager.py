@@ -4,16 +4,17 @@ import sys
 from pathlib import Path
 from threading import Thread
 from typing import Literal
+from uuid import uuid4
 
 AgentType = Literal["mock", "codex"]
 CodexSandbox = Literal["read-only", "workspace-write"]
 
-agents: dict[int, subprocess.Popen] = {}
-agent_statuses: dict[int, str] = {}
-agent_outputs: dict[int, list[str]] = {}
-agent_tasks: dict[int, str] = {}
-agent_types: dict[int, AgentType] = {}
-agent_sandboxes: dict[int, CodexSandbox | None] = {}
+agents: dict[str, subprocess.Popen] = {}
+agent_statuses: dict[str, str] = {}
+agent_outputs: dict[str, list[str]] = {}
+agent_tasks: dict[str, str] = {}
+agent_types: dict[str, AgentType] = {}
+agent_sandboxes: dict[str, CodexSandbox | None] = {}
 
 
 def _codex_command(sandbox: CodexSandbox = "read-only") -> str:
@@ -32,17 +33,18 @@ def _codex_command(sandbox: CodexSandbox = "read-only") -> str:
     return f'"{cmd}" /d /s /v:off /c "{command}"'
 
 
-def _read_output(process: subprocess.Popen) -> None:
+def _read_output(agent_id: str, process: subprocess.Popen) -> None:
     with process.stdout as stdout:
         for line in stdout:
-            agent_outputs[process.pid].append(line.rstrip("\r\n"))
+            agent_outputs[agent_id].append(line.rstrip("\r\n"))
 
 
-def start_agent(task: str, agent_type: AgentType = "mock", sandbox: CodexSandbox = "read-only") -> int:
+def start_agent(task: str, agent_type: AgentType = "mock", sandbox: CodexSandbox = "read-only") -> str:
     script_path = Path(__file__).resolve().parent.parent / "mock_agent.py"
     if agent_type not in ("mock", "codex"):
         raise ValueError("Unknown agent type")
     command = _codex_command(sandbox) if agent_type == "codex" else [sys.executable, str(script_path)]
+    agent_id = str(uuid4())
     process = subprocess.Popen(
         command,
         stdin=subprocess.PIPE if agent_type == "codex" else None,
@@ -55,39 +57,39 @@ def start_agent(task: str, agent_type: AgentType = "mock", sandbox: CodexSandbox
         cwd=script_path.parent.parent if agent_type == "codex" else None,
         shell=False,
     )
-    agent_statuses[process.pid] = "running"
-    agent_outputs[process.pid] = []
-    agent_tasks[process.pid] = task
-    agent_types[process.pid] = agent_type
-    agent_sandboxes[process.pid] = sandbox if agent_type == "codex" else None
-    agents[process.pid] = process
-    Thread(target=_read_output, args=(process,), daemon=True).start()
+    agent_statuses[agent_id] = "running"
+    agent_outputs[agent_id] = []
+    agent_tasks[agent_id] = task
+    agent_types[agent_id] = agent_type
+    agent_sandboxes[agent_id] = sandbox if agent_type == "codex" else None
+    agents[agent_id] = process
+    Thread(target=_read_output, args=(agent_id, process), daemon=True).start()
     if agent_type == "codex":
         try:
             with process.stdin:
                 process.stdin.write(task)
         except OSError:
-            stop_agent(process.pid)
+            stop_agent(agent_id)
             raise
-    return process.pid
+    return agent_id
 
 
-def get_agents() -> list[dict[str, int | str | None]]:
+def get_agents() -> list[dict[str, str | None]]:
     result = []
-    for pid, process in list(agents.items()):
-        if process.poll() is not None and agent_statuses[pid] == "running":
-            agent_statuses[pid] = "finished"
+    for agent_id, process in list(agents.items()):
+        if process.poll() is not None and agent_statuses[agent_id] == "running":
+            agent_statuses[agent_id] = "finished"
         result.append({
-            "agent_id": pid,
-            "status": agent_statuses[pid],
-            "task": agent_tasks[pid],
-            "agent_type": agent_types[pid],
-            "sandbox": agent_sandboxes[pid],
+            "agent_id": agent_id,
+            "status": agent_statuses[agent_id],
+            "task": agent_tasks[agent_id],
+            "agent_type": agent_types[agent_id],
+            "sandbox": agent_sandboxes[agent_id],
         })
     return result
 
 
-def get_agent(agent_id: int) -> dict[str, int | str | list[str] | None] | None:
+def get_agent(agent_id: str) -> dict[str, str | list[str] | None] | None:
     process = agents.get(agent_id)
     if process is None:
         return None
@@ -103,7 +105,7 @@ def get_agent(agent_id: int) -> dict[str, int | str | list[str] | None] | None:
     }
 
 
-def stop_agent(agent_id: int) -> dict[str, int | str] | None:
+def stop_agent(agent_id: str) -> dict[str, str] | None:
     process = agents.get(agent_id)
     if process is None:
         return None

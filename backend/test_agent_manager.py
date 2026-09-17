@@ -1,3 +1,5 @@
+import asyncio
+import io
 import json
 import os
 from pathlib import Path
@@ -7,19 +9,80 @@ import tempfile
 import time
 import unittest
 from unittest.mock import Mock, patch
+from uuid import UUID, uuid4
 
 from fastapi import HTTPException
 from pydantic import ValidationError
 
 from app import agent_manager as manager
-from app.main import StartAgentRequest, start_mock_agent, stop_mock_agent
+from app.main import app, StartAgentRequest, start_mock_agent, stop_mock_agent
 
 
 class AgentTests(unittest.TestCase):
+    def test_same_pid_keeps_separate_agents(self):
+        first = Mock(pid=12345, stdout=io.StringIO("First output\n"))
+        second = Mock(pid=12345, stdout=io.StringIO("Second output\n"))
+        first.poll.return_value = 0
+        second.poll.return_value = None
+        with patch.object(manager.subprocess, "Popen", side_effect=[first, second]), \
+             patch.object(manager, "Thread"):
+            first_id = manager.start_agent("First task")
+            second_id = manager.start_agent("Second task")
+        self.assertNotEqual(first_id, second_id)
+        for agent_id in (first_id, second_id):
+            self.assertEqual(str(UUID(agent_id)), agent_id)
+            self.assertNotEqual(agent_id, str(first.pid))
+        self.assertIs(manager.agents[first_id], first)
+        self.assertIs(manager.agents[second_id], second)
+        # Read after both launches: an old reader must still target its own ID.
+        manager._read_output(first_id, first)
+        manager._read_output(second_id, second)
+        self.assertEqual(manager.get_agent(first_id)["output"], ["First output"])
+        self.assertEqual(manager.get_agent(second_id)["output"], ["Second output"])
+        self.assertEqual(manager.get_agent(first_id)["task"], "First task")
+        self.assertEqual(manager.get_agent(second_id)["task"], "Second task")
+        self.assertEqual(len(manager.get_agents()), 2)
+        self.assertEqual(manager.stop_agent(second_id)["status"], "stopped")
+        second.terminate.assert_called_once()
+        first.terminate.assert_not_called()
+        self.assertEqual(manager.get_agent(first_id)["status"], "finished")
+        second.poll.return_value = 0
+
+    def test_uuid_api_routes(self):
+        async def request(method, path, body=None, status=200):
+            messages = []
+            async def receive():
+                return {"type": "http.request", "body": json.dumps(body).encode() if body else b"",
+                        "more_body": False}
+            async def send(message):
+                messages.append(message)
+            await app({"type": "http", "asgi": {"version": "3.0"}, "http_version": "1.1",
+                       "method": method, "scheme": "http", "path": path, "raw_path": path.encode(),
+                       "query_string": b"", "headers": [(b"content-type", b"application/json")],
+                       "client": ("127.0.0.1", 1234), "server": ("localhost", 8000), "root_path": ""},
+                      receive, send)
+            self.assertEqual(messages[0]["status"], status)
+            return json.loads(b"".join(message.get("body", b"") for message in messages))
+
+        async def check():
+            started = await request("POST", "/agents/start", {"task": "Review code"})
+            agent_id = started["agent_id"]
+            self.assertEqual(str(UUID(agent_id)), agent_id)
+            self.assertNotEqual(agent_id, str(manager.agents[agent_id].pid))
+            self.assertEqual((await request("GET", "/agents"))["agents"][0]["agent_id"], agent_id)
+            self.assertEqual((await request("GET", f"/agents/{agent_id}"))["agent_id"], agent_id)
+            self.assertEqual(await request("POST", f"/agents/{agent_id}/stop"),
+                             {"agent_id": agent_id, "status": "stopped"})
+            self.assertEqual((await request("GET", f"/agents/{agent_id}"))["status"], "stopped")
+            missing = str(uuid4())
+            await request("GET", f"/agents/{missing}", status=404)
+            await request("POST", f"/agents/{missing}/stop", status=404)
+        asyncio.run(check())
+
     def tearDown(self):
-        for pid, process in list(manager.agents.items()):
+        for agent_id, process in list(manager.agents.items()):
             if process.poll() is None:
-                manager.stop_agent(pid)
+                manager.stop_agent(agent_id)
             deadline = time.monotonic() + 5
             while not process.stdout.closed:
                 self.assertLess(time.monotonic(), deadline)
@@ -28,31 +91,31 @@ class AgentTests(unittest.TestCase):
                          manager.agent_statuses, manager.agent_types, manager.agent_sandboxes):
             registry.clear()
 
-    def wait_for_output(self, pid):
+    def wait_for_output(self, agent_id):
         deadline = time.monotonic() + 5
-        while not manager.agent_outputs[pid]:
+        while not manager.agent_outputs[agent_id]:
             self.assertLess(time.monotonic(), deadline)
             time.sleep(0.02)
 
     def test_mock_default_and_stop(self):
         request = StartAgentRequest(task="Review code")
         result = start_mock_agent(request)
-        pid = result["agent_id"]
+        agent_id = result["agent_id"]
         self.assertEqual(result["agent_type"], "mock")
         self.assertIsNone(result["sandbox"])
-        self.wait_for_output(pid)
-        self.assertEqual(manager.get_agent(pid)["output"][0], "Agent started")
+        self.wait_for_output(agent_id)
+        self.assertEqual(manager.get_agent(agent_id)["output"][0], "Agent started")
         self.assertEqual(manager.get_agents()[0]["task"], request.task)
-        self.assertEqual(stop_mock_agent(pid)["status"], "stopped")
-        self.assertEqual(manager.get_agent(pid)["status"], "stopped")
-        self.assertEqual(stop_mock_agent(pid)["status"], "stopped")
+        self.assertEqual(stop_mock_agent(agent_id)["status"], "stopped")
+        self.assertEqual(manager.get_agent(agent_id)["status"], "stopped")
+        self.assertEqual(stop_mock_agent(agent_id)["status"], "stopped")
         with self.assertRaises(ValidationError):
             StartAgentRequest(task="Review", agent_type="unknown")
 
     def test_sandbox_validation_and_api_forwarding(self):
         self.assertEqual(StartAgentRequest(task="Review").sandbox, "read-only")
         for sandbox in ("read-only", "workspace-write"):
-            with patch("app.main.start_agent", return_value=12345) as start:
+            with patch("app.main.start_agent", return_value=str(uuid4())) as start:
                 result = start_mock_agent(StartAgentRequest(
                     task="Review", agent_type="codex", sandbox=sandbox))
                 start.assert_called_once_with("Review", "codex", sandbox)
@@ -67,12 +130,12 @@ class AgentTests(unittest.TestCase):
 
     def test_mock_ignores_sandbox(self):
         result = start_mock_agent(StartAgentRequest(task="Review", sandbox="workspace-write"))
-        pid = result["agent_id"]
-        self.wait_for_output(pid)
+        agent_id = result["agent_id"]
+        self.wait_for_output(agent_id)
         self.assertIsNone(result["sandbox"])
-        self.assertIsNone(manager.get_agent(pid)["sandbox"])
+        self.assertIsNone(manager.get_agent(agent_id)["sandbox"])
         self.assertIsNone(manager.get_agents()[0]["sandbox"])
-        self.assertEqual(manager.get_agent(pid)["output"][0], "Agent started")
+        self.assertEqual(manager.get_agent(agent_id)["output"][0], "Agent started")
 
     @unittest.skipUnless(os.name == "nt", "Windows launcher integration")
     def test_missing_cli(self):
@@ -113,19 +176,19 @@ class AgentTests(unittest.TestCase):
             with patch.dict(os.environ, {"APPDATA": directory}):
                 for task, sandbox in [(task, mode) for task in tasks
                                       for mode in ("read-only", "workspace-write")]:
-                    pid = manager.start_agent(task, "codex", sandbox)
-                    self.assertTrue(manager.agents[pid].stdin.closed)
-                    manager.agents[pid].wait(timeout=5)
+                    agent_id = manager.start_agent(task, "codex", sandbox)
+                    self.assertTrue(manager.agents[agent_id].stdin.closed)
+                    manager.agents[agent_id].wait(timeout=5)
                     deadline = time.monotonic() + 5
-                    while not manager.agents[pid].stdout.closed:
+                    while not manager.agents[agent_id].stdout.closed:
                         self.assertLess(time.monotonic(), deadline)
                         time.sleep(0.02)
-                    detail = manager.get_agent(pid)
+                    detail = manager.get_agent(agent_id)
                     self.assertEqual(detail["status"], "finished")
                     self.assertEqual(detail["agent_type"], "codex")
                     self.assertEqual(detail["task"], task)
                     self.assertEqual(detail["sandbox"], sandbox)
-                    listed = next(item for item in manager.get_agents() if item["agent_id"] == pid)
+                    listed = next(item for item in manager.get_agents() if item["agent_id"] == agent_id)
                     self.assertEqual(listed["sandbox"], sandbox)
                     self.assertEqual(json.loads(detail["output"][0]), [
                         "exec", "--sandbox", sandbox, "--color", "never",
@@ -143,30 +206,31 @@ class AgentTests(unittest.TestCase):
                 'print(child.pid, flush=True)\n'
                 'time.sleep(60)\n')
             with patch.dict(os.environ, {"APPDATA": directory}):
-                pid = manager.start_agent("Review", "codex")
-                self.assertEqual(manager.get_agent(pid)["sandbox"], "read-only")
-                self.wait_for_output(pid)
-                child_pid = int(manager.agent_outputs[pid][0])
-                self.assertEqual(manager.stop_agent(pid)["status"], "stopped")
+                agent_id = manager.start_agent("Review", "codex")
+                self.assertEqual(manager.get_agent(agent_id)["sandbox"], "read-only")
+                self.wait_for_output(agent_id)
+                child_pid = int(manager.agent_outputs[agent_id][0])
+                self.assertEqual(manager.stop_agent(agent_id)["status"], "stopped")
                 # tasklist is read-only and confirms the grandchild is gone.
                 result = subprocess.run([
                     str(Path(os.environ["SystemRoot"]) / "System32" / "tasklist.exe"),
                     "/FI", f"PID eq {child_pid}", "/FO", "CSV", "/NH",
                 ], capture_output=True, text=True, check=True)
                 self.assertNotIn(f'"{child_pid}"', result.stdout)
-                self.assertEqual(manager.get_agent(pid)["status"], "stopped")
+                self.assertEqual(manager.get_agent(agent_id)["status"], "stopped")
 
     def test_tree_failure_does_not_claim_stopped(self):
+        agent_id = str(uuid4())
         process = Mock(pid=12345)
         process.poll.return_value = None
-        with patch.dict(manager.agents, {12345: process}), \
-             patch.dict(manager.agent_types, {12345: "codex"}), \
-             patch.dict(manager.agent_statuses, {12345: "running"}), \
+        with patch.dict(manager.agents, {agent_id: process}), \
+             patch.dict(manager.agent_types, {agent_id: "codex"}), \
+             patch.dict(manager.agent_statuses, {agent_id: "running"}), \
              patch.object(manager, "_stop_windows_tree", side_effect=RuntimeError("failed")):
             if os.name == "nt":
                 with self.assertRaises(HTTPException):
-                    stop_mock_agent(12345)
-                self.assertEqual(manager.agent_statuses[12345], "running")
+                    stop_mock_agent(agent_id)
+                self.assertEqual(manager.agent_statuses[agent_id], "running")
 
     @unittest.skipUnless(os.name == "nt", "Windows process tree fallback")
     def test_force_tree_fallback(self):
@@ -178,6 +242,7 @@ class AgentTests(unittest.TestCase):
         self.assertNotIn("/F", run.call_args_list[0].args[0])
         self.assertIn("/F", run.call_args_list[1].args[0])
         self.assertIn("/T", run.call_args_list[1].args[0])
+        self.assertIn("12345", run.call_args_list[1].args[0])
         process.wait.assert_called_once_with(timeout=2)
 
 
