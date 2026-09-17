@@ -6,15 +6,19 @@ from threading import Thread
 from typing import Literal
 
 AgentType = Literal["mock", "codex"]
+CodexSandbox = Literal["read-only", "workspace-write"]
 
 agents: dict[int, subprocess.Popen] = {}
 agent_statuses: dict[int, str] = {}
 agent_outputs: dict[int, list[str]] = {}
 agent_tasks: dict[int, str] = {}
 agent_types: dict[int, AgentType] = {}
+agent_sandboxes: dict[int, CodexSandbox | None] = {}
 
 
-def _codex_command() -> str:
+def _codex_command(sandbox: CodexSandbox = "read-only") -> str:
+    if sandbox not in ("read-only", "workspace-write"):
+        raise ValueError("Unknown Codex sandbox")
     if os.name != "nt":
         raise RuntimeError("Codex agents currently require the Windows npm installation.")
     appdata = os.environ.get("APPDATA")
@@ -22,8 +26,8 @@ def _codex_command() -> str:
     if launcher is None or not launcher.is_file():
         raise FileNotFoundError("npm Codex CLI not found at %APPDATA%\\npm\\codex.cmd.")
     cmd = Path(os.environ["SystemRoot"]) / "System32" / "cmd.exe"
-    # Only fixed CLI arguments enter cmd.exe; the prompt is sent through stdin.
-    command = f'"{launcher}" exec --sandbox read-only --color never --skip-git-repo-check -'
+    # Only validated CLI options enter cmd.exe; the prompt is sent through stdin.
+    command = f'"{launcher}" exec --sandbox {sandbox} --color never --skip-git-repo-check -'
     # cmd /s /c strips the outer quotes, preserving the quoted launcher path.
     return f'"{cmd}" /d /s /v:off /c "{command}"'
 
@@ -34,11 +38,11 @@ def _read_output(process: subprocess.Popen) -> None:
             agent_outputs[process.pid].append(line.rstrip("\r\n"))
 
 
-def start_agent(task: str, agent_type: AgentType = "mock") -> int:
+def start_agent(task: str, agent_type: AgentType = "mock", sandbox: CodexSandbox = "read-only") -> int:
     script_path = Path(__file__).resolve().parent.parent / "mock_agent.py"
     if agent_type not in ("mock", "codex"):
         raise ValueError("Unknown agent type")
-    command = _codex_command() if agent_type == "codex" else [sys.executable, str(script_path)]
+    command = _codex_command(sandbox) if agent_type == "codex" else [sys.executable, str(script_path)]
     process = subprocess.Popen(
         command,
         stdin=subprocess.PIPE if agent_type == "codex" else None,
@@ -55,6 +59,7 @@ def start_agent(task: str, agent_type: AgentType = "mock") -> int:
     agent_outputs[process.pid] = []
     agent_tasks[process.pid] = task
     agent_types[process.pid] = agent_type
+    agent_sandboxes[process.pid] = sandbox if agent_type == "codex" else None
     agents[process.pid] = process
     Thread(target=_read_output, args=(process,), daemon=True).start()
     if agent_type == "codex":
@@ -67,7 +72,7 @@ def start_agent(task: str, agent_type: AgentType = "mock") -> int:
     return process.pid
 
 
-def get_agents() -> list[dict[str, int | str]]:
+def get_agents() -> list[dict[str, int | str | None]]:
     result = []
     for pid, process in list(agents.items()):
         if process.poll() is not None and agent_statuses[pid] == "running":
@@ -77,11 +82,12 @@ def get_agents() -> list[dict[str, int | str]]:
             "status": agent_statuses[pid],
             "task": agent_tasks[pid],
             "agent_type": agent_types[pid],
+            "sandbox": agent_sandboxes[pid],
         })
     return result
 
 
-def get_agent(agent_id: int) -> dict[str, int | str | list[str]] | None:
+def get_agent(agent_id: int) -> dict[str, int | str | list[str] | None] | None:
     process = agents.get(agent_id)
     if process is None:
         return None
@@ -92,6 +98,7 @@ def get_agent(agent_id: int) -> dict[str, int | str | list[str]] | None:
         "status": agent_statuses[agent_id],
         "task": agent_tasks[agent_id],
         "agent_type": agent_types[agent_id],
+        "sandbox": agent_sandboxes[agent_id],
         "output": agent_outputs[agent_id].copy(),
     }
 

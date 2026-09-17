@@ -9,6 +9,7 @@ function App() {
   const [selectedAgentId, setSelectedAgentId] = useState(null)
   const [task, setTask] = useState('')
   const [agentType, setAgentType] = useState('mock')
+  const [sandbox, setSandbox] = useState('read-only')
   const [starting, setStarting] = useState(false)
   const [startError, setStartError] = useState('')
   const [listVersion, setListVersion] = useState(0)
@@ -24,7 +25,7 @@ function App() {
       const response = await fetch('http://127.0.0.1:8000/agents/start', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ task: trimmedTask, agent_type: agentType }),
+        body: JSON.stringify({ task: trimmedTask, agent_type: agentType, sandbox }),
       })
       if (!response.ok) throw new Error('Unable to start agent')
       setTask('')
@@ -87,15 +88,31 @@ function App() {
               value={agentType}
               onChange={(event) => setAgentType(event.target.value)}
               disabled={starting}
-              aria-describedby={agentType === 'codex' ? 'codex-note' : undefined}
             >
               <option value="mock">Mock</option>
               <option value="codex">Codex</option>
             </select>
-            {agentType === 'codex' && (
-              <p id="codex-note" className="agent-type-note">Codex currently runs in read-only mode.</p>
-            )}
           </div>
+          {agentType === 'codex' && (
+            <div className="agent-type-field">
+              <label htmlFor="codex-sandbox">Sandbox</label>
+              <select
+                id="codex-sandbox"
+                value={sandbox}
+                onChange={(event) => setSandbox(event.target.value)}
+                disabled={starting}
+                aria-describedby={sandbox === 'workspace-write' ? 'sandbox-warning' : undefined}
+              >
+                <option value="read-only">Read only</option>
+                <option value="workspace-write">Workspace write</option>
+              </select>
+              {sandbox === 'workspace-write' && (
+                <p id="sandbox-warning" className="agent-type-note" role="status">
+                  Codex can modify files in this project.
+                </p>
+              )}
+            </div>
+          )}
           <label htmlFor="agent-task">Task</label>
           <div className="start-controls">
             <input
@@ -138,6 +155,12 @@ function App() {
             <dl>
               <dt>Type</dt>
               <dd>{agent.agent_type === 'codex' ? 'Codex' : 'Mock'}</dd>
+              {agent.agent_type === 'codex' && (
+                <>
+                  <dt>Sandbox</dt>
+                  <dd>{agent.sandbox === 'workspace-write' ? 'Workspace write' : 'Read only'}</dd>
+                </>
+              )}
               <dt>Task</dt>
               <dd className="task">{agent.task}</dd>
               <dt>Status</dt>

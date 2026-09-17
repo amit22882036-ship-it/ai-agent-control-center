@@ -90,6 +90,12 @@ function AgentDetails({ agentId, onClose, onStopped }) {
           <dl>
             <dt>Type</dt>
             <dd>{agent.agent_type === 'codex' ? 'Codex' : 'Mock'}</dd>
+            {agent.agent_type === 'codex' && (
+              <>
+                <dt>Sandbox</dt>
+                <dd>{agent.sandbox === 'workspace-write' ? 'Workspace write' : 'Read only'}</dd>
+              </>
+            )}
             <dt>Task</dt>
             <dd className="task">{agent.task}</dd>
             <dt>Status</dt>

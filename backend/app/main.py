@@ -2,7 +2,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-from .agent_manager import AgentType, get_agent, get_agents, start_agent, stop_agent
+from .agent_manager import AgentType, CodexSandbox, get_agent, get_agents, start_agent, stop_agent
 
 app = FastAPI(title="AI Agent Control Center")
 app.add_middleware(
@@ -16,6 +16,7 @@ app.add_middleware(
 class StartAgentRequest(BaseModel):
     task: str
     agent_type: AgentType = "mock"
+    sandbox: CodexSandbox = "read-only"
 
 
 @app.get("/health")
@@ -26,7 +27,7 @@ def health():
 @app.post("/agents/start")
 def start_mock_agent(request: StartAgentRequest):
     try:
-        agent_id = start_agent(request.task, request.agent_type)
+        agent_id = start_agent(request.task, request.agent_type, request.sandbox)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     except (OSError, RuntimeError) as exc:
@@ -36,6 +37,7 @@ def start_mock_agent(request: StartAgentRequest):
         "status": "running",
         "task": request.task,
         "agent_type": request.agent_type,
+        "sandbox": request.sandbox if request.agent_type == "codex" else None,
     }
 
 

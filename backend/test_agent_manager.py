@@ -25,7 +25,7 @@ class AgentTests(unittest.TestCase):
                 self.assertLess(time.monotonic(), deadline)
                 time.sleep(0.02)
         for registry in (manager.agents, manager.agent_outputs, manager.agent_tasks,
-                         manager.agent_statuses, manager.agent_types):
+                         manager.agent_statuses, manager.agent_types, manager.agent_sandboxes):
             registry.clear()
 
     def wait_for_output(self, pid):
@@ -39,6 +39,7 @@ class AgentTests(unittest.TestCase):
         result = start_mock_agent(request)
         pid = result["agent_id"]
         self.assertEqual(result["agent_type"], "mock")
+        self.assertIsNone(result["sandbox"])
         self.wait_for_output(pid)
         self.assertEqual(manager.get_agent(pid)["output"][0], "Agent started")
         self.assertEqual(manager.get_agents()[0]["task"], request.task)
@@ -47,6 +48,31 @@ class AgentTests(unittest.TestCase):
         self.assertEqual(stop_mock_agent(pid)["status"], "stopped")
         with self.assertRaises(ValidationError):
             StartAgentRequest(task="Review", agent_type="unknown")
+
+    def test_sandbox_validation_and_api_forwarding(self):
+        self.assertEqual(StartAgentRequest(task="Review").sandbox, "read-only")
+        for sandbox in ("read-only", "workspace-write"):
+            with patch("app.main.start_agent", return_value=12345) as start:
+                result = start_mock_agent(StartAgentRequest(
+                    task="Review", agent_type="codex", sandbox=sandbox))
+                start.assert_called_once_with("Review", "codex", sandbox)
+                self.assertEqual(result["sandbox"], sandbox)
+        for invalid in ("danger-full-access", "read-only & echo injected", "", None):
+            with self.assertRaises(ValidationError):
+                StartAgentRequest(task="Review", agent_type="codex", sandbox=invalid)
+            with patch.object(manager.subprocess, "Popen") as popen:
+                with self.assertRaises(ValueError):
+                    manager.start_agent("Review", "codex", invalid)
+                popen.assert_not_called()
+
+    def test_mock_ignores_sandbox(self):
+        result = start_mock_agent(StartAgentRequest(task="Review", sandbox="workspace-write"))
+        pid = result["agent_id"]
+        self.wait_for_output(pid)
+        self.assertIsNone(result["sandbox"])
+        self.assertIsNone(manager.get_agent(pid)["sandbox"])
+        self.assertIsNone(manager.get_agents()[0]["sandbox"])
+        self.assertEqual(manager.get_agent(pid)["output"][0], "Agent started")
 
     @unittest.skipUnless(os.name == "nt", "Windows launcher integration")
     def test_missing_cli(self):
@@ -85,8 +111,9 @@ class AgentTests(unittest.TestCase):
                 'print(json.dumps(sys.stdin.read()), flush=True)\n'
                 'print("stderr captured", file=sys.stderr, flush=True)\n')
             with patch.dict(os.environ, {"APPDATA": directory}):
-                for task in tasks:
-                    pid = manager.start_agent(task, "codex")
+                for task, sandbox in [(task, mode) for task in tasks
+                                      for mode in ("read-only", "workspace-write")]:
+                    pid = manager.start_agent(task, "codex", sandbox)
                     self.assertTrue(manager.agents[pid].stdin.closed)
                     manager.agents[pid].wait(timeout=5)
                     deadline = time.monotonic() + 5
@@ -97,8 +124,11 @@ class AgentTests(unittest.TestCase):
                     self.assertEqual(detail["status"], "finished")
                     self.assertEqual(detail["agent_type"], "codex")
                     self.assertEqual(detail["task"], task)
+                    self.assertEqual(detail["sandbox"], sandbox)
+                    listed = next(item for item in manager.get_agents() if item["agent_id"] == pid)
+                    self.assertEqual(listed["sandbox"], sandbox)
                     self.assertEqual(json.loads(detail["output"][0]), [
-                        "exec", "--sandbox", "read-only", "--color", "never",
+                        "exec", "--sandbox", sandbox, "--color", "never",
                         "--skip-git-repo-check", "-"])
                     self.assertEqual(json.loads(detail["output"][1]), task)
                     self.assertEqual(detail["output"][2:], ["stderr captured"])
@@ -114,6 +144,7 @@ class AgentTests(unittest.TestCase):
                 'time.sleep(60)\n')
             with patch.dict(os.environ, {"APPDATA": directory}):
                 pid = manager.start_agent("Review", "codex")
+                self.assertEqual(manager.get_agent(pid)["sandbox"], "read-only")
                 self.wait_for_output(pid)
                 child_pid = int(manager.agent_outputs[pid][0])
                 self.assertEqual(manager.stop_agent(pid)["status"], "stopped")
