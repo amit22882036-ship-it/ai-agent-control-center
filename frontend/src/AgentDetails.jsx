@@ -11,10 +11,38 @@ function AgentDetails({ agentId, onClose, onStopped }) {
   const [answer, setAnswer] = useState('')
   const [replying, setReplying] = useState(false)
   const [replyError, setReplyError] = useState('')
+  const [deciding, setDeciding] = useState(false)
+  const [decideError, setDecideError] = useState('')
+
+  async function handleDecide() {
+    if (deciding || replying || stopping || redirecting) return
+    setDeciding(true)
+    setDecideError('')
+    try {
+      const response = await fetch(`http://127.0.0.1:8000/agents/${agentId}/decide`, {
+        method: 'POST',
+      })
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}))
+        const message = typeof data.detail === 'string'
+          ? data.detail
+          : Array.isArray(data.detail) ? data.detail.map((item) => item.msg).join(' ') : ''
+        throw new Error(message || 'Unable to delegate this decision. Please try again.')
+      }
+      const result = await response.json()
+      setAnswer('')
+      setAgent((current) => ({ ...current, status: result.status, waiting_question: null }))
+      onStopped()
+    } catch (err) {
+      setDecideError(err.message)
+    } finally {
+      setDeciding(false)
+    }
+  }
 
   async function handleReply(event) {
     event.preventDefault()
-    if (!answer.trim() || replying || stopping || redirecting) return
+    if (!answer.trim() || replying || stopping || redirecting || deciding) return
     setReplying(true)
     setReplyError('')
     try {
@@ -43,7 +71,7 @@ function AgentDetails({ agentId, onClose, onStopped }) {
 
   async function handleRedirect(event) {
     event.preventDefault()
-    if (!instruction.trim() || redirecting || stopping || replying) return
+    if (!instruction.trim() || redirecting || stopping || replying || deciding) return
     setRedirecting(true)
     setRedirectError('')
     try {
@@ -69,7 +97,7 @@ function AgentDetails({ agentId, onClose, onStopped }) {
   }
 
   async function handleStop() {
-    if (stopping || redirecting || replying) return
+    if (stopping || redirecting || replying || deciding) return
     setStopping(true)
     setStopError('')
     try {
@@ -92,7 +120,7 @@ function AgentDetails({ agentId, onClose, onStopped }) {
   }
 
   useEffect(() => {
-    if (stopping || redirecting || replying) return
+    if (stopping || redirecting || replying || deciding) return
     const controller = new AbortController()
     let fetching = false
 
@@ -128,7 +156,7 @@ function AgentDetails({ agentId, onClose, onStopped }) {
       clearInterval(interval)
       controller.abort()
     }
-  }, [agentId, stopping, redirecting, replying])
+  }, [agentId, stopping, redirecting, replying, deciding])
 
   return (
     <section className="agent-details" aria-labelledby="details-heading">
@@ -136,7 +164,7 @@ function AgentDetails({ agentId, onClose, onStopped }) {
         <h2 id="details-heading">Agent {agentId} details</h2>
         <div className="details-actions">
           {(agent?.status === 'running' || agent?.status === 'waiting') && (
-            <button className="stop-button" type="button" onClick={handleStop} disabled={stopping || redirecting || replying}>
+            <button className="stop-button" type="button" onClick={handleStop} disabled={stopping || redirecting || replying || deciding}>
               {stopping ? 'Stopping...' : 'Stop'}
             </button>
           )}
@@ -146,6 +174,7 @@ function AgentDetails({ agentId, onClose, onStopped }) {
       {stopError && <p className="message error" role="alert">{stopError}</p>}
       {redirectError && <p className="message error" role="alert">{redirectError}</p>}
       {replyError && <p className="message error" role="alert">{replyError}</p>}
+      {decideError && <p className="message error" role="alert">{decideError}</p>}
       {error && <p className="message error" role="alert">{error}</p>}
       {!agent && !error && <p role="status">Loading agent details...</p>}
       {agent && (
@@ -177,12 +206,19 @@ function AgentDetails({ agentId, onClose, onStopped }) {
                   onChange={(event) => setAnswer(event.target.value)}
                   rows={3}
                   required
-                  disabled={replying || stopping}
+                  disabled={replying || stopping || deciding}
                 />
                 <button className="start-button" type="submit"
-                  disabled={replying || stopping || !answer.trim()}>
+                  disabled={replying || stopping || deciding || !answer.trim()}>
                   {replying ? 'Sending...' : 'Reply'}
                 </button>
+                <button className="close-button" type="button" onClick={handleDecide}
+                  disabled={deciding || replying || stopping} aria-describedby="decide-help">
+                  {deciding ? 'Deciding...' : 'Decide for me'}
+                </button>
+                <p id="decide-help" className="agent-type-note">
+                  Let the agent make this decision itself and continue. This applies only this time.
+                </p>
               </form>
             </section>
           )}

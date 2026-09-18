@@ -75,6 +75,7 @@ class AgentTests(unittest.TestCase):
             await request("POST", f"/agents/{agent_id}/redirect", {"instruction": "Correct this"}, 409)
             await request("POST", f"/agents/{agent_id}/redirect", {"instruction": " \n "}, 422)
             await request("POST", f"/agents/{agent_id}/reply", {"answer": "Continue"}, 409)
+            await request("POST", f"/agents/{agent_id}/decide", status=409)
             await request("POST", f"/agents/{agent_id}/reply", {"answer": " \n "}, 422)
             self.assertEqual(await request("POST", f"/agents/{agent_id}/stop"),
                              {"agent_id": agent_id, "status": "stopped"})
@@ -84,6 +85,7 @@ class AgentTests(unittest.TestCase):
             await request("POST", f"/agents/{missing}/stop", status=404)
             await request("POST", f"/agents/{missing}/redirect", {"instruction": "Correct this"}, 404)
             await request("POST", f"/agents/{missing}/reply", {"answer": "Continue"}, 404)
+            await request("POST", f"/agents/{missing}/decide", status=404)
         asyncio.run(check())
 
     def tearDown(self):

@@ -30,6 +30,15 @@ _project_root = Path(__file__).resolve().parents[2]
 _ansi = re.compile(r'\x1b\[[0-?]*[ -/]*[@-~]|\x1b\][^\x07]*(?:\x07|\x1b\\)')
 _session_line = re.compile(r'\bsession id:\s*([0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12})\b', re.I)
 _waiting_marker = "CONTROL_CENTER_WAITING:"
+_delegated_decision = """The user has delegated this current decision to you.
+
+Make this specific decision yourself using your best judgment and continue the original task.
+
+Do not ask the user to make this same decision again.
+
+This delegation applies only to the current decision. It does not give you permanent autonomy over future unrelated decisions.
+
+If you later become genuinely blocked by a different decision or missing information that requires the user, you may use the existing CONTROL_CENTER_WAITING protocol again."""
 _waiting_protocol = """If you are genuinely blocked and require information, clarification, or a decision from the user before you can continue, stop work and end your response with exactly one line in this form:
 
 CONTROL_CENTER_WAITING: <your question>
@@ -250,6 +259,22 @@ def redirect_agent(agent_id: str, instruction: str) -> dict[str, str] | None:
 def reply_agent(agent_id: str, answer: str) -> dict[str, str] | None:
     if not answer.strip():
         raise ValueError("Reply answer must not be blank.")
+    command = _waiting_resume_command(agent_id)
+    if command is None:
+        return None
+    return _resume_agent(agent_id, command, answer, "--- User Reply ---")
+
+
+@_synchronized
+def decide_agent(agent_id: str) -> dict[str, str] | None:
+    command = _waiting_resume_command(agent_id)
+    if command is None:
+        return None
+    return _resume_agent(agent_id, command, _delegated_decision,
+                         "--- Delegated Decision ---", history_text="Decide for me this time")
+
+
+def _waiting_resume_command(agent_id: str) -> str | None:
     if agent_id not in agents:
         return None
     if agent_types[agent_id] != "codex":
@@ -260,18 +285,18 @@ def reply_agent(agent_id: str, answer: str) -> dict[str, str] | None:
     session_id = agent_sessions[agent_id]
     if not session_id:
         raise ValueError("The Codex session ID is not available.")
-    command = _codex_command(agent_sandboxes[agent_id], session_id)
-    return _resume_agent(agent_id, command, answer, "--- User Reply ---")
+    return _codex_command(agent_sandboxes[agent_id], session_id)
 
 
-def _resume_agent(agent_id: str, command: str, text: str, marker: str) -> dict[str, str]:
+def _resume_agent(agent_id: str, command: str, text: str, marker: str,
+                  history_text: str | None = None) -> dict[str, str]:
     # Drain the old process before adding the marker or resumed output.
     reader = agent_readers[agent_id]
     reader.join(timeout=3)
     if reader.is_alive():
         raise RuntimeError("Old process output has not closed; resume was not started.")
     replacement = _spawn_process(command, "codex")
-    agent_outputs[agent_id].extend([marker, text])
+    agent_outputs[agent_id].extend([marker, text if history_text is None else history_text])
     agents[agent_id] = replacement
     agent_waiting_questions[agent_id] = None
     agent_statuses[agent_id] = "running"
