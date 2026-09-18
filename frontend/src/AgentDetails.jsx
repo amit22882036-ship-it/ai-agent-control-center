@@ -8,10 +8,42 @@ function AgentDetails({ agentId, onClose, onStopped }) {
   const [instruction, setInstruction] = useState('')
   const [redirecting, setRedirecting] = useState(false)
   const [redirectError, setRedirectError] = useState('')
+  const [answer, setAnswer] = useState('')
+  const [replying, setReplying] = useState(false)
+  const [replyError, setReplyError] = useState('')
+
+  async function handleReply(event) {
+    event.preventDefault()
+    if (!answer.trim() || replying || stopping || redirecting) return
+    setReplying(true)
+    setReplyError('')
+    try {
+      const response = await fetch(`http://127.0.0.1:8000/agents/${agentId}/reply`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ answer }),
+      })
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}))
+        const message = typeof data.detail === 'string'
+          ? data.detail
+          : Array.isArray(data.detail) ? data.detail.map((item) => item.msg).join(' ') : ''
+        throw new Error(message || 'Unable to send reply. Please try again.')
+      }
+      const result = await response.json()
+      setAnswer('')
+      setAgent((current) => ({ ...current, status: result.status, waiting_question: null }))
+      onStopped()
+    } catch (err) {
+      setReplyError(err.message)
+    } finally {
+      setReplying(false)
+    }
+  }
 
   async function handleRedirect(event) {
     event.preventDefault()
-    if (!instruction.trim() || redirecting || stopping) return
+    if (!instruction.trim() || redirecting || stopping || replying) return
     setRedirecting(true)
     setRedirectError('')
     try {
@@ -37,7 +69,7 @@ function AgentDetails({ agentId, onClose, onStopped }) {
   }
 
   async function handleStop() {
-    if (stopping || redirecting) return
+    if (stopping || redirecting || replying) return
     setStopping(true)
     setStopError('')
     try {
@@ -60,7 +92,7 @@ function AgentDetails({ agentId, onClose, onStopped }) {
   }
 
   useEffect(() => {
-    if (stopping || redirecting) return
+    if (stopping || redirecting || replying) return
     const controller = new AbortController()
     let fetching = false
 
@@ -96,15 +128,15 @@ function AgentDetails({ agentId, onClose, onStopped }) {
       clearInterval(interval)
       controller.abort()
     }
-  }, [agentId, stopping, redirecting])
+  }, [agentId, stopping, redirecting, replying])
 
   return (
     <section className="agent-details" aria-labelledby="details-heading">
       <div className="details-header">
         <h2 id="details-heading">Agent {agentId} details</h2>
         <div className="details-actions">
-          {agent?.status === 'running' && (
-            <button className="stop-button" type="button" onClick={handleStop} disabled={stopping || redirecting}>
+          {(agent?.status === 'running' || agent?.status === 'waiting') && (
+            <button className="stop-button" type="button" onClick={handleStop} disabled={stopping || redirecting || replying}>
               {stopping ? 'Stopping...' : 'Stop'}
             </button>
           )}
@@ -113,6 +145,7 @@ function AgentDetails({ agentId, onClose, onStopped }) {
       </div>
       {stopError && <p className="message error" role="alert">{stopError}</p>}
       {redirectError && <p className="message error" role="alert">{redirectError}</p>}
+      {replyError && <p className="message error" role="alert">{replyError}</p>}
       {error && <p className="message error" role="alert">{error}</p>}
       {!agent && !error && <p role="status">Loading agent details...</p>}
       {agent && (
@@ -130,8 +163,29 @@ function AgentDetails({ agentId, onClose, onStopped }) {
             <dt>Task</dt>
             <dd className="task">{agent.task}</dd>
             <dt>Status</dt>
-            <dd><span className={`status status-${agent.status}`}>{agent.status}</span></dd>
+            <dd><span className={`status status-${agent.status}`}>{agent.status === 'waiting' ? 'waiting for you' : agent.status}</span></dd>
           </dl>
+          {agent.agent_type === 'codex' && agent.status === 'waiting' && (
+            <section className="waiting-panel" aria-labelledby="waiting-heading">
+              <h3 id="waiting-heading">Waiting for you</h3>
+              <p className="waiting-question">{agent.waiting_question}</p>
+              <form className="redirect-form" onSubmit={handleReply}>
+                <label htmlFor="reply-answer">Your answer</label>
+                <textarea
+                  id="reply-answer"
+                  value={answer}
+                  onChange={(event) => setAnswer(event.target.value)}
+                  rows={3}
+                  required
+                  disabled={replying || stopping}
+                />
+                <button className="start-button" type="submit"
+                  disabled={replying || stopping || !answer.trim()}>
+                  {replying ? 'Sending...' : 'Reply'}
+                </button>
+              </form>
+            </section>
+          )}
           {agent.agent_type === 'codex' && agent.status === 'running' && (
             agent.session_id ? (
               <form className="redirect-form" onSubmit={handleRedirect}>

@@ -139,7 +139,7 @@ function App() {
       <section className="agent-grid" aria-label="Agents">
         {agents.map((agent) => (
           <article
-            className={`agent-card${selectedAgentId === agent.agent_id ? ' selected' : ''}`}
+            className={`agent-card${agent.status === 'waiting' ? ' agent-waiting' : ''}${selectedAgentId === agent.agent_id ? ' selected' : ''}`}
             key={agent.agent_id}
           >
             <h2>
@@ -164,7 +164,7 @@ function App() {
               <dt>Task</dt>
               <dd className="task">{agent.task}</dd>
               <dt>Status</dt>
-              <dd><span className={`status status-${agent.status}`}>{agent.status}</span></dd>
+              <dd><span className={`status status-${agent.status}`}>{agent.status === 'waiting' ? 'waiting for you' : agent.status}</span></dd>
             </dl>
           </article>
         ))}

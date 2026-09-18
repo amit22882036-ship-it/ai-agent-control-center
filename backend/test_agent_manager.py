@@ -74,6 +74,8 @@ class AgentTests(unittest.TestCase):
             self.assertIsNone((await request("GET", f"/agents/{agent_id}"))["session_id"])
             await request("POST", f"/agents/{agent_id}/redirect", {"instruction": "Correct this"}, 409)
             await request("POST", f"/agents/{agent_id}/redirect", {"instruction": " \n "}, 422)
+            await request("POST", f"/agents/{agent_id}/reply", {"answer": "Continue"}, 409)
+            await request("POST", f"/agents/{agent_id}/reply", {"answer": " \n "}, 422)
             self.assertEqual(await request("POST", f"/agents/{agent_id}/stop"),
                              {"agent_id": agent_id, "status": "stopped"})
             self.assertEqual((await request("GET", f"/agents/{agent_id}"))["status"], "stopped")
@@ -81,6 +83,7 @@ class AgentTests(unittest.TestCase):
             await request("GET", f"/agents/{missing}", status=404)
             await request("POST", f"/agents/{missing}/stop", status=404)
             await request("POST", f"/agents/{missing}/redirect", {"instruction": "Correct this"}, 404)
+            await request("POST", f"/agents/{missing}/reply", {"answer": "Continue"}, 404)
         asyncio.run(check())
 
     def tearDown(self):
@@ -93,7 +96,7 @@ class AgentTests(unittest.TestCase):
                 time.sleep(0.02)
         for registry in (manager.agents, manager.agent_outputs, manager.agent_tasks,
                          manager.agent_statuses, manager.agent_types, manager.agent_sandboxes,
-                         manager.agent_sessions, manager.agent_readers):
+                         manager.agent_sessions, manager.agent_readers, manager.agent_waiting_questions):
             registry.clear()
 
     def wait_for_output(self, agent_id):
@@ -198,7 +201,7 @@ class AgentTests(unittest.TestCase):
                     self.assertEqual(json.loads(detail["output"][0]), [
                         "exec", "--sandbox", sandbox, "--color", "never",
                         "--skip-git-repo-check", "-"])
-                    self.assertEqual(json.loads(detail["output"][1]), task)
+                    self.assertEqual(json.loads(detail["output"][1]), manager._codex_prompt(task))
                     self.assertEqual(detail["output"][2:], ["stderr captured"])
 
     @unittest.skipUnless(os.name == "nt", "Windows process tree integration")

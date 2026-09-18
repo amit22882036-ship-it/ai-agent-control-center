@@ -137,7 +137,7 @@ class RedirectTests(unittest.TestCase):
                     resumed = json.loads(detail["output"][5])
                     self.assertEqual(resumed["args"], ["exec", "--sandbox", sandbox, "--color", "never",
                                                      "--skip-git-repo-check", "resume", session_id, "-"])
-                    self.assertEqual(resumed["prompt"], instruction)
+                    self.assertEqual(resumed["prompt"], manager._codex_prompt(instruction))
                     self.assertEqual(resumed["cwd"], json.loads(history[1])["cwd"])
                     self.assertEqual(Path(resumed["cwd"]), manager._project_root)
                     self.assertEqual(sum(item["agent_id"] == agent_id for item in manager.get_agents()), 1)

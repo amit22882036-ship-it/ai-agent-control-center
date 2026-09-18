@@ -268,3 +268,36 @@ input:disabled {
 .redirect-form button {
   justify-self: start;
 }
+
+.status-waiting {
+  color: #6b21a8;
+  background: #f3e8ff;
+}
+
+.agent-card.agent-waiting {
+  border-left: 4px solid #9333ea;
+}
+
+.waiting-panel {
+  margin-top: 24px;
+  padding: 20px;
+  border: 1px solid #d8b4fe;
+  border-radius: 8px;
+  background: #faf5ff;
+}
+
+.waiting-panel h3 {
+  margin-top: 0;
+  color: #6b21a8;
+}
+
+.waiting-question {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-weight: 600;
+}
+
+textarea:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}

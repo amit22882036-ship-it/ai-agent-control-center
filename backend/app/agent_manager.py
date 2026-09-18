@@ -18,11 +18,30 @@ agent_tasks: dict[str, str] = {}
 agent_types: dict[str, AgentType] = {}
 agent_sandboxes: dict[str, CodexSandbox | None] = {}
 agent_sessions: dict[str, str | None] = {}
+agent_waiting_questions: dict[str, str | None] = {}
 agent_readers: dict[str, Thread] = {}
 _state_lock = RLock()
 _project_root = Path(__file__).resolve().parents[2]
 _ansi = re.compile(r'\x1b\[[0-?]*[ -/]*[@-~]|\x1b\][^\x07]*(?:\x07|\x1b\\)')
 _session_line = re.compile(r'\bsession id:\s*([0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12})\b', re.I)
+_waiting_marker = "CONTROL_CENTER_WAITING:"
+_waiting_protocol = """If you are genuinely blocked and require information, clarification, or a decision from the user before you can continue, stop work and end your response with exactly one line in this form:
+
+CONTROL_CENTER_WAITING: <your question>
+
+Do not use this marker if you can reasonably continue without user input."""
+
+
+def _codex_prompt(text: str) -> str:
+    return f"Internal control-center instruction:\n{_waiting_protocol}\n\nUser request:\n{text}"
+
+
+def _refresh_status(agent_id: str) -> None:
+    process = agents[agent_id]
+    # The reader must finish parsing buffered output before deciding the exit state.
+    if (agent_statuses[agent_id] == "running" and process.poll() is not None
+            and process.stdout.closed):
+        agent_statuses[agent_id] = "waiting" if agent_waiting_questions[agent_id] else "finished"
 
 
 def _synchronized(function):
@@ -55,9 +74,14 @@ def _read_output(agent_id: str, process: subprocess.Popen) -> None:
         for line in stdout:
             agent_outputs[agent_id].append(line.rstrip("\r\n"))
             if agent_types[agent_id] == "codex" and agents.get(agent_id) is process:
-                match = _session_line.search(_ansi.sub("", line))
+                parsed = _ansi.sub("", line).strip()
+                match = _session_line.search(parsed)
                 if match:
                     agent_sessions[agent_id] = str(UUID(match[1]))
+                if parsed.startswith(_waiting_marker):
+                    question = parsed[len(_waiting_marker):].strip()
+                    if question:
+                        agent_waiting_questions[agent_id] = question
 
 
 def _start_reader(agent_id: str, process: subprocess.Popen) -> None:
@@ -95,12 +119,13 @@ def start_agent(task: str, agent_type: AgentType = "mock", sandbox: CodexSandbox
     agent_types[agent_id] = agent_type
     agent_sandboxes[agent_id] = sandbox if agent_type == "codex" else None
     agent_sessions[agent_id] = None
+    agent_waiting_questions[agent_id] = None
     agents[agent_id] = process
     _start_reader(agent_id, process)
     if agent_type == "codex":
         try:
             with process.stdin:
-                process.stdin.write(task)
+                process.stdin.write(_codex_prompt(task))
         except OSError:
             stop_agent(agent_id)
             raise
@@ -110,9 +135,8 @@ def start_agent(task: str, agent_type: AgentType = "mock", sandbox: CodexSandbox
 @_synchronized
 def get_agents() -> list[dict[str, str | None]]:
     result = []
-    for agent_id, process in list(agents.items()):
-        if process.poll() is not None and agent_statuses[agent_id] == "running":
-            agent_statuses[agent_id] = "finished"
+    for agent_id in list(agents):
+        _refresh_status(agent_id)
         result.append({
             "agent_id": agent_id,
             "status": agent_statuses[agent_id],
@@ -128,8 +152,7 @@ def get_agent(agent_id: str) -> dict[str, str | list[str] | None] | None:
     process = agents.get(agent_id)
     if process is None:
         return None
-    if process.poll() is not None and agent_statuses[agent_id] == "running":
-        agent_statuses[agent_id] = "finished"
+    _refresh_status(agent_id)
     return {
         "agent_id": agent_id,
         "status": agent_statuses[agent_id],
@@ -137,6 +160,7 @@ def get_agent(agent_id: str) -> dict[str, str | list[str] | None] | None:
         "agent_type": agent_types[agent_id],
         "sandbox": agent_sandboxes[agent_id],
         "session_id": agent_sessions[agent_id],
+        "waiting_question": agent_waiting_questions[agent_id],
         "output": agent_outputs[agent_id].copy(),
     }
 
@@ -147,8 +171,14 @@ def stop_agent(agent_id: str) -> dict[str, str] | None:
     if process is None:
         return None
     if process.poll() is not None:
-        if agent_statuses[agent_id] == "running":
-            agent_statuses[agent_id] = "finished"
+        if agent_statuses[agent_id] == "running" and not process.stdout.closed:
+            reader = agent_readers[agent_id]
+            reader.join(timeout=3)
+            if reader.is_alive():
+                raise RuntimeError("Final process output is still being read; please retry Stop.")
+        _refresh_status(agent_id)
+        if agent_statuses[agent_id] == "waiting":
+            agent_statuses[agent_id] = "stopped"
         return {"agent_id": agent_id, "status": agent_statuses[agent_id]}
 
     if agent_types[agent_id] == "codex" and os.name == "nt":
@@ -183,22 +213,46 @@ def redirect_agent(agent_id: str, instruction: str) -> dict[str, str] | None:
     command = _codex_command(agent_sandboxes[agent_id], session_id)
     _stop_windows_tree(process)
     try:
-        # Drain the old process before adding the marker or resumed output.
-        reader = agent_readers[agent_id]
-        reader.join(timeout=3)
-        if reader.is_alive():
-            raise RuntimeError("Old process output has not closed; redirect was not started.")
-        replacement = _spawn_process(command, "codex")
+        return _resume_agent(agent_id, command, instruction, "--- Redirect ---")
     except (OSError, RuntimeError):
-        agent_statuses[agent_id] = "stopped"
+        if agents[agent_id] is process:
+            agent_statuses[agent_id] = "stopped"
         raise
-    agent_outputs[agent_id].extend(["--- Redirect ---", instruction])
+
+
+@_synchronized
+def reply_agent(agent_id: str, answer: str) -> dict[str, str] | None:
+    if not answer.strip():
+        raise ValueError("Reply answer must not be blank.")
+    if agent_id not in agents:
+        return None
+    if agent_types[agent_id] != "codex":
+        raise ValueError("Only Codex agents can receive replies.")
+    _refresh_status(agent_id)
+    if agent_statuses[agent_id] != "waiting":
+        raise ValueError("Only waiting agents can receive replies.")
+    session_id = agent_sessions[agent_id]
+    if not session_id:
+        raise ValueError("The Codex session ID is not available.")
+    command = _codex_command(agent_sandboxes[agent_id], session_id)
+    return _resume_agent(agent_id, command, answer, "--- User Reply ---")
+
+
+def _resume_agent(agent_id: str, command: str, text: str, marker: str) -> dict[str, str]:
+    # Drain the old process before adding the marker or resumed output.
+    reader = agent_readers[agent_id]
+    reader.join(timeout=3)
+    if reader.is_alive():
+        raise RuntimeError("Old process output has not closed; resume was not started.")
+    replacement = _spawn_process(command, "codex")
+    agent_outputs[agent_id].extend([marker, text])
     agents[agent_id] = replacement
+    agent_waiting_questions[agent_id] = None
     agent_statuses[agent_id] = "running"
     _start_reader(agent_id, replacement)
     try:
         with replacement.stdin:
-            replacement.stdin.write(instruction)
+            replacement.stdin.write(_codex_prompt(text))
     except OSError:
         stop_agent(agent_id)
         raise
