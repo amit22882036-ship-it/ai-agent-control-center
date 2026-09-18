@@ -14,8 +14,38 @@ function AgentDetails({ agentId, onClose, onStopped }) {
   const [deciding, setDeciding] = useState(false)
   const [decideError, setDecideError] = useState('')
 
+  const [similarAction, setSimilarAction] = useState('')
+  const [similarError, setSimilarError] = useState('')
+  const busy = stopping || redirecting || replying || deciding || Boolean(similarAction)
+
+  async function handleSimilar(disable = false) {
+    if (busy) return
+    setSimilarAction(disable ? 'disabling' : 'enabling')
+    setSimilarError('')
+    try {
+      const response = await fetch(`http://127.0.0.1:8000/agents/${agentId}/decide-similar${disable ? '/disable' : ''}`, {
+        method: 'POST',
+      })
+      const result = await response.json().catch(() => ({}))
+      if (!response.ok) {
+        throw new Error(typeof result.detail === 'string' ? result.detail : 'Unable to change similar decisions. Please try again.')
+      }
+      setAgent((current) => ({
+        ...current,
+        similar_decisions_enabled: !disable,
+        ...(disable ? {} : { status: result.status, waiting_question: null }),
+      }))
+      if (!disable) setAnswer('')
+      onStopped()
+    } catch (err) {
+      setSimilarError(err.message)
+    } finally {
+      setSimilarAction('')
+    }
+  }
+
   async function handleDecide() {
-    if (deciding || replying || stopping || redirecting) return
+    if (busy) return
     setDeciding(true)
     setDecideError('')
     try {
@@ -42,7 +72,7 @@ function AgentDetails({ agentId, onClose, onStopped }) {
 
   async function handleReply(event) {
     event.preventDefault()
-    if (!answer.trim() || replying || stopping || redirecting || deciding) return
+    if (!answer.trim() || busy) return
     setReplying(true)
     setReplyError('')
     try {
@@ -71,7 +101,7 @@ function AgentDetails({ agentId, onClose, onStopped }) {
 
   async function handleRedirect(event) {
     event.preventDefault()
-    if (!instruction.trim() || redirecting || stopping || replying || deciding) return
+    if (!instruction.trim() || busy) return
     setRedirecting(true)
     setRedirectError('')
     try {
@@ -97,7 +127,7 @@ function AgentDetails({ agentId, onClose, onStopped }) {
   }
 
   async function handleStop() {
-    if (stopping || redirecting || replying || deciding) return
+    if (busy) return
     setStopping(true)
     setStopError('')
     try {
@@ -120,7 +150,7 @@ function AgentDetails({ agentId, onClose, onStopped }) {
   }
 
   useEffect(() => {
-    if (stopping || redirecting || replying || deciding) return
+    if (busy) return
     const controller = new AbortController()
     let fetching = false
 
@@ -156,7 +186,7 @@ function AgentDetails({ agentId, onClose, onStopped }) {
       clearInterval(interval)
       controller.abort()
     }
-  }, [agentId, stopping, redirecting, replying, deciding])
+  }, [agentId, busy])
 
   return (
     <section className="agent-details" aria-labelledby="details-heading">
@@ -164,7 +194,7 @@ function AgentDetails({ agentId, onClose, onStopped }) {
         <h2 id="details-heading">Agent {agentId} details</h2>
         <div className="details-actions">
           {(agent?.status === 'running' || agent?.status === 'waiting') && (
-            <button className="stop-button" type="button" onClick={handleStop} disabled={stopping || redirecting || replying || deciding}>
+            <button className="stop-button" type="button" onClick={handleStop} disabled={busy}>
               {stopping ? 'Stopping...' : 'Stop'}
             </button>
           )}
@@ -175,6 +205,7 @@ function AgentDetails({ agentId, onClose, onStopped }) {
       {redirectError && <p className="message error" role="alert">{redirectError}</p>}
       {replyError && <p className="message error" role="alert">{replyError}</p>}
       {decideError && <p className="message error" role="alert">{decideError}</p>}
+      {similarError && <p className="message error" role="alert">{similarError}</p>}
       {error && <p className="message error" role="alert">{error}</p>}
       {!agent && !error && <p role="status">Loading agent details...</p>}
       {agent && (
@@ -194,6 +225,14 @@ function AgentDetails({ agentId, onClose, onStopped }) {
             <dt>Status</dt>
             <dd><span className={`status status-${agent.status}`}>{agent.status === 'waiting' ? 'waiting for you' : agent.status}</span></dd>
           </dl>
+          {agent.agent_type === 'codex' && agent.similar_decisions_enabled && (
+            <div className="waiting-panel">
+              <p>Auto-decide similar questions: On</p>
+              <button className="close-button" type="button" disabled={busy} onClick={() => handleSimilar(true)}>
+                {similarAction === 'disabling' ? 'Turning off...' : 'Turn off'}
+              </button>
+            </div>
+          )}
           {agent.agent_type === 'codex' && agent.status === 'waiting' && (
             <section className="waiting-panel" aria-labelledby="waiting-heading">
               <h3 id="waiting-heading">Waiting for you</h3>
@@ -206,16 +245,23 @@ function AgentDetails({ agentId, onClose, onStopped }) {
                   onChange={(event) => setAnswer(event.target.value)}
                   rows={3}
                   required
-                  disabled={replying || stopping || deciding}
+                  disabled={busy}
                 />
                 <button className="start-button" type="submit"
-                  disabled={replying || stopping || deciding || !answer.trim()}>
+                  disabled={busy || !answer.trim()}>
                   {replying ? 'Sending...' : 'Reply'}
                 </button>
                 <button className="close-button" type="button" onClick={handleDecide}
-                  disabled={deciding || replying || stopping} aria-describedby="decide-help">
+                  disabled={busy} aria-describedby="decide-help">
                   {deciding ? 'Deciding...' : 'Decide for me'}
                 </button>
+                <button className="close-button" type="button" disabled={busy}
+                  onClick={() => handleSimilar()} aria-describedby="similar-help">
+                  {similarAction === 'enabling' ? 'Enabling...' : 'Decide similar automatically'}
+                </button>
+                <p id="similar-help" className="agent-type-note">
+                  Let the agent handle this decision and materially similar decisions for this agent automatically.
+                </p>
                 <p id="decide-help" className="agent-type-note">
                   Let the agent make this decision itself and continue. This applies only this time.
                 </p>
@@ -233,10 +279,10 @@ function AgentDetails({ agentId, onClose, onStopped }) {
                   placeholder="Describe the correction for this agent"
                   rows={3}
                   required
-                  disabled={redirecting || stopping}
+                  disabled={busy}
                 />
                 <button className="start-button" type="submit"
-                  disabled={redirecting || stopping || !instruction.trim()}>
+                  disabled={busy || !instruction.trim()}>
                   {redirecting ? 'Sending...' : 'Send'}
                 </button>
               </form>

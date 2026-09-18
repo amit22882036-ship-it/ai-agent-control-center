@@ -3,6 +3,8 @@ import logging
 import re
 import subprocess
 import sys
+import json
+from dataclasses import dataclass, field
 from pathlib import Path
 from functools import wraps
 from threading import RLock, Thread
@@ -25,6 +27,19 @@ agent_sandboxes: dict[str, CodexSandbox | None] = {}
 agent_sessions: dict[str, str | None] = {}
 agent_waiting_questions: dict[str, str | None] = {}
 agent_readers: dict[str, Thread] = {}
+
+
+@dataclass
+class SimilarDecisions:
+    enabled: bool = False
+    examples: list[str] = field(default_factory=list)
+    attempted: set[str] = field(default_factory=set)
+    automatic_question: str | None = None
+    handled: bool = False
+
+
+agent_similar_decisions: dict[str, SimilarDecisions] = {}
+_similar_handled_marker = "CONTROL_CENTER_SIMILAR_HANDLED"
 _state_lock = RLock()
 _project_root = Path(__file__).resolve().parents[2]
 _ansi = re.compile(r'\x1b\[[0-?]*[ -/]*[@-~]|\x1b\][^\x07]*(?:\x07|\x1b\\)')
@@ -50,17 +65,35 @@ def _codex_prompt(text: str) -> str:
     return f"Internal control-center instruction:\n{_waiting_protocol}\n\nUser request:\n{text}"
 
 
-def _refresh_status(agent_id: str) -> None:
-    _finalize_process(agent_id, agents[agent_id])
+def _refresh_status(agent_id: str, allow_auto: bool = True) -> None:
+    _finalize_process(agent_id, agents[agent_id], allow_auto)
 
 
-def _finalize_process(agent_id: str, process: subprocess.Popen) -> None:
+def _finalize_process(agent_id: str, process: subprocess.Popen, allow_auto: bool = True) -> None:
     # The reader must finish parsing buffered output before deciding the exit state.
     with _state_lock:
         if (agents.get(agent_id) is not process or agent_statuses[agent_id] != "running"
                 or process.poll() is None or not process.stdout.closed):
             return
-        status = "waiting" if agent_waiting_questions[agent_id] else "finished"
+        question = agent_waiting_questions[agent_id]
+        policy = agent_similar_decisions[agent_id]
+        if question and policy.automatic_question and not policy.handled:
+            # A declined check is final, even if Codex rephrases the question.
+            policy.attempted.add(question.strip())
+        if (allow_auto and question and policy.enabled and policy.examples
+                and agent_sessions[agent_id] and agent_types[agent_id] == "codex"
+                and question.strip() not in policy.attempted):
+            policy.attempted.add(question.strip())
+            try:
+                command = _codex_command(agent_sandboxes[agent_id], agent_sessions[agent_id])
+                _resume_agent(agent_id, command, _similar_prompt(policy, question),
+                              "--- Automatic Similar Decision ---", history_text=question,
+                              automatic_question=question)
+                return
+            except (OSError, RuntimeError):
+                logger.exception("Automatic similar decision could not resume")
+                agent_waiting_questions[agent_id] = question
+        status = "waiting" if question else "finished"
         agent_statuses[agent_id] = status
         try:
             notifications.transition(agent_id, status, agent_tasks[agent_id])
@@ -107,6 +140,9 @@ def _read_output(agent_id: str, process: subprocess.Popen) -> None:
             agent_outputs[agent_id].append(line.rstrip("\r\n"))
             if agent_types[agent_id] == "codex" and agents.get(agent_id) is process:
                 parsed = _ansi.sub("", line).strip()
+                policy = agent_similar_decisions[agent_id]
+                if policy.automatic_question and parsed == _similar_handled_marker:
+                    policy.handled = True
                 match = _session_line.search(parsed)
                 if match:
                     agent_sessions[agent_id] = str(UUID(match[1]))
@@ -153,6 +189,7 @@ def start_agent(task: str, agent_type: AgentType = "mock", sandbox: CodexSandbox
     agent_sandboxes[agent_id] = sandbox if agent_type == "codex" else None
     agent_sessions[agent_id] = None
     agent_waiting_questions[agent_id] = None
+    agent_similar_decisions[agent_id] = SimilarDecisions()
     agents[agent_id] = process
     _start_reader(agent_id, process)
     if agent_type == "codex":
@@ -181,7 +218,7 @@ def get_agents() -> list[dict[str, str | None]]:
 
 
 @_synchronized
-def get_agent(agent_id: str) -> dict[str, str | list[str] | None] | None:
+def get_agent(agent_id: str) -> dict[str, str | bool | list[str] | None] | None:
     process = agents.get(agent_id)
     if process is None:
         return None
@@ -194,6 +231,7 @@ def get_agent(agent_id: str) -> dict[str, str | list[str] | None] | None:
         "sandbox": agent_sandboxes[agent_id],
         "session_id": agent_sessions[agent_id],
         "waiting_question": agent_waiting_questions[agent_id],
+        "similar_decisions_enabled": agent_similar_decisions[agent_id].enabled,
         "output": agent_outputs[agent_id].copy(),
     }
 
@@ -209,7 +247,7 @@ def stop_agent(agent_id: str) -> dict[str, str] | None:
             reader.join(timeout=3)
             if reader.is_alive():
                 raise RuntimeError("Final process output is still being read; please retry Stop.")
-        _refresh_status(agent_id)
+        _refresh_status(agent_id, allow_auto=False)
         if agent_statuses[agent_id] == "waiting":
             agent_statuses[agent_id] = "stopped"
             notifications.cancel(agent_id)
@@ -274,12 +312,55 @@ def decide_agent(agent_id: str) -> dict[str, str] | None:
                          "--- Delegated Decision ---", history_text="Decide for me this time")
 
 
+@_synchronized
+def decide_similar_agent(agent_id: str) -> dict[str, str] | None:
+    command = _waiting_resume_command(agent_id)
+    if command is None:
+        return None
+    question = agent_waiting_questions[agent_id]
+    if not question:
+        raise ValueError("The waiting question is not available.")
+    result = _resume_agent(agent_id, command, _delegated_decision,
+                           "--- Similar Decisions Enabled ---",
+                           history_text="Decide similar questions automatically")
+    policy = agent_similar_decisions[agent_id]
+    policy.enabled = True
+    if question not in policy.examples:
+        policy.examples.append(question)
+    policy.attempted.discard(question.strip())
+    return result
+
+
+@_synchronized
+def disable_similar_agent(agent_id: str) -> dict[str, str | bool] | None:
+    if agent_id not in agents:
+        return None
+    if agent_types[agent_id] != "codex":
+        raise ValueError("Only Codex agents support similar decisions.")
+    agent_similar_decisions[agent_id] = SimilarDecisions()
+    return {"agent_id": agent_id, "similar_decisions_enabled": False}
+
+
+def _similar_prompt(policy: SimilarDecisions, question: str) -> str:
+    return f"""The user authorized automatic decisions only for materially similar decision types and scope.
+Approved examples (JSON): {json.dumps(policy.examples)}
+Current blocked question (JSON): {json.dumps(question)}
+Conservatively determine similarity within this existing session. Do not broaden authorization
+merely because questions concern the same project. If uncertain or dissimilar, do not decide;
+end with CONTROL_CENTER_WAITING: followed by the exact current blocked question.
+If materially similar, make this decision yourself and continue the original task.
+Only after actually making that decision, emit the standalone line '{_similar_handled_marker}'
+before continuing. Never emit that line for a declined check.
+For a later unrelated blocker use the existing waiting protocol again.
+This instruction authorizes only this check, not permanent or unrestricted autonomy."""
+
+
 def _waiting_resume_command(agent_id: str) -> str | None:
     if agent_id not in agents:
         return None
     if agent_types[agent_id] != "codex":
         raise ValueError("Only Codex agents can receive replies.")
-    _refresh_status(agent_id)
+    _refresh_status(agent_id, allow_auto=False)
     if agent_statuses[agent_id] != "waiting":
         raise ValueError("Only waiting agents can receive replies.")
     session_id = agent_sessions[agent_id]
@@ -289,7 +370,8 @@ def _waiting_resume_command(agent_id: str) -> str | None:
 
 
 def _resume_agent(agent_id: str, command: str, text: str, marker: str,
-                  history_text: str | None = None) -> dict[str, str]:
+                  history_text: str | None = None,
+                  automatic_question: str | None = None) -> dict[str, str]:
     # Drain the old process before adding the marker or resumed output.
     reader = agent_readers[agent_id]
     reader.join(timeout=3)
@@ -300,6 +382,9 @@ def _resume_agent(agent_id: str, command: str, text: str, marker: str,
     agents[agent_id] = replacement
     agent_waiting_questions[agent_id] = None
     agent_statuses[agent_id] = "running"
+    policy = agent_similar_decisions[agent_id]
+    policy.automatic_question = automatic_question
+    policy.handled = False
     notifications.cancel(agent_id)
     _start_reader(agent_id, replacement)
     try:

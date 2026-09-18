@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, field_validator
 from .system_notifications import notifications
 
-from .agent_manager import AgentType, CodexSandbox, decide_agent, get_agent, get_agents, redirect_agent, reply_agent, start_agent, stop_agent
+from .agent_manager import AgentType, CodexSandbox, decide_similar_agent, disable_similar_agent, decide_agent, get_agent, get_agents, redirect_agent, reply_agent, start_agent, stop_agent
 
 app = FastAPI(title="AI Agent Control Center")
 app.add_middleware(
@@ -138,6 +138,30 @@ def decide_codex_agent(agent_id: str):
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     except (OSError, RuntimeError) as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
+    if result is None:
+        raise HTTPException(status_code=404, detail="Agent not found")
+    return result
+
+
+@app.post("/agents/{agent_id}/decide-similar")
+def decide_similar_codex_agent(agent_id: str):
+    try:
+        result = decide_similar_agent(agent_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except (OSError, RuntimeError) as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    if result is None:
+        raise HTTPException(status_code=404, detail="Agent not found")
+    return result
+
+
+@app.post("/agents/{agent_id}/decide-similar/disable")
+def disable_similar_codex_agent(agent_id: str):
+    try:
+        result = disable_similar_agent(agent_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     if result is None:
         raise HTTPException(status_code=404, detail="Agent not found")
     return result
