@@ -15,6 +15,20 @@ h1 {
   color: #526174;
 }
 
+.notification-controls {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 24px;
+  color: #526174;
+  font-size: 0.9rem;
+}
+
+.notification-controls p {
+  margin: 4px 0;
+}
+
 .agent-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));

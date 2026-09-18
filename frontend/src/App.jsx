@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import AgentDetails from './AgentDetails'
+import useAgentNotifications from './useAgentNotifications'
 import './App.css'
 
 function App() {
@@ -13,6 +14,8 @@ function App() {
   const [starting, setStarting] = useState(false)
   const [startError, setStartError] = useState('')
   const [listVersion, setListVersion] = useState(0)
+  const notifications = useAgentNotifications(setSelectedAgentId)
+  const { observeAgents } = notifications
 
   async function handleStart(event) {
     event.preventDefault()
@@ -53,6 +56,7 @@ function App() {
         if (!controller.signal.aborted) {
           setAgents(data.agents)
           setError('')
+          observeAgents(data.agents)
         }
       } catch {
         if (!controller.signal.aborted) {
@@ -70,7 +74,7 @@ function App() {
       clearInterval(interval)
       controller.abort()
     }
-  }, [listVersion])
+  }, [listVersion, observeAgents])
 
   return (
     <main className="dashboard">
@@ -78,6 +82,18 @@ function App() {
         <h1>AI Agent Control Center</h1>
         <p className="subtitle">Agents refresh automatically every 2 seconds.</p>
       </header>
+      <section className="notification-controls" aria-label="Browser notifications">
+        <button className="close-button" type="button"
+          onClick={notifications.toggleNotifications}
+          disabled={!notifications.supported || notifications.requesting}>
+          {notifications.requesting ? 'Requesting permission...'
+            : notifications.enabled ? 'Disable notifications' : 'Enable notifications'}
+        </button>
+        <div role="status">
+          <p>{notifications.status}</p>
+          {notifications.message && <p>{notifications.message}</p>}
+        </div>
+      </section>
       <section className="start-agent" aria-labelledby="start-heading">
         <h2 id="start-heading">Start new agent</h2>
         <form onSubmit={handleStart}>
