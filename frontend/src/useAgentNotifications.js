@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { createAgentNotifications } from './agentNotifications'
+import { HEARTBEAT_INTERVAL_MS, RECENT_POLL_MS, syncSystemNotifications } from './systemNotificationSync'
 
 const preferenceKey = 'ai-agent-control-center.notifications'
 
@@ -14,9 +15,47 @@ export default function useAgentNotifications(onSelect) {
   const [permission, setPermission] = useState(() => supported ? Notification.permission : 'unsupported')
   const [requesting, setRequesting] = useState(false)
   const [message, setMessage] = useState('')
-  const [tracker] = useState(() => createAgentNotifications(onSelect, setMessage))
+  const [syncError, setSyncError] = useState('')
+  const lastPoll = useRef(null)
+  const [browserDeliveryFailed, setBrowserDeliveryFailed] = useState(false)
+  const [tracker] = useState(() => createAgentNotifications(onSelect, (error) => {
+    setBrowserDeliveryFailed(true)
+    setMessage(error)
+  }))
 
   useEffect(() => () => tracker.close(), [tracker])
+
+  useEffect(() => {
+    const controller = new AbortController()
+    let syncing = false
+    async function sync() {
+      if (syncing) return
+      syncing = true
+      try {
+        await syncSystemNotifications({
+          enabled,
+          browserActive: supported && Notification.permission === 'granted'
+            && !browserDeliveryFailed && lastPoll.current !== null
+            && Date.now() - lastPoll.current < RECENT_POLL_MS,
+          signal: controller.signal,
+        })
+        if (!controller.signal.aborted) setSyncError('')
+      } catch {
+        if (!controller.signal.aborted) {
+          setSyncError('System notification settings could not be synced. Retrying automatically.')
+        }
+      } finally {
+        syncing = false
+      }
+    }
+    sync()
+    const interval = setInterval(sync, HEARTBEAT_INTERVAL_MS)
+    return () => {
+      clearInterval(interval)
+      controller.abort()
+      // Closing a tab ends the lease, not the backend notification preference.
+    }
+  }, [enabled, supported, browserDeliveryFailed])
 
   useEffect(() => {
     function refreshPermission() {
@@ -28,15 +67,27 @@ export default function useAgentNotifications(onSelect) {
       }
     }
     window.addEventListener('focus', refreshPermission)
-    return () => window.removeEventListener('focus', refreshPermission)
+    function syncStoredPreference(event) {
+      if (event.key !== preferenceKey) return
+      const value = event.newValue === 'enabled' && supported && Notification.permission === 'granted'
+      enabledRef.current = value
+      setEnabled(value)
+    }
+    window.addEventListener('storage', syncStoredPreference)
+    return () => {
+      window.removeEventListener('focus', refreshPermission)
+      window.removeEventListener('storage', syncStoredPreference)
+    }
   }, [supported])
 
   const observeAgents = useCallback((agents) => {
     // Native permission is checked again by the tracker on every transition.
     tracker.observe(agents, enabledRef.current)
+    lastPoll.current = Date.now()
   }, [tracker])
 
   function savePreference(value) {
+    setBrowserDeliveryFailed(false)
     enabledRef.current = value
     setEnabled(value)
     try {
@@ -74,8 +125,9 @@ export default function useAgentNotifications(onSelect) {
     : permission === 'denied'
       ? 'Notifications are blocked. Allow them in your browser’s site settings to enable them.'
       : enabled && permission === 'granted'
-        ? 'Notifications enabled. Keep this dashboard open to receive updates.'
+        ? 'Notifications enabled. Windows alerts continue with the dashboard closed while the backend runs.'
         : 'Notifications are off.'
 
-  return { observeAgents, toggleNotifications, enabled, supported, requesting, status, message }
+  return { observeAgents, toggleNotifications, enabled, supported, requesting, status,
+    message: [message, syncError].filter(Boolean).join(' ') }
 }

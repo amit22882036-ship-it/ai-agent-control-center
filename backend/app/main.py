@@ -1,6 +1,7 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, field_validator
+from .system_notifications import notifications
 
 from .agent_manager import AgentType, CodexSandbox, get_agent, get_agents, redirect_agent, reply_agent, start_agent, stop_agent
 
@@ -11,6 +12,22 @@ app.add_middleware(
     allow_methods=["GET", "POST"],
     allow_headers=["Content-Type"],
 )
+
+
+class NotificationPreference(BaseModel):
+    enabled: bool
+
+
+@app.post("/notifications/preferences")
+def set_notification_preference(request: NotificationPreference):
+    notifications.set_enabled(request.enabled)
+    return {"enabled": request.enabled}
+
+
+@app.post("/notifications/heartbeat")
+def notification_heartbeat():
+    notifications.heartbeat()
+    return {"status": "ok"}
 
 
 class StartAgentRequest(BaseModel):

@@ -1,4 +1,5 @@
 import os
+import logging
 import re
 import subprocess
 import sys
@@ -7,6 +8,10 @@ from functools import wraps
 from threading import RLock, Thread
 from typing import Literal
 from uuid import UUID, uuid4
+
+from .system_notifications import notifications
+
+logger = logging.getLogger(__name__)
 
 AgentType = Literal["mock", "codex"]
 CodexSandbox = Literal["read-only", "workspace-write"]
@@ -37,11 +42,29 @@ def _codex_prompt(text: str) -> str:
 
 
 def _refresh_status(agent_id: str) -> None:
-    process = agents[agent_id]
+    _finalize_process(agent_id, agents[agent_id])
+
+
+def _finalize_process(agent_id: str, process: subprocess.Popen) -> None:
     # The reader must finish parsing buffered output before deciding the exit state.
-    if (agent_statuses[agent_id] == "running" and process.poll() is not None
-            and process.stdout.closed):
-        agent_statuses[agent_id] = "waiting" if agent_waiting_questions[agent_id] else "finished"
+    with _state_lock:
+        if (agents.get(agent_id) is not process or agent_statuses[agent_id] != "running"
+                or process.poll() is None or not process.stdout.closed):
+            return
+        status = "waiting" if agent_waiting_questions[agent_id] else "finished"
+        agent_statuses[agent_id] = status
+        try:
+            notifications.transition(agent_id, status, agent_tasks[agent_id])
+        except Exception:
+            logger.exception("Could not schedule native notification")
+
+
+def _watch_process(agent_id: str, process: subprocess.Popen, reader: Thread) -> None:
+    # Separate from the reader: Redirect/Stop can join the reader while holding
+    # the state lock without deadlocking this finalizer.
+    reader.join()
+    process.wait()
+    _finalize_process(agent_id, process)
 
 
 def _synchronized(function):
@@ -88,6 +111,7 @@ def _start_reader(agent_id: str, process: subprocess.Popen) -> None:
     reader = Thread(target=_read_output, args=(agent_id, process), daemon=True)
     agent_readers[agent_id] = reader
     reader.start()
+    Thread(target=_watch_process, args=(agent_id, process, reader), daemon=True).start()
 
 
 def _spawn_process(command: str | list[str], agent_type: AgentType) -> subprocess.Popen:
@@ -179,6 +203,7 @@ def stop_agent(agent_id: str) -> dict[str, str] | None:
         _refresh_status(agent_id)
         if agent_statuses[agent_id] == "waiting":
             agent_statuses[agent_id] = "stopped"
+            notifications.cancel(agent_id)
         return {"agent_id": agent_id, "status": agent_statuses[agent_id]}
 
     if agent_types[agent_id] == "codex" and os.name == "nt":
@@ -192,6 +217,7 @@ def stop_agent(agent_id: str) -> dict[str, str] | None:
             process.wait()
 
     agent_statuses[agent_id] = "stopped"
+    notifications.cancel(agent_id)
     return {"agent_id": agent_id, "status": "stopped"}
 
 
@@ -249,6 +275,7 @@ def _resume_agent(agent_id: str, command: str, text: str, marker: str) -> dict[s
     agents[agent_id] = replacement
     agent_waiting_questions[agent_id] = None
     agent_statuses[agent_id] = "running"
+    notifications.cancel(agent_id)
     _start_reader(agent_id, replacement)
     try:
         with replacement.stdin:
