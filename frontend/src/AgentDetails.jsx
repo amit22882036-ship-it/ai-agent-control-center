@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
+import StartAgentForm from './StartAgentForm'
 
 function AgentDetails({ agentId, onClose, onStopped }) {
+  const [detailsVersion, setDetailsVersion] = useState(0)
   const [agent, setAgent] = useState(null)
   const [error, setError] = useState('')
   const [stopping, setStopping] = useState(false)
@@ -214,7 +216,7 @@ function AgentDetails({ agentId, onClose, onStopped }) {
       clearInterval(interval)
       controller.abort()
     }
-  }, [agentId, busy])
+  }, [agentId, busy, detailsVersion])
 
   return (
     <section className="agent-details" aria-labelledby="details-heading">
@@ -249,6 +251,10 @@ function AgentDetails({ agentId, onClose, onStopped }) {
                 <dd>{agent.sandbox === 'workspace-write' ? 'Workspace write' : 'Read only'}</dd>
               </>
             )}
+            <dt>Parent</dt>
+            <dd>{agent.parent_id ?? 'None / Root agent'}</dd>
+            <dt>Direct children</dt>
+            <dd>{agent.child_ids?.length ?? 0}</dd>
             <dt>Task</dt>
             <dd className="task">{agent.task}</dd>
             <dt>Status</dt>
@@ -337,6 +343,10 @@ function AgentDetails({ agentId, onClose, onStopped }) {
               </form>
             ) : <p className="agent-type-note">Redirect will be available once the Codex session starts.</p>
           )}
+          <StartAgentForm parentId={agentId} onStarted={() => {
+            setDetailsVersion((version) => version + 1)
+            onStopped()
+          }} />
           <h3 id="output-heading">Output</h3>
           <pre className="agent-output" aria-labelledby="output-heading" tabIndex={0}>
             {agent.output.length > 0 ? agent.output.join('\n') : 'No output yet'}

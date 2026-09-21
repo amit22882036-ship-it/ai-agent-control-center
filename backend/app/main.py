@@ -65,8 +65,22 @@ def health():
 
 @app.post("/agents/start")
 def start_mock_agent(request: StartAgentRequest):
+    return _start_agent_response(request)
+
+
+@app.post("/agents/{parent_id}/children/start")
+def start_child_agent(parent_id: str, request: StartAgentRequest):
+    return _start_agent_response(request, parent_id)
+
+
+def _start_agent_response(request: StartAgentRequest, parent_id: str | None = None):
     try:
-        agent_id = start_agent(request.task, request.agent_type, request.sandbox)
+        if parent_id is None:
+            agent_id = start_agent(request.task, request.agent_type, request.sandbox)
+        else:
+            agent_id = start_agent(request.task, request.agent_type, request.sandbox, parent_id=parent_id)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     except (OSError, RuntimeError) as exc:
@@ -74,6 +88,7 @@ def start_mock_agent(request: StartAgentRequest):
     return {
         "agent_id": agent_id,
         "status": "running",
+        "parent_id": parent_id,
         "task": request.task,
         "agent_type": request.agent_type,
         "sandbox": request.sandbox if request.agent_type == "codex" else None,

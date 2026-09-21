@@ -19,6 +19,7 @@ AgentType = Literal["mock", "codex"]
 CodexSandbox = Literal["read-only", "workspace-write"]
 
 agents: dict[str, subprocess.Popen] = {}
+agent_parents: dict[str, str | None] = {}
 agent_statuses: dict[str, str] = {}
 agent_outputs: dict[str, list[str]] = {}
 agent_tasks: dict[str, str] = {}
@@ -204,7 +205,10 @@ def _spawn_process(command: str | list[str], agent_type: AgentType) -> subproces
 
 
 @_synchronized
-def start_agent(task: str, agent_type: AgentType = "mock", sandbox: CodexSandbox = "read-only") -> str:
+def start_agent(task: str, agent_type: AgentType = "mock", sandbox: CodexSandbox = "read-only",
+                parent_id: str | None = None) -> str:
+    if parent_id is not None and parent_id not in agents:
+        raise LookupError("Parent agent not found")
     script_path = Path(__file__).resolve().parent.parent / "mock_agent.py"
     if agent_type not in ("mock", "codex"):
         raise ValueError("Unknown agent type")
@@ -212,6 +216,7 @@ def start_agent(task: str, agent_type: AgentType = "mock", sandbox: CodexSandbox
     agent_id = str(uuid4())
     process = _spawn_process(command, agent_type)
     agent_statuses[agent_id] = "running"
+    agent_parents[agent_id] = parent_id
     agent_outputs[agent_id] = []
     agent_tasks[agent_id] = task
     agent_types[agent_id] = agent_type
@@ -239,6 +244,7 @@ def get_agents() -> list[dict[str, str | None]]:
         _refresh_status(agent_id)
         result.append({
             "agent_id": agent_id,
+            "parent_id": agent_parents[agent_id],
             "status": agent_statuses[agent_id],
             "task": agent_tasks[agent_id],
             "agent_type": agent_types[agent_id],
@@ -259,6 +265,8 @@ def get_agent(agent_id: str) -> dict[str, str | bool | list[str] | None] | None:
         "task": agent_tasks[agent_id],
         "agent_type": agent_types[agent_id],
         "sandbox": agent_sandboxes[agent_id],
+        "parent_id": agent_parents[agent_id],
+        "child_ids": [child for child, parent in agent_parents.items() if parent == agent_id],
         "session_id": agent_sessions[agent_id],
         "waiting_question": agent_waiting_questions[agent_id],
         "similar_decisions_enabled": agent_similar_decisions[agent_id].enabled,

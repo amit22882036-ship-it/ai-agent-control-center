@@ -67,6 +67,7 @@ class AgentTests(unittest.TestCase):
         async def check():
             started = await request("POST", "/agents/start", {"task": "Review code"})
             agent_id = started["agent_id"]
+            self.assertIsNone(started['parent_id'])
             self.assertEqual(str(UUID(agent_id)), agent_id)
             self.assertNotEqual(agent_id, str(manager.agents[agent_id].pid))
             self.assertEqual((await request("GET", "/agents"))["agents"][0]["agent_id"], agent_id)
@@ -80,6 +81,13 @@ class AgentTests(unittest.TestCase):
             self.assertEqual(await request("POST", f"/agents/{agent_id}/stop"),
                              {"agent_id": agent_id, "status": "stopped"})
             self.assertEqual((await request("GET", f"/agents/{agent_id}"))["status"], "stopped")
+            child = await request('POST', f'/agents/{agent_id}/children/start', {'task': 'Child task'})
+            child_id = child['agent_id']
+            self.assertEqual(child['parent_id'], agent_id)
+            self.assertNotEqual(child_id, agent_id)
+            self.assertEqual((await request('GET', f'/agents/{child_id}'))['parent_id'], agent_id)
+            self.assertEqual((await request('GET', f'/agents/{agent_id}'))['child_ids'], [child_id])
+            await request('POST', '/agents/missing/children/start', {'task': 'Child task'}, 404)
             missing = str(uuid4())
             await request("GET", f"/agents/{missing}", status=404)
             await request("POST", f"/agents/{missing}/stop", status=404)
@@ -99,7 +107,7 @@ class AgentTests(unittest.TestCase):
         for registry in (manager.agents, manager.agent_outputs, manager.agent_tasks,
                          manager.agent_statuses, manager.agent_types, manager.agent_sandboxes,
                          manager.agent_sessions, manager.agent_readers, manager.agent_waiting_questions,
-                         manager.agent_similar_decisions, manager.agent_always_decisions):
+                         manager.agent_similar_decisions, manager.agent_always_decisions, manager.agent_parents):
             registry.clear()
 
     def wait_for_output(self, agent_id):

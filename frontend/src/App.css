@@ -29,10 +29,26 @@ h1 {
   margin: 4px 0;
 }
 
-.agent-grid {
+.agent-tree {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
   gap: 20px;
+  list-style: none;
+  margin: 20px 0 0;
+  padding: 0;
+}
+
+.agent-children {
+  margin-left: clamp(12px, 3vw, 28px);
+  padding-left: 8px;
+  border-left: 2px solid #dce2ea;
+}
+
+.agent-card h2 {
+  overflow-wrap: anywhere;
+}
+
+.agent-details > .start-agent {
+  margin-top: 24px;
 }
 
 .agent-card,
