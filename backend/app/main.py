@@ -2,6 +2,8 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.responses import StreamingResponse
+from .realtime import changes
 from pydantic import BaseModel, field_validator
 from .system_notifications import notifications
 from .agent_manager import initialize_persistence, shutdown_agents
@@ -224,3 +226,9 @@ def stop_agent_branch(agent_id: str):
     if result is None:
         raise HTTPException(status_code=404, detail="Agent not found")
     return result
+
+
+@app.get("/events")
+async def agent_events():
+    return StreamingResponse(changes.stream(), media_type="text/event-stream",
+                             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})

@@ -8,7 +8,7 @@ A local dashboard for starting, stopping, and monitoring multiple agents. The Re
 - **Codex agents:** run tasks through the installed Codex CLI, using this repository's root as the working directory.
 - **Codex sandbox modes:** `read-only` is the default; `workspace-write` allows Codex to modify files in this project. Choose the mode before starting a Codex agent.
 - **Start and stop:** enter a task and select an agent type to start a run. Select an agent to view its details and stop it while it is running.
-- **Status monitoring and live output:** agent cards and selected-agent details refresh every two seconds, showing `running`, `finished`, or `stopped` status and captured standard output/error.
+- **Status monitoring and live output:** SSE change notifications refresh agent cards and selected-agent details from the REST API. If the stream is unavailable, the dashboard falls back to refreshing every two seconds and reconnects automatically. Status and captured output remain available through the existing REST endpoints.
 
 Agent records, hierarchy, output, sessions, and autonomy settings are stored in local SQLite at `data/control_center.sqlite3`. Set `CONTROL_CENTER_DB_PATH` to use a different path. Use one backend worker for this local process manager. The database and sidecar files are ignored by Git.
 

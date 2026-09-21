@@ -13,6 +13,7 @@ from uuid import UUID, uuid4
 
 from .system_notifications import notifications
 from .persistence import AgentStore
+from .realtime import changes
 
 logger = logging.getLogger(__name__)
 
@@ -150,22 +151,30 @@ def _synchronized(function):
     return wrapped
 
 
-def _save_agent(agent_id: str, output_lines=(), truncate_output_to=None) -> None:
+def _emit_agent_change(agent_id: str) -> None:
+    try:
+        changes.publish(agent_id)
+    except Exception:
+        logger.exception("Could not publish agent invalidation")
+
+
+def _save_agent(agent_id: str, output_lines=(), truncate_output_to=None, emit=True) -> None:
     # Readers never take _state_lock: Stop/Redirect may join them while holding it.
     # This separate lock serializes output + durable metadata writes only.
     with _data_lock:
-        if _store is None:
-            return
-        similar = agent_similar_decisions[agent_id]
-        always = agent_always_decisions[agent_id]
-        _store.save_agent({
-            "agent_id": agent_id, "parent_id": agent_parents[agent_id],
-            "task": agent_tasks[agent_id], "agent_type": agent_types[agent_id],
-            "sandbox": agent_sandboxes[agent_id], "status": agent_statuses[agent_id],
-            "session_id": agent_sessions[agent_id], "waiting_question": agent_waiting_questions[agent_id],
-            "similar_decisions_enabled": similar.enabled, "similar_examples": similar.examples.copy(),
-            "always_decide_enabled": always.enabled, "always_decide_configured": always.configured,
-        }, output_lines, truncate_output_to)
+        if _store is not None:
+            similar = agent_similar_decisions[agent_id]
+            always = agent_always_decisions[agent_id]
+            _store.save_agent({
+                "agent_id": agent_id, "parent_id": agent_parents[agent_id],
+                "task": agent_tasks[agent_id], "agent_type": agent_types[agent_id],
+                "sandbox": agent_sandboxes[agent_id], "status": agent_statuses[agent_id],
+                "session_id": agent_sessions[agent_id], "waiting_question": agent_waiting_questions[agent_id],
+                "similar_decisions_enabled": similar.enabled, "similar_examples": similar.examples.copy(),
+                "always_decide_enabled": always.enabled, "always_decide_configured": always.configured,
+            }, output_lines, truncate_output_to)
+        if emit:
+            _emit_agent_change(agent_id)
 
 
 @_synchronized
@@ -203,7 +212,7 @@ def initialize_persistence(path=None) -> None:
                 marker = ['--- Backend Restart ---',
                           'Agent was running when the backend stopped and cannot be safely reattached. Marked stopped.']
                 agent_outputs[key].extend(marker)
-                _save_agent(key, marker)
+                _save_agent(key, marker, emit=False)
 
 
 @_synchronized
@@ -277,7 +286,7 @@ def _read_output(agent_id: str, process: subprocess.Popen) -> None:
                         question = parsed[len(_waiting_marker):].strip()
                         if question:
                             agent_waiting_questions[agent_id] = question
-                _save_agent(agent_id, [line.rstrip("\r\n")])
+                _save_agent(agent_id, [line.rstrip("\r\n")], emit=agents.get(agent_id) is process)
 
 
 def _start_reader(agent_id: str, process: subprocess.Popen) -> None:

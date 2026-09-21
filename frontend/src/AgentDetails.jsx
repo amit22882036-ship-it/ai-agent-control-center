@@ -1,7 +1,9 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { createRefreshQueue } from './agentEventStream.mjs'
 import StartAgentForm from './StartAgentForm'
 
-function AgentDetails({ agentId, onClose, onStopped }) {
+function AgentDetails({ agentId, onClose, onStopped, refreshVersion }) {
+  const refreshRef = useRef(null)
   const [detailsVersion, setDetailsVersion] = useState(0)
   const [agent, setAgent] = useState(null)
   const [error, setError] = useState('')
@@ -208,11 +210,8 @@ function AgentDetails({ agentId, onClose, onStopped }) {
   useEffect(() => {
     if (busy) return
     const controller = new AbortController()
-    let fetching = false
 
     async function fetchDetails() {
-      if (fetching) return
-      fetching = true
       try {
         const response = await fetch(`http://127.0.0.1:8000/agents/${agentId}`, {
           signal: controller.signal,
@@ -231,18 +230,21 @@ function AgentDetails({ agentId, onClose, onStopped }) {
         if (!controller.signal.aborted) {
           setError(`${err.message} Retrying automatically.`)
         }
-      } finally {
-        fetching = false
       }
     }
 
-    fetchDetails()
-    const interval = setInterval(fetchDetails, 2000)
+    const queue = createRefreshQueue(fetchDetails)
+    refreshRef.current = queue.request
     return () => {
-      clearInterval(interval)
+      refreshRef.current = null
+      queue.dispose()
       controller.abort()
     }
-  }, [agentId, busy, detailsVersion])
+  }, [agentId, busy])
+
+  useEffect(() => {
+    refreshRef.current?.(true)
+  }, [agentId, busy, detailsVersion, refreshVersion])
 
   return (
     <section className="agent-details" aria-labelledby="details-heading">

@@ -1,8 +1,9 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import AgentDetails from './AgentDetails'
 import StartAgentForm from './StartAgentForm'
 import AgentTree from './AgentTree'
 import useAgentNotifications from './useAgentNotifications'
+import { connectAgentEvents, createRefreshQueue } from './agentEventStream.mjs'
 import './App.css'
 
 function App() {
@@ -11,16 +12,15 @@ function App() {
   const [error, setError] = useState('')
   const [selectedAgentId, setSelectedAgentId] = useState(null)
   const [listVersion, setListVersion] = useState(0)
+  const [detailsRefresh, setDetailsRefresh] = useState(0)
+  const refreshRef = useRef(null)
   const notifications = useAgentNotifications(setSelectedAgentId)
   const { observeAgents } = notifications
 
   useEffect(() => {
     const controller = new AbortController()
-    let fetching = false
 
     async function fetchAgents() {
-      if (fetching) return
-      fetching = true
       try {
         const response = await fetch('http://127.0.0.1:8000/agents', {
           signal: controller.signal,
@@ -37,24 +37,34 @@ function App() {
           setError('Unable to load agents. Check that the backend is running.')
         }
       } finally {
-        fetching = false
         if (!controller.signal.aborted) setLoading(false)
       }
     }
 
-    fetchAgents()
-    const interval = setInterval(fetchAgents, 2000)
+    const queue = createRefreshQueue(fetchAgents)
+    const refresh = () => {
+      queue.request(true)
+      setDetailsRefresh((version) => version + 1)
+    }
+    refreshRef.current = refresh
+    const disconnect = connectAgentEvents({ refresh })
     return () => {
-      clearInterval(interval)
+      refreshRef.current = null
+      disconnect()
+      queue.dispose()
       controller.abort()
     }
-  }, [listVersion, observeAgents])
+  }, [observeAgents])
+
+  useEffect(() => {
+    if (listVersion > 0) refreshRef.current?.()
+  }, [listVersion])
 
   return (
     <main className="dashboard">
       <header>
         <h1>AI Agent Control Center</h1>
-        <p className="subtitle">Agents refresh automatically every 2 seconds.</p>
+        <p className="subtitle">Live agent updates with automatic polling fallback.</p>
       </header>
       <section className="notification-controls" aria-label="Browser notifications">
         <button className="close-button" type="button"
@@ -81,6 +91,7 @@ function App() {
         <AgentDetails
           key={selectedAgentId}
           agentId={selectedAgentId}
+          refreshVersion={detailsRefresh}
           onClose={() => setSelectedAgentId(null)}
           onStopped={() => setListVersion((version) => version + 1)}
         />
