@@ -10,7 +10,9 @@ A local dashboard for starting, stopping, and monitoring multiple agents. The Re
 - **Start and stop:** enter a task and select an agent type to start a run. Select an agent to view its details and stop it while it is running.
 - **Status monitoring and live output:** agent cards and selected-agent details refresh every two seconds, showing `running`, `finished`, or `stopped` status and captured standard output/error.
 
-Agent records and output are held in backend memory and are not persisted across backend restarts. `finished` means the process exited; it does not distinguish success from failure.
+Agent records, hierarchy, output, sessions, and autonomy settings are stored in local SQLite at `data/control_center.sqlite3`. Set `CONTROL_CENTER_DB_PATH` to use a different path. Use one backend worker for this local process manager. The database and sidecar files are ignored by Git.
+
+On normal shutdown, running agents are stopped; waiting agents stay waiting. After a crash, records last saved as running become stopped with a restart marker. No old PID is reattached or killed. Recovered waiting Codex agents can Reply or delegate through their saved session. Loading never starts agents or replays historical notifications. Autonomy settings survive, but temporary attempt flags reset. `finished` means the process exited; it does not distinguish success from failure.
 
 ## Requirements
 

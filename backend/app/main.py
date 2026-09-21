@@ -1,11 +1,23 @@
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, field_validator
 from .system_notifications import notifications
+from .agent_manager import initialize_persistence, shutdown_agents
 
 from .agent_manager import AgentType, CodexSandbox, decide_always_agent, disable_always_agent, decide_similar_agent, disable_similar_agent, decide_agent, get_agent, get_agents, redirect_agent, reply_agent, start_agent, stop_agent, stop_branch
 
-app = FastAPI(title="AI Agent Control Center")
+@asynccontextmanager
+async def lifespan(app):
+    initialize_persistence()
+    try:
+        yield
+    finally:
+        shutdown_agents()
+
+
+app = FastAPI(title="AI Agent Control Center", lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],

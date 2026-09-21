@@ -126,7 +126,7 @@ class CompletionTests(unittest.TestCase):
         for output, expected in [('Done', 'finished'), ('CONTROL_CENTER_WAITING: Which file?', 'waiting')]:
             def spawn(command, agent_type):
                 return subprocess.Popen(
-                    [sys.executable, '-c', 'import sys; sys.stdin.read(); print(sys.argv[1], flush=True)', output],
+                    [sys.executable, '-c', 'import sys; sys.stdin.read(); print("codex", flush=True); print(sys.argv[1], flush=True)', output],
                     stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
             with patch.object(manager, '_spawn_process', side_effect=spawn), \
                  patch.object(manager, '_codex_command', return_value='fixed command'), \
@@ -138,7 +138,7 @@ class CompletionTests(unittest.TestCase):
                     self.assertLess(time.monotonic(), deadline)
                     time.sleep(0.01)
                 self.assertEqual(manager.agent_statuses[agent_id], expected)
-                self.assertEqual(manager.agent_outputs[agent_id], [output])
+                self.assertEqual(manager.agent_outputs[agent_id], ['codex', output])
                 notify.assert_called_once_with(agent_id, expected, 'Review task')
                 manager.get_agents()
                 manager.get_agent(agent_id)
@@ -147,7 +147,7 @@ class CompletionTests(unittest.TestCase):
     def test_buffered_output_must_be_parsed_first(self):
         agent_id, process = self.fake_agent()
         process.poll.return_value = 0
-        process.stdout = io.StringIO('CONTROL_CENTER_WAITING: Which module?\n')
+        process.stdout = io.StringIO('codex\nCONTROL_CENTER_WAITING: Which module?\n')
         with patch.object(manager.notifications, 'transition') as notify:
             manager._finalize_process(agent_id, process)
             self.assertEqual(manager.agent_statuses[agent_id], 'running')

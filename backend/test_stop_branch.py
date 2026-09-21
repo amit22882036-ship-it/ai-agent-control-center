@@ -100,7 +100,7 @@ class StopBranchTests(unittest.TestCase):
                 manager.agent_similar_decisions[key].examples.append('Question')
             else:
                 manager.agent_always_decisions[key].enabled = True
-            process.stdout = io.StringIO('CONTROL_CENTER_WAITING: Question\n')
+            process.stdout = io.StringIO('codex\nCONTROL_CENTER_WAITING: Question\n')
             process.poll.return_value = 0
             manager.agent_readers[key].join.side_effect = lambda timeout=None, k=key, p=process: manager._read_output(k, p)
         with patch.object(manager, '_spawn_process') as spawn, \

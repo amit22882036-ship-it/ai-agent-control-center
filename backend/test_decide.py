@@ -70,6 +70,7 @@ class DecideTests(unittest.TestCase):
                 'prompt = sys.stdin.read()\n'
                 f'print("session id: {session_id}", flush=True)\n'
                 'print(json.dumps({"args": sys.argv[1:], "prompt": prompt, "cwd": os.getcwd()}), flush=True)\n'
+                'print("codex", flush=True)\n'
                 'if "The user has delegated this current decision to you." in prompt:\n'
                 '    time.sleep(60)\n'
                 'elif "Ask a different question" in prompt:\n'

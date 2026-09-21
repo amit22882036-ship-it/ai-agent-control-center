@@ -24,18 +24,18 @@ class WaitingTests(unittest.TestCase):
     def test_marker_detection_and_exit(self):
         agent_id, process = self.fake_agent()
         line = '\x1b[35mCONTROL_CENTER_WAITING:\x1b[0m Which module should I inspect?'
-        process.stdout = io.StringIO(line + '\n')
+        process.stdout = io.StringIO('codex\n' + line + '\n')
         manager._read_output(agent_id, process)
         self.assertEqual(manager.get_agent(agent_id)["status"], "running")
         self.assertEqual(manager.get_agent(agent_id)["waiting_question"], "Which module should I inspect?")
-        self.assertEqual(manager.get_agent(agent_id)["output"], [line])
+        self.assertEqual(manager.get_agent(agent_id)["output"], ['codex', line])
         process.poll.return_value = 0
         self.assertEqual(manager.get_agent(agent_id)["status"], "waiting")
         self.assertEqual(manager.get_agents()[0]["status"], "waiting")
 
     def test_exit_waits_for_buffered_marker(self):
         agent_id, process = self.fake_agent()
-        process.stdout = io.StringIO('CONTROL_CENTER_WAITING: Pick a module.\n')
+        process.stdout = io.StringIO('codex\nCONTROL_CENTER_WAITING: Pick a module.\n')
         process.poll.return_value = 0
         self.assertEqual(manager.get_agent(agent_id)["status"], "running")
         manager._read_output(agent_id, process)
@@ -46,18 +46,18 @@ class WaitingTests(unittest.TestCase):
                        'Example CONTROL_CENTER_WAITING: Choose?', 'CONTROL_CENTER_WAITING:   ',
                        'Normal completion'):
             agent_id, process = self.fake_agent()
-            process.stdout = io.StringIO(output + '\n')
+            process.stdout = io.StringIO('codex\n' + output + '\n')
             manager._read_output(agent_id, process)
             process.poll.return_value = 0
             self.assertEqual(manager.get_agent(agent_id)["status"], "finished")
             self.assertIsNone(manager.get_agent(agent_id)["waiting_question"])
         mock_id, mock_process = self.fake_agent('mock')
-        mock_process.stdout = io.StringIO('CONTROL_CENTER_WAITING: Question?\n')
+        mock_process.stdout = io.StringIO('codex\nCONTROL_CENTER_WAITING: Question?\n')
         manager._read_output(mock_id, mock_process)
         mock_process.poll.return_value = 0
         self.assertEqual(manager.get_agent(mock_id)["status"], 'finished')
         agent_id, old = self.fake_agent()
-        old.stdout = io.StringIO('CONTROL_CENTER_WAITING: Stale question?\n')
+        old.stdout = io.StringIO('codex\nCONTROL_CENTER_WAITING: Stale question?\n')
         with patch.dict(manager.agents, {agent_id: object()}):
             manager._read_output(agent_id, old)
         self.assertIsNone(manager.get_agent(agent_id)["waiting_question"])
@@ -106,14 +106,14 @@ class WaitingTests(unittest.TestCase):
             ('CONTROL_CENTER_WAITING: Choose a module?\n', 'stopped'),
         ):
             agent_id, process = self.fake_agent()
-            process.stdout = io.StringIO(output)
+            process.stdout = io.StringIO('codex\n' + output)
             process.poll.return_value = 0
             reader = manager.agent_readers[agent_id]
             reader.join.side_effect = lambda timeout: manager._read_output(agent_id, process)
             result = manager.stop_agent(agent_id)
             self.assertEqual(result['status'], expected)
             self.assertEqual(manager.get_agent(agent_id)['status'], expected)
-            self.assertEqual(manager.get_agent(agent_id)['output'], [output.rstrip('\n')])
+            self.assertEqual(manager.get_agent(agent_id)['output'], ['codex', output.rstrip('\n')])
 
     def test_stop_does_not_guess_status_when_output_is_still_pending(self):
         agent_id, process = self.fake_agent()
@@ -159,6 +159,7 @@ class WaitingTests(unittest.TestCase):
                 'prompt = sys.stdin.read()\n'
                 f'print("session id: {session_id}", flush=True)\n'
                 'print(json.dumps({"args": sys.argv[1:], "prompt": prompt, "cwd": os.getcwd()}), flush=True)\n'
+                'print("codex", flush=True)\n'
                 'time.sleep(0.2)\n'
                 'print("CONTROL_CENTER_WAITING: Which module next?", flush=True)\n')
             with patch.dict(os.environ, {'APPDATA': directory}):

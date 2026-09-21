@@ -12,13 +12,14 @@ from typing import Literal
 from uuid import UUID, uuid4
 
 from .system_notifications import notifications
+from .persistence import AgentStore
 
 logger = logging.getLogger(__name__)
 
 AgentType = Literal["mock", "codex"]
 CodexSandbox = Literal["read-only", "workspace-write"]
 
-agents: dict[str, subprocess.Popen] = {}
+agents: dict[str, subprocess.Popen | None] = {}
 agent_parents: dict[str, str | None] = {}
 agent_statuses: dict[str, str] = {}
 agent_outputs: dict[str, list[str]] = {}
@@ -52,6 +53,9 @@ _always_handled_marker = "CONTROL_CENTER_ALWAYS_HANDLED"
 agent_similar_decisions: dict[str, SimilarDecisions] = {}
 _similar_handled_marker = "CONTROL_CENTER_SIMILAR_HANDLED"
 _state_lock = RLock()
+_data_lock = RLock()
+_store: AgentStore | None = None
+_shutting_down = False
 _project_root = Path(__file__).resolve().parents[2]
 _ansi = re.compile(r'\x1b\[[0-?]*[ -/]*[@-~]|\x1b\][^\x07]*(?:\x07|\x1b\\)')
 _session_line = re.compile(r'\bsession id:\s*([0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12})\b', re.I)
@@ -80,12 +84,13 @@ def _refresh_status(agent_id: str, allow_auto: bool = True) -> None:
     _finalize_process(agent_id, agents[agent_id], allow_auto)
 
 
-def _finalize_process(agent_id: str, process: subprocess.Popen, allow_auto: bool = True) -> None:
+def _finalize_process(agent_id: str, process: subprocess.Popen | None, allow_auto: bool = True) -> None:
     # The reader must finish parsing buffered output before deciding the exit state.
     with _state_lock:
-        if (agents.get(agent_id) is not process or agent_statuses[agent_id] != "running"
+        if (process is None or agents.get(agent_id) is not process or agent_statuses[agent_id] != "running"
                 or process.poll() is None or not process.stdout.closed):
             return
+        allow_auto = allow_auto and not _shutting_down
         question = agent_waiting_questions[agent_id]
         policy = agent_similar_decisions[agent_id]
         always = agent_always_decisions[agent_id]
@@ -122,6 +127,7 @@ def _finalize_process(agent_id: str, process: subprocess.Popen, allow_auto: bool
                 agent_waiting_questions[agent_id] = question
         status = "waiting" if question else "finished"
         agent_statuses[agent_id] = status
+        _save_agent(agent_id)
         try:
             notifications.transition(agent_id, status, agent_tasks[agent_id])
         except Exception:
@@ -144,6 +150,87 @@ def _synchronized(function):
     return wrapped
 
 
+def _save_agent(agent_id: str, output_lines=(), truncate_output_to=None) -> None:
+    # Readers never take _state_lock: Stop/Redirect may join them while holding it.
+    # This separate lock serializes output + durable metadata writes only.
+    with _data_lock:
+        if _store is None:
+            return
+        similar = agent_similar_decisions[agent_id]
+        always = agent_always_decisions[agent_id]
+        _store.save_agent({
+            "agent_id": agent_id, "parent_id": agent_parents[agent_id],
+            "task": agent_tasks[agent_id], "agent_type": agent_types[agent_id],
+            "sandbox": agent_sandboxes[agent_id], "status": agent_statuses[agent_id],
+            "session_id": agent_sessions[agent_id], "waiting_question": agent_waiting_questions[agent_id],
+            "similar_decisions_enabled": similar.enabled, "similar_examples": similar.examples.copy(),
+            "always_decide_enabled": always.enabled, "always_decide_configured": always.configured,
+        }, output_lines, truncate_output_to)
+
+
+@_synchronized
+def initialize_persistence(path=None) -> None:
+    """Explicit startup only. Restored logical agents have no attached processes."""
+    global _store, _shutting_down
+    if any(process is not None for process in agents.values()):
+        raise RuntimeError("Cannot reload persistence while managed processes are attached")
+    store = AgentStore(path)
+    records = store.load_agents()
+    with _data_lock:
+        for registry in (agents, agent_parents, agent_statuses, agent_outputs, agent_tasks, agent_types,
+                         agent_sandboxes, agent_sessions, agent_waiting_questions, agent_readers,
+                         agent_similar_decisions, agent_always_decisions):
+            registry.clear()
+        _store = store
+        _shutting_down = False
+        for record in records:
+            key = record['agent_id']
+            agents[key] = None
+            agent_parents[key] = record['parent_id']
+            agent_tasks[key] = record['task']
+            agent_types[key] = record['agent_type']
+            agent_sandboxes[key] = record['sandbox']
+            agent_statuses[key] = record['status']
+            agent_sessions[key] = record['session_id']
+            agent_waiting_questions[key] = record['waiting_question']
+            agent_outputs[key] = record['output']
+            agent_similar_decisions[key] = SimilarDecisions(
+                enabled=bool(record['similar_decisions_enabled']), examples=record['similar_examples'])
+            agent_always_decisions[key] = AlwaysDecisions(
+                enabled=bool(record['always_decide_enabled']), configured=bool(record['always_decide_configured']))
+            if record['status'] == 'running':
+                agent_statuses[key] = 'stopped'
+                marker = ['--- Backend Restart ---',
+                          'Agent was running when the backend stopped and cannot be safely reattached. Marked stopped.']
+                agent_outputs[key].extend(marker)
+                _save_agent(key, marker)
+
+
+@_synchronized
+def shutdown_agents() -> list[dict[str, str]]:
+    """Stop only live work, drain output, and leave genuine waits resumable."""
+    global _shutting_down
+    _shutting_down = True
+    failures = []
+    for key, process in list(agents.items()):
+        try:
+            reader = agent_readers.get(key)
+            if process is not None and process.poll() is not None and reader is not None:
+                reader.join(timeout=3)
+            _refresh_status(key, allow_auto=False)
+            if agent_statuses[key] == 'running':
+                stop_agent(key)
+            if reader is not None:
+                reader.join(timeout=3)
+                if reader.is_alive():
+                    raise RuntimeError('Agent output did not close during shutdown')
+            _save_agent(key)
+        except Exception as exc:
+            logger.exception('Could not shut down agent %s', key)
+            failures.append({'agent_id': key, 'error': str(exc)})
+    return failures
+
+
 def _codex_command(sandbox: CodexSandbox = "read-only", session_id: str | None = None) -> str:
     if sandbox not in ("read-only", "workspace-write"):
         raise ValueError("Unknown Codex sandbox")
@@ -162,24 +249,35 @@ def _codex_command(sandbox: CodexSandbox = "read-only", session_id: str | None =
 
 
 def _read_output(agent_id: str, process: subprocess.Popen) -> None:
+    # CLI section state belongs to this reader/process, never to the logical agent.
+    section = "other"
     with process.stdout as stdout:
         for line in stdout:
-            agent_outputs[agent_id].append(line.rstrip("\r\n"))
-            if agent_types[agent_id] == "codex" and agents.get(agent_id) is process:
-                parsed = _ansi.sub("", line).strip()
-                policy = agent_similar_decisions[agent_id]
-                if policy.automatic_question and parsed == _similar_handled_marker:
-                    policy.handled = True
-                always = agent_always_decisions[agent_id]
-                if always.automatic_attempt and parsed == _always_handled_marker:
-                    always.handled = True
-                match = _session_line.search(parsed)
-                if match:
-                    agent_sessions[agent_id] = str(UUID(match[1]))
-                if parsed.startswith(_waiting_marker):
-                    question = parsed[len(_waiting_marker):].strip()
-                    if question:
-                        agent_waiting_questions[agent_id] = question
+            with _data_lock:
+                agent_outputs[agent_id].append(line.rstrip("\r\n"))
+                if agent_types[agent_id] == "codex" and agents.get(agent_id) is process:
+                    parsed = _ansi.sub("", line).strip()
+                    if parsed == "codex":
+                        section = "codex"
+                    elif parsed == "user":
+                        section = "user"
+                    elif parsed in {"thinking", "exec", "tool", "system", "developer", "file update", "tokens used"} or parsed.startswith(
+                            ("mcp:", "mcp startup:", "warning:", "error:", "OpenAI Codex ")):
+                        section = "other"
+                    policy = agent_similar_decisions[agent_id]
+                    if section == "codex" and policy.automatic_question and parsed == _similar_handled_marker:
+                        policy.handled = True
+                    always = agent_always_decisions[agent_id]
+                    if section == "codex" and always.automatic_attempt and parsed == _always_handled_marker:
+                        always.handled = True
+                    match = _session_line.search(parsed)
+                    if match:
+                        agent_sessions[agent_id] = str(UUID(match[1]))
+                    if section == "codex" and parsed.startswith(_waiting_marker):
+                        question = parsed[len(_waiting_marker):].strip()
+                        if question:
+                            agent_waiting_questions[agent_id] = question
+                _save_agent(agent_id, [line.rstrip("\r\n")])
 
 
 def _start_reader(agent_id: str, process: subprocess.Popen) -> None:
@@ -226,6 +324,7 @@ def start_agent(task: str, agent_type: AgentType = "mock", sandbox: CodexSandbox
     agent_similar_decisions[agent_id] = SimilarDecisions()
     agent_always_decisions[agent_id] = AlwaysDecisions()
     agents[agent_id] = process
+    _save_agent(agent_id)
     _start_reader(agent_id, process)
     if agent_type == "codex":
         try:
@@ -255,8 +354,7 @@ def get_agents() -> list[dict[str, str | None]]:
 
 @_synchronized
 def get_agent(agent_id: str) -> dict[str, str | bool | list[str] | None] | None:
-    process = agents.get(agent_id)
-    if process is None:
+    if agent_id not in agents:
         return None
     _refresh_status(agent_id)
     return {
@@ -277,11 +375,11 @@ def get_agent(agent_id: str) -> dict[str, str | bool | list[str] | None] | None:
 
 @_synchronized
 def stop_agent(agent_id: str) -> dict[str, str] | None:
-    process = agents.get(agent_id)
-    if process is None:
+    if agent_id not in agents:
         return None
-    if process.poll() is not None:
-        if agent_statuses[agent_id] == "running" and not process.stdout.closed:
+    process = agents[agent_id]
+    if process is None or process.poll() is not None:
+        if process is not None and agent_statuses[agent_id] == "running" and not process.stdout.closed:
             reader = agent_readers[agent_id]
             reader.join(timeout=3)
             if reader.is_alive():
@@ -290,6 +388,7 @@ def stop_agent(agent_id: str) -> dict[str, str] | None:
         if agent_statuses[agent_id] == "waiting":
             agent_statuses[agent_id] = "stopped"
             notifications.cancel(agent_id)
+            _save_agent(agent_id)
         return {"agent_id": agent_id, "status": agent_statuses[agent_id]}
 
     if agent_types[agent_id] == "codex" and os.name == "nt":
@@ -304,6 +403,7 @@ def stop_agent(agent_id: str) -> dict[str, str] | None:
 
     agent_statuses[agent_id] = "stopped"
     notifications.cancel(agent_id)
+    _save_agent(agent_id)
     return {"agent_id": agent_id, "status": "stopped"}
 
 
@@ -344,12 +444,12 @@ def stop_branch(agent_id: str) -> dict | None:
 def redirect_agent(agent_id: str, instruction: str) -> dict[str, str] | None:
     if not instruction.strip():
         raise ValueError("Redirect instruction must not be blank.")
-    process = agents.get(agent_id)
-    if process is None:
+    if agent_id not in agents:
         return None
+    process = agents[agent_id]
     if agent_types[agent_id] != "codex":
         raise ValueError("Only Codex agents can be redirected.")
-    if process.poll() is not None or agent_statuses[agent_id] != "running":
+    if process is None or process.poll() is not None or agent_statuses[agent_id] != "running":
         raise ValueError("Only running agents can be redirected.")
     session_id = agent_sessions[agent_id]
     if not session_id:
@@ -362,6 +462,7 @@ def redirect_agent(agent_id: str, instruction: str) -> dict[str, str] | None:
     except (OSError, RuntimeError):
         if agents[agent_id] is process:
             agent_statuses[agent_id] = "stopped"
+            _save_agent(agent_id)
         raise
 
 
@@ -400,6 +501,7 @@ def decide_similar_agent(agent_id: str) -> dict[str, str] | None:
     if question not in policy.examples:
         policy.examples.append(question)
     policy.attempted.discard(question.strip())
+    _save_agent(agent_id)
     return result
 
 
@@ -410,6 +512,7 @@ def disable_similar_agent(agent_id: str) -> dict[str, str | bool] | None:
     if agent_types[agent_id] != "codex":
         raise ValueError("Only Codex agents support similar decisions.")
     agent_similar_decisions[agent_id] = SimilarDecisions()
+    _save_agent(agent_id)
     return {"agent_id": agent_id, "similar_decisions_enabled": False}
 
 
@@ -428,6 +531,7 @@ def decide_always_agent(agent_id: str) -> dict[str, str] | None:
                            always_decision=True)
     agent_always_decisions[agent_id].enabled = True
     agent_always_decisions[agent_id].configured = True
+    _save_agent(agent_id)
     return result
 
 
@@ -439,6 +543,7 @@ def disable_always_agent(agent_id: str) -> dict[str, str | bool] | None:
         raise ValueError("Only Codex agents support Always Decide.")
     agent_always_decisions[agent_id].enabled = False
     agent_always_decisions[agent_id].configured = True
+    _save_agent(agent_id)
     return {"agent_id": agent_id, "always_decide_enabled": False}
 
 
@@ -494,14 +599,16 @@ def _resume_agent(agent_id: str, command: str, text: str, marker: str,
                   automatic_question: str | None = None,
                   always_decision: bool = False, automatic_always: bool = False) -> dict[str, str]:
     # Drain the old process before adding the marker or resumed output.
-    reader = agent_readers[agent_id]
-    reader.join(timeout=3)
-    if reader.is_alive():
-        raise RuntimeError("Old process output has not closed; resume was not started.")
+    reader = agent_readers.get(agent_id)
+    if reader is not None:
+        reader.join(timeout=3)
+        if reader.is_alive():
+            raise RuntimeError("Old process output has not closed; resume was not started.")
     previous = (agents[agent_id], agent_statuses[agent_id], agent_waiting_questions[agent_id],
                 agent_sessions[agent_id], len(agent_outputs[agent_id]))
     replacement = _spawn_process(command, "codex")
-    agent_outputs[agent_id].extend([marker, text if history_text is None else history_text])
+    history = [marker, text if history_text is None else history_text]
+    agent_outputs[agent_id].extend(history)
     agents[agent_id] = replacement
     agent_waiting_questions[agent_id] = None
     agent_statuses[agent_id] = "running"
@@ -512,6 +619,7 @@ def _resume_agent(agent_id: str, command: str, text: str, marker: str,
     always.automatic_attempt = automatic_always
     always.handled = False
     notifications.cancel(agent_id)
+    _save_agent(agent_id, history)
     _start_reader(agent_id, replacement)
     try:
         with replacement.stdin:
@@ -532,11 +640,15 @@ def _resume_agent(agent_id: str, command: str, text: str, marker: str,
                 raise RuntimeError("Failed resume output is still closing; please retry.")
             old_process, old_status, old_question, old_session, history_length = previous
             agents[agent_id] = old_process
-            agent_readers[agent_id] = reader
+            if reader is None:
+                agent_readers.pop(agent_id, None)
+            else:
+                agent_readers[agent_id] = reader
             agent_statuses[agent_id] = old_status
             agent_waiting_questions[agent_id] = old_question
             agent_sessions[agent_id] = old_session
             del agent_outputs[agent_id][history_length:]
+            _save_agent(agent_id, truncate_output_to=history_length)
         raise
     return {"agent_id": agent_id, "status": "running"}
 

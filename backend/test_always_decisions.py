@@ -28,7 +28,7 @@ class AlwaysDecisionTests(unittest.TestCase):
         text = '\x1b[32mCONTROL_CENTER_ALWAYS_HANDLED\x1b[0m\n' if handled else ''
         if question:
             text += 'CONTROL_CENTER_WAITING: ' + question + '\n'
-        process.stdout = io.StringIO(text)
+        process.stdout = io.StringIO('codex\n' + text)
         manager._read_output(agent_id, process)
         process.poll.return_value = 0
 
@@ -294,6 +294,7 @@ class AlwaysDecisionTests(unittest.TestCase):
                 'prompt = sys.stdin.read()\n'
                 f'print("session id: {session}", flush=True)\n'
                 'print(json.dumps({"args": sys.argv[1:], "prompt": prompt, "cwd": os.getcwd()}), flush=True)\n'
+                'print("codex", flush=True)\n'
                 'if "CONTROL_CENTER_ALWAYS_HANDLED" in prompt:\n'
                 '    print("CONTROL_CENTER_ALWAYS_HANDLED", flush=True)\n'
                 '    time.sleep(60)\n'

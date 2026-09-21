@@ -32,3 +32,8 @@ $RECYCLE.BIN/
 # Node.js
 node_modules/
 npm-debug.log*
+
+# Local SQLite state and sidecar files
+data/
+*.sqlite3
+*.sqlite3-*
