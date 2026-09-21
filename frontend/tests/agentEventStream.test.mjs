@@ -31,7 +31,7 @@ class Timers {
   }
 }
 
-function fixture(refresh) {
+function fixture(refresh, onStatus) {
   const timers = new Timers()
   let calls = 0
   let source
@@ -43,11 +43,28 @@ function fixture(refresh) {
     close() { this.closed = true }
   }
   const disconnect = connectAgentEvents({
-    timers, EventSourceClass: FakeEventSource,
+    timers, EventSourceClass: FakeEventSource, onStatus,
     refresh: () => { calls++; refresh?.() },
   })
   return { timers, source, disconnect, calls: () => calls }
 }
+
+test('transport reports fallback, live, error fallback, and reconnect without callbacks after cleanup', () => {
+  const states = []
+  const f = fixture(undefined, (status) => states.push(status))
+  assert.deepEqual(states, ['polling'])
+  f.source.onopen()
+  f.source.onerror()
+  f.source.onerror()
+  f.source.onopen()
+  assert.deepEqual(states, ['polling', 'live', 'polling', 'live'])
+  f.disconnect()
+  f.source.onerror()
+  f.source.onopen()
+  assert.equal(states.length, 4)
+  assert.equal(f.source.closed, true)
+  assert.equal(f.timers.jobs.size, 0)
+})
 
 test('initial refresh, open disables polling, events coalesce and keepalive is ignored', () => {
   const f = fixture()
@@ -87,7 +104,9 @@ test('unsupported or failed EventSource uses polling and cleanup cancels it', ()
   for (const EventSourceClass of [null, class { constructor() { throw new Error('Unavailable') } }]) {
     const timers = new Timers()
     let calls = 0
-    const disconnect = connectAgentEvents({ timers, EventSourceClass, refresh: () => calls++ })
+    const states = []
+    const disconnect = connectAgentEvents({ timers, EventSourceClass, refresh: () => calls++, onStatus: (status) => states.push(status) })
+    assert.deepEqual(states, ['polling'])
     assert.equal(calls, 1)
     timers.tick(2000)
     assert.equal(calls, 2)

@@ -31,9 +31,9 @@ h1 {
 
 .agent-tree {
   display: grid;
-  gap: 20px;
+  gap: 10px;
   list-style: none;
-  margin: 20px 0 0;
+  margin: 10px 0 0;
   padding: 0;
 }
 
@@ -62,7 +62,7 @@ h1 {
 }
 
 .agent-card h2 {
-  margin: 0 0 20px;
+  margin: 0 0 10px;
   font-size: 1.125rem;
 }
 
@@ -121,7 +121,21 @@ h1 {
 
 .agent-card {
   position: relative;
+  padding: 16px;
 }
+
+.agent-card.agent-running { border-left: 4px solid #0284c7; }
+.agent-card dl { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; margin-top: 10px; }
+.agent-card dt { margin: 0; }
+.agent-card dd { font-size: 0.875rem; }
+.task-preview { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.branch-toggle { position: relative; z-index: 1; float: right; margin: 0 0 8px 12px; }
+.list-controls { display: grid; gap: 10px; margin-bottom: 16px; }
+.list-controls label { font-weight: 600; }
+.list-controls input { padding: 10px 12px; border: 1px solid #cbd5e1; border-radius: 6px; font: inherit; min-width: 0; }
+.list-buttons { display: flex; flex-wrap: wrap; gap: 8px; }
+.list-buttons [aria-pressed="true"] { background: #e0f2fe; border-color: #0369a1; }
+.list-controls input:focus-visible { outline: 3px solid #0369a1; outline-offset: 4px; }
 
 .agent-card:hover {
   border-color: #94a3b8;

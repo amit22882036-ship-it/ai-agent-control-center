@@ -31,7 +31,7 @@ export function createRefreshQueue(refresh, timers = globalThis) {
   }
 }
 
-export function connectAgentEvents({ refresh, EventSourceClass = globalThis.EventSource, timers = globalThis }) {
+export function connectAgentEvents({ refresh, onStatus = () => {}, EventSourceClass = globalThis.EventSource, timers = globalThis }) {
   let source = null
   let debounce = null
   let polling = null
@@ -42,7 +42,10 @@ export function connectAgentEvents({ refresh, EventSourceClass = globalThis.Even
     if (!disposed) refresh()
   }
   const fallback = () => {
-    if (!disposed && polling === null) polling = timers.setInterval(flush, 2000)
+    if (!disposed && polling === null) {
+      polling = timers.setInterval(flush, 2000)
+      onStatus('polling')
+    }
   }
   refresh()
   fallback()
@@ -53,6 +56,7 @@ export function connectAgentEvents({ refresh, EventSourceClass = globalThis.Even
         if (disposed) return
         timers.clearInterval(polling)
         polling = null
+        onStatus('live')
         timers.clearTimeout(debounce)
         debounce = null
         flush()

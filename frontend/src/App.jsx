@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import AgentDetails from './AgentDetails'
 import StartAgentForm from './StartAgentForm'
-import AgentTree from './AgentTree'
+import AgentList from './AgentList'
 import useAgentNotifications from './useAgentNotifications'
 import { connectAgentEvents, createRefreshQueue } from './agentEventStream.mjs'
 import './App.css'
@@ -13,6 +13,7 @@ function App() {
   const [selectedAgentId, setSelectedAgentId] = useState(null)
   const [listVersion, setListVersion] = useState(0)
   const [detailsRefresh, setDetailsRefresh] = useState(0)
+  const [transport, setTransport] = useState('polling')
   const refreshRef = useRef(null)
   const notifications = useAgentNotifications(setSelectedAgentId)
   const { observeAgents } = notifications
@@ -34,7 +35,7 @@ function App() {
         }
       } catch {
         if (!controller.signal.aborted) {
-          setError('Unable to load agents. Check that the backend is running.')
+          setError('Backend unavailable. Unable to load agents; retrying automatically.')
         }
       } finally {
         if (!controller.signal.aborted) setLoading(false)
@@ -47,7 +48,7 @@ function App() {
       setDetailsRefresh((version) => version + 1)
     }
     refreshRef.current = refresh
-    const disconnect = connectAgentEvents({ refresh })
+    const disconnect = connectAgentEvents({ refresh, onStatus: setTransport })
     return () => {
       refreshRef.current = null
       disconnect()
@@ -64,7 +65,7 @@ function App() {
     <main className="dashboard">
       <header>
         <h1>AI Agent Control Center</h1>
-        <p className="subtitle">Live agent updates with automatic polling fallback.</p>
+        <p className="subtitle" role="status">{transport === 'live' ? 'Live updates' : 'Polling fallback'}</p>
       </header>
       <section className="notification-controls" aria-label="Browser notifications">
         <button className="close-button" type="button"
@@ -81,12 +82,8 @@ function App() {
       <StartAgentForm onStarted={() => setListVersion((version) => version + 1)} />
       {error && <p className="message error" role="alert">{error}</p>}
       {loading && <p className="message" role="status">Loading agents...</p>}
-      {!loading && !error && agents.length === 0 && (
-        <p className="message">No agents yet</p>
-      )}
-      <section aria-label="Agents">
-        <AgentTree agents={agents} selectedAgentId={selectedAgentId} onSelect={setSelectedAgentId} />
-      </section>
+      <AgentList agents={agents} selectedAgentId={selectedAgentId} onSelect={setSelectedAgentId}
+        loading={loading} unavailable={Boolean(error)} />
       {selectedAgentId !== null && (
         <AgentDetails
           key={selectedAgentId}
