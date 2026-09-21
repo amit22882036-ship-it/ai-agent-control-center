@@ -1,18 +1,20 @@
 import { useId, useState } from 'react'
 
-export default function StartAgentForm({ parentId = null, onStarted }) {
+export default function StartAgentForm({ parentId = null, onStarted, disabled = false, onStartingChange }) {
   const id = useId()
   const [task, setTask] = useState('')
   const [agentType, setAgentType] = useState('mock')
   const [sandbox, setSandbox] = useState('read-only')
   const [starting, setStarting] = useState(false)
   const [error, setError] = useState('')
+  const unavailable = disabled || starting
   const child = parentId !== null
 
   async function handleStart(event) {
     event.preventDefault()
-    if (!task.trim() || starting) return
+    if (!task.trim() || unavailable) return
     setStarting(true)
+    onStartingChange?.(true)
     setError('')
     try {
       const path = child ? `/agents/${encodeURIComponent(parentId)}/children/start` : '/agents/start'
@@ -34,6 +36,7 @@ export default function StartAgentForm({ parentId = null, onStarted }) {
       setError(err.message || 'Unable to start agent. Please try again.')
     } finally {
       setStarting(false)
+      onStartingChange?.(false)
     }
   }
 
@@ -43,7 +46,7 @@ export default function StartAgentForm({ parentId = null, onStarted }) {
       <form onSubmit={handleStart}>
         <div className="agent-type-field">
           <label htmlFor={`${id}-type`}>Agent Type</label>
-          <select id={`${id}-type`} value={agentType} onChange={(event) => setAgentType(event.target.value)} disabled={starting}>
+          <select id={`${id}-type`} value={agentType} onChange={(event) => setAgentType(event.target.value)} disabled={unavailable}>
             <option value="mock">Mock</option><option value="codex">Codex</option>
           </select>
         </div>
@@ -51,7 +54,7 @@ export default function StartAgentForm({ parentId = null, onStarted }) {
           <div className="agent-type-field">
             <label htmlFor={`${id}-sandbox`}>Sandbox</label>
             <select id={`${id}-sandbox`} value={sandbox} onChange={(event) => setSandbox(event.target.value)}
-              disabled={starting} aria-describedby={sandbox === 'workspace-write' ? `${id}-warning` : undefined}>
+              disabled={unavailable} aria-describedby={sandbox === 'workspace-write' ? `${id}-warning` : undefined}>
               <option value="read-only">Read only</option><option value="workspace-write">Workspace write</option>
             </select>
             {sandbox === 'workspace-write' && (
@@ -62,8 +65,8 @@ export default function StartAgentForm({ parentId = null, onStarted }) {
         <label htmlFor={`${id}-task`}>Task</label>
         <div className="start-controls">
           <input id={`${id}-task`} type="text" value={task} onChange={(event) => setTask(event.target.value)}
-            placeholder="Refactor authentication module" required disabled={starting} />
-          <button className="start-button" type="submit" disabled={starting || !task.trim()}>
+            placeholder="Refactor authentication module" required disabled={unavailable} />
+          <button className="start-button" type="submit" disabled={unavailable || !task.trim()}>
             {starting ? 'Starting...' : child ? 'Start child agent' : 'Start Agent'}
           </button>
         </div>

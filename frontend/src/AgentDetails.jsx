@@ -20,7 +20,33 @@ function AgentDetails({ agentId, onClose, onStopped }) {
   const [similarError, setSimilarError] = useState('')
   const [alwaysAction, setAlwaysAction] = useState('')
   const [alwaysError, setAlwaysError] = useState('')
-  const busy = stopping || redirecting || replying || deciding || Boolean(similarAction) || Boolean(alwaysAction)
+  const [stoppingBranch, setStoppingBranch] = useState(false)
+  const [branchError, setBranchError] = useState('')
+  const [childStarting, setChildStarting] = useState(false)
+  const busy = stoppingBranch || childStarting || stopping || redirecting || replying || deciding || Boolean(similarAction) || Boolean(alwaysAction)
+
+  async function handleStopBranch() {
+    if (busy || !window.confirm('Stop this agent and all of its descendants? This does not affect its parent or siblings outside this branch.')) return
+    setStoppingBranch(true)
+    setBranchError('')
+    try {
+      const response = await fetch(`http://127.0.0.1:8000/agents/${agentId}/stop-branch`, { method: 'POST' })
+      const result = await response.json().catch(() => ({}))
+      if (!response.ok) {
+        throw new Error(typeof result.detail === 'string' ? result.detail : 'Unable to stop branch. Please try again.')
+      }
+      if (result.ok !== true) {
+        const failures = (result.failures ?? []).map((failure) => `${failure.agent_id}: ${failure.error}`).join('; ')
+        setBranchError(`Branch stopping was only partially successful. ${failures}`)
+      }
+    } catch (err) {
+      setBranchError(err.message)
+    } finally {
+      setStoppingBranch(false)
+      setDetailsVersion((version) => version + 1)
+      onStopped()
+    }
+  }
 
   async function handleSimilar(disable = false) {
     if (busy) return
@@ -228,9 +254,15 @@ function AgentDetails({ agentId, onClose, onStopped }) {
               {stopping ? 'Stopping...' : 'Stop'}
             </button>
           )}
+          {agent?.child_ids?.length > 0 && (
+            <button className="stop-button" type="button" onClick={handleStopBranch} disabled={busy}>
+              {stoppingBranch ? 'Stopping branch...' : 'Stop branch'}
+            </button>
+          )}
           <button className="close-button" type="button" onClick={onClose}>Close</button>
         </div>
       </div>
+      {branchError && <p className="message error" role="alert">{branchError}</p>}
       {stopError && <p className="message error" role="alert">{stopError}</p>}
       {redirectError && <p className="message error" role="alert">{redirectError}</p>}
       {replyError && <p className="message error" role="alert">{replyError}</p>}
@@ -343,7 +375,7 @@ function AgentDetails({ agentId, onClose, onStopped }) {
               </form>
             ) : <p className="agent-type-note">Redirect will be available once the Codex session starts.</p>
           )}
-          <StartAgentForm parentId={agentId} onStarted={() => {
+          <StartAgentForm parentId={agentId} disabled={busy} onStartingChange={setChildStarting} onStarted={() => {
             setDetailsVersion((version) => version + 1)
             onStopped()
           }} />

@@ -308,6 +308,39 @@ def stop_agent(agent_id: str) -> dict[str, str] | None:
 
 
 @_synchronized
+def stop_branch(agent_id: str) -> dict | None:
+    if agent_id not in agents:
+        return None
+    children: dict[str | None, list[str]] = {}
+    for child_id, parent_id in agent_parents.items():
+        if child_id in agents:
+            children.setdefault(parent_id, []).append(child_id)
+    # Iterative postorder avoids recursion limits and visits corrupt cycles once.
+    visited = set()
+    order = []
+    pending = [(agent_id, False)]
+    while pending:
+        current, expanded = pending.pop()
+        if expanded:
+            order.append(current)
+        elif current not in visited:
+            visited.add(current)
+            pending.append((current, True))
+            pending.extend((child, False) for child in reversed(children.get(current, [])))
+    results = []
+    failures = []
+    # Keep the manager lock for discovery and every stop: creation/resumes cannot
+    # interleave with this branch snapshot. stop_agent uses the same reentrant lock.
+    for current in order:
+        try:
+            results.append(stop_agent(current))
+        except Exception as exc:
+            error = str(exc) if isinstance(exc, (OSError, RuntimeError)) else "Unable to stop agent."
+            failures.append({"agent_id": current, "error": error})
+    return {"root_agent_id": agent_id, "ok": not failures, "results": results, "failures": failures}
+
+
+@_synchronized
 def redirect_agent(agent_id: str, instruction: str) -> dict[str, str] | None:
     if not instruction.strip():
         raise ValueError("Redirect instruction must not be blank.")
