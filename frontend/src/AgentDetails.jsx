@@ -16,7 +16,9 @@ function AgentDetails({ agentId, onClose, onStopped }) {
 
   const [similarAction, setSimilarAction] = useState('')
   const [similarError, setSimilarError] = useState('')
-  const busy = stopping || redirecting || replying || deciding || Boolean(similarAction)
+  const [alwaysAction, setAlwaysAction] = useState('')
+  const [alwaysError, setAlwaysError] = useState('')
+  const busy = stopping || redirecting || replying || deciding || Boolean(similarAction) || Boolean(alwaysAction)
 
   async function handleSimilar(disable = false) {
     if (busy) return
@@ -41,6 +43,32 @@ function AgentDetails({ agentId, onClose, onStopped }) {
       setSimilarError(err.message)
     } finally {
       setSimilarAction('')
+    }
+  }
+
+  async function handleAlways(disable = false) {
+    if (busy) return
+    setAlwaysAction(disable ? 'disabling' : 'enabling')
+    setAlwaysError('')
+    try {
+      const response = await fetch(`http://127.0.0.1:8000/agents/${agentId}/decide-always${disable ? '/disable' : ''}`, {
+        method: 'POST',
+      })
+      const result = await response.json().catch(() => ({}))
+      if (!response.ok) {
+        throw new Error(typeof result.detail === 'string' ? result.detail : 'Unable to change Always Decide. Please try again.')
+      }
+      setAgent((current) => ({
+        ...current,
+        always_decide_enabled: !disable,
+        ...(disable ? {} : { status: result.status, waiting_question: null }),
+      }))
+      if (!disable) setAnswer('')
+      onStopped()
+    } catch (err) {
+      setAlwaysError(err.message)
+    } finally {
+      setAlwaysAction('')
     }
   }
 
@@ -205,6 +233,7 @@ function AgentDetails({ agentId, onClose, onStopped }) {
       {redirectError && <p className="message error" role="alert">{redirectError}</p>}
       {replyError && <p className="message error" role="alert">{replyError}</p>}
       {decideError && <p className="message error" role="alert">{decideError}</p>}
+      {alwaysError && <p className="message error" role="alert">{alwaysError}</p>}
       {similarError && <p className="message error" role="alert">{similarError}</p>}
       {error && <p className="message error" role="alert">{error}</p>}
       {!agent && !error && <p role="status">Loading agent details...</p>}
@@ -225,9 +254,18 @@ function AgentDetails({ agentId, onClose, onStopped }) {
             <dt>Status</dt>
             <dd><span className={`status status-${agent.status}`}>{agent.status === 'waiting' ? 'waiting for you' : agent.status}</span></dd>
           </dl>
+          {agent.agent_type === 'codex' && agent.always_decide_enabled && (
+            <div className="waiting-panel">
+              <p>Always decide for this agent: On</p>
+              <p className="agent-type-note">Always Decide takes precedence over Similar Decisions. The agent can still ask for genuinely missing information.</p>
+              <button className="close-button" type="button" disabled={busy} onClick={() => handleAlways(true)}>
+                {alwaysAction === 'disabling' ? 'Turning off...' : 'Turn off'}
+              </button>
+            </div>
+          )}
           {agent.agent_type === 'codex' && agent.similar_decisions_enabled && (
             <div className="waiting-panel">
-              <p>Auto-decide similar questions: On</p>
+              <p>Auto-decide similar questions: {agent.always_decide_enabled ? 'Saved (Always Decide is active)' : 'On'}</p>
               <button className="close-button" type="button" disabled={busy} onClick={() => handleSimilar(true)}>
                 {similarAction === 'disabling' ? 'Turning off...' : 'Turn off'}
               </button>
@@ -262,6 +300,17 @@ function AgentDetails({ agentId, onClose, onStopped }) {
                 <p id="similar-help" className="agent-type-note">
                   Let the agent handle this decision and materially similar decisions for this agent automatically.
                 </p>
+                {!agent.always_decide_enabled && (
+                  <>
+                    <button className="close-button" type="button" disabled={busy}
+                      onClick={() => handleAlways()} aria-describedby="always-help">
+                      {alwaysAction === 'enabling' ? 'Enabling...' : 'Always decide for this agent'}
+                    </button>
+                    <p id="always-help" className="agent-type-note">
+                      Let this agent make future decisions itself when possible. It can still ask when genuinely missing information.
+                    </p>
+                  </>
+                )}
                 <p id="decide-help" className="agent-type-note">
                   Let the agent make this decision itself and continue. This applies only this time.
                 </p>

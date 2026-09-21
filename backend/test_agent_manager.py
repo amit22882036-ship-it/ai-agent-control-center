@@ -99,7 +99,7 @@ class AgentTests(unittest.TestCase):
         for registry in (manager.agents, manager.agent_outputs, manager.agent_tasks,
                          manager.agent_statuses, manager.agent_types, manager.agent_sandboxes,
                          manager.agent_sessions, manager.agent_readers, manager.agent_waiting_questions,
-                         manager.agent_similar_decisions):
+                         manager.agent_similar_decisions, manager.agent_always_decisions):
             registry.clear()
 
     def wait_for_output(self, agent_id):

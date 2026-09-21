@@ -38,6 +38,16 @@ class SimilarDecisions:
     handled: bool = False
 
 
+@dataclass
+class AlwaysDecisions:
+    enabled: bool = False
+    configured: bool = False
+    automatic_attempt: bool = False
+    handled: bool = False
+
+
+agent_always_decisions: dict[str, AlwaysDecisions] = {}
+_always_handled_marker = "CONTROL_CENTER_ALWAYS_HANDLED"
 agent_similar_decisions: dict[str, SimilarDecisions] = {}
 _similar_handled_marker = "CONTROL_CENTER_SIMILAR_HANDLED"
 _state_lock = RLock()
@@ -77,10 +87,26 @@ def _finalize_process(agent_id: str, process: subprocess.Popen, allow_auto: bool
             return
         question = agent_waiting_questions[agent_id]
         policy = agent_similar_decisions[agent_id]
-        if question and policy.automatic_question and not policy.handled:
+        always = agent_always_decisions[agent_id]
+        if (allow_auto and question and always.enabled and agent_sessions[agent_id]
+                and agent_types[agent_id] == "codex"
+                and (not always.automatic_attempt or always.handled)):
+            # An unresolved automatic attempt ends this episode, even if reworded.
+            always.automatic_attempt = True
+            always.handled = False
+            try:
+                command = _codex_command(agent_sandboxes[agent_id], agent_sessions[agent_id])
+                _resume_agent(agent_id, command, _always_prompt(question, automatic=True),
+                              "--- Automatic Always Decision ---", history_text=question,
+                              always_decision=True, automatic_always=True)
+                return
+            except (OSError, RuntimeError):
+                logger.exception("Automatic Always decision could not resume")
+                agent_waiting_questions[agent_id] = question
+        if not always.enabled and question and policy.automatic_question and not policy.handled:
             # A declined check is final, even if Codex rephrases the question.
             policy.attempted.add(question.strip())
-        if (allow_auto and question and policy.enabled and policy.examples
+        if (allow_auto and question and not always.enabled and policy.enabled and policy.examples
                 and agent_sessions[agent_id] and agent_types[agent_id] == "codex"
                 and question.strip() not in policy.attempted):
             policy.attempted.add(question.strip())
@@ -143,6 +169,9 @@ def _read_output(agent_id: str, process: subprocess.Popen) -> None:
                 policy = agent_similar_decisions[agent_id]
                 if policy.automatic_question and parsed == _similar_handled_marker:
                     policy.handled = True
+                always = agent_always_decisions[agent_id]
+                if always.automatic_attempt and parsed == _always_handled_marker:
+                    always.handled = True
                 match = _session_line.search(parsed)
                 if match:
                     agent_sessions[agent_id] = str(UUID(match[1]))
@@ -190,6 +219,7 @@ def start_agent(task: str, agent_type: AgentType = "mock", sandbox: CodexSandbox
     agent_sessions[agent_id] = None
     agent_waiting_questions[agent_id] = None
     agent_similar_decisions[agent_id] = SimilarDecisions()
+    agent_always_decisions[agent_id] = AlwaysDecisions()
     agents[agent_id] = process
     _start_reader(agent_id, process)
     if agent_type == "codex":
@@ -232,6 +262,7 @@ def get_agent(agent_id: str) -> dict[str, str | bool | list[str] | None] | None:
         "session_id": agent_sessions[agent_id],
         "waiting_question": agent_waiting_questions[agent_id],
         "similar_decisions_enabled": agent_similar_decisions[agent_id].enabled,
+        "always_decide_enabled": agent_always_decisions[agent_id].enabled,
         "output": agent_outputs[agent_id].copy(),
     }
 
@@ -341,6 +372,54 @@ def disable_similar_agent(agent_id: str) -> dict[str, str | bool] | None:
     return {"agent_id": agent_id, "similar_decisions_enabled": False}
 
 
+@_synchronized
+def decide_always_agent(agent_id: str) -> dict[str, str] | None:
+    command = _waiting_resume_command(agent_id)
+    if command is None:
+        return None
+    if agent_always_decisions[agent_id].enabled:
+        raise ValueError("Always Decide is already enabled for this agent.")
+    question = agent_waiting_questions[agent_id]
+    if not question:
+        raise ValueError("The waiting question is not available.")
+    result = _resume_agent(agent_id, command, _always_prompt(question),
+                           "--- Always Decide Enabled ---", history_text="Always decide for this agent",
+                           always_decision=True)
+    agent_always_decisions[agent_id].enabled = True
+    agent_always_decisions[agent_id].configured = True
+    return result
+
+
+@_synchronized
+def disable_always_agent(agent_id: str) -> dict[str, str | bool] | None:
+    if agent_id not in agents:
+        return None
+    if agent_types[agent_id] != "codex":
+        raise ValueError("Only Codex agents support Always Decide.")
+    agent_always_decisions[agent_id].enabled = False
+    agent_always_decisions[agent_id].configured = True
+    return {"agent_id": agent_id, "always_decide_enabled": False}
+
+
+def _always_prompt(question: str, automatic: bool = False) -> str:
+    text = f"""The user has enabled Always Decide for this agent.
+Current blocked question (JSON): {json.dumps(question)}
+Resolve this decision yourself using your best judgment and continue the original task.
+For future decisions, preferences, implementation choices, clarifications, or tradeoffs
+that you can reasonably resolve yourself, decide and continue without asking the user.
+This delegates decisions only. Do not expand the original task, permissions, or sandbox;
+do not bypass approval/security rules or authorize unrelated external actions.
+Do not fabricate unavailable facts, credentials, secrets, or user-specific information.
+If genuinely blocked by required unavailable information that cannot reasonably be inferred,
+or an explicit approval that is actually required, do not invent it or bypass the requirement.
+Return control using CONTROL_CENTER_WAITING: followed by the required question.
+Later control-center instructions may disable this delegation."""
+    if automatic:
+        text += f"""\nOnly after actually resolving the current delegated decision, emit the standalone
+line '{_always_handled_marker}' before continuing. Never emit it for an unresolved blocker."""
+    return text
+
+
 def _similar_prompt(policy: SimilarDecisions, question: str) -> str:
     return f"""The user authorized automatic decisions only for materially similar decision types and scope.
 Approved examples (JSON): {json.dumps(policy.examples)}
@@ -371,12 +450,15 @@ def _waiting_resume_command(agent_id: str) -> str | None:
 
 def _resume_agent(agent_id: str, command: str, text: str, marker: str,
                   history_text: str | None = None,
-                  automatic_question: str | None = None) -> dict[str, str]:
+                  automatic_question: str | None = None,
+                  always_decision: bool = False, automatic_always: bool = False) -> dict[str, str]:
     # Drain the old process before adding the marker or resumed output.
     reader = agent_readers[agent_id]
     reader.join(timeout=3)
     if reader.is_alive():
         raise RuntimeError("Old process output has not closed; resume was not started.")
+    previous = (agents[agent_id], agent_statuses[agent_id], agent_waiting_questions[agent_id],
+                agent_sessions[agent_id], len(agent_outputs[agent_id]))
     replacement = _spawn_process(command, "codex")
     agent_outputs[agent_id].extend([marker, text if history_text is None else history_text])
     agents[agent_id] = replacement
@@ -385,13 +467,35 @@ def _resume_agent(agent_id: str, command: str, text: str, marker: str,
     policy = agent_similar_decisions[agent_id]
     policy.automatic_question = automatic_question
     policy.handled = False
+    always = agent_always_decisions[agent_id]
+    always.automatic_attempt = automatic_always
+    always.handled = False
     notifications.cancel(agent_id)
     _start_reader(agent_id, replacement)
     try:
         with replacement.stdin:
-            replacement.stdin.write(_codex_prompt(text))
+            prompt = _codex_prompt(text)
+            if not always_decision and always.configured:
+                setting = "enabled" if always.enabled else "disabled"
+                prompt += (f"\n\nCurrent control-center setting: Always Decide is {setting}. "
+                           "This supersedes earlier Always Decide settings in this session. "
+                           "When disabled, honor the current request and any explicit current decision "
+                           "delegation, but do not apply earlier Always Decide authorization.")
+            replacement.stdin.write(prompt)
     except OSError:
         stop_agent(agent_id)
+        if always_decision:
+            # A failed prompt delivery must not consume a manual waiting decision.
+            agent_readers[agent_id].join(timeout=3)
+            if agent_readers[agent_id].is_alive():
+                raise RuntimeError("Failed resume output is still closing; please retry.")
+            old_process, old_status, old_question, old_session, history_length = previous
+            agents[agent_id] = old_process
+            agent_readers[agent_id] = reader
+            agent_statuses[agent_id] = old_status
+            agent_waiting_questions[agent_id] = old_question
+            agent_sessions[agent_id] = old_session
+            del agent_outputs[agent_id][history_length:]
         raise
     return {"agent_id": agent_id, "status": "running"}
 
