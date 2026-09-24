@@ -31,6 +31,28 @@ class Timers {
   }
 }
 
+test('failed REST refresh retries without another SSE event and disposal cancels retries', async () => {
+  const timers = new Timers()
+  let calls = 0
+  const queue = createRefreshQueue(async () => ++calls > 1, timers)
+  queue.request(true)
+  timers.tick(0)
+  await Promise.resolve()
+  timers.tick(1999)
+  assert.equal(calls, 1)
+  timers.tick(1)
+  await Promise.resolve()
+  assert.equal(calls, 2)
+  assert.equal(timers.jobs.size, 0)
+  queue.dispose()
+  const failing = createRefreshQueue(async () => false, timers)
+  failing.request(true)
+  timers.tick(0)
+  await Promise.resolve()
+  failing.dispose()
+  assert.equal(timers.jobs.size, 0)
+})
+
 function fixture(refresh, onStatus) {
   const timers = new Timers()
   let calls = 0

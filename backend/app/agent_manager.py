@@ -111,6 +111,9 @@ def _finalize_process(agent_id: str, process: subprocess.Popen | None, allow_aut
                 return
             except (OSError, RuntimeError):
                 logger.exception("Automatic Always decision could not resume")
+                current = agents[agent_id]
+                if current is not process and (current.poll() is None or not current.stdout.closed):
+                    return
                 agent_waiting_questions[agent_id] = question
         if not always.enabled and question and policy.automatic_question and not policy.handled:
             # A declined check is final, even if Codex rephrases the question.
@@ -127,6 +130,9 @@ def _finalize_process(agent_id: str, process: subprocess.Popen | None, allow_aut
                 return
             except (OSError, RuntimeError):
                 logger.exception("Automatic similar decision could not resume")
+                current = agents[agent_id]
+                if current is not process and (current.poll() is None or not current.stdout.closed):
+                    return
                 agent_waiting_questions[agent_id] = question
         status = "waiting" if question else "finished"
         agent_statuses[agent_id] = status
@@ -248,7 +254,8 @@ def shutdown_agents() -> list[dict[str, str]]:
                 reader.join(timeout=3)
                 if reader.is_alive():
                     raise RuntimeError('Agent output did not close during shutdown')
-            _save_agent(key)
+            if not _save_agent(key):
+                raise RuntimeError('Agent persistence is unavailable during shutdown')
         except Exception as exc:
             logger.exception('Could not shut down agent %s', key)
             failures.append({'agent_id': key, 'error': str(exc)})
@@ -275,6 +282,7 @@ def _codex_command(sandbox: CodexSandbox = "read-only", session_id: str | None =
 def _read_output(agent_id: str, process: subprocess.Popen) -> None:
     # CLI section state belongs to this reader/process, never to the logical agent.
     section = "other"
+    header = True
     with process.stdout as stdout:
         for line in stdout:
             with _data_lock:
@@ -284,12 +292,16 @@ def _read_output(agent_id: str, process: subprocess.Popen) -> None:
                 if agent_types[agent_id] == "codex" and agents.get(agent_id) is process:
                     parsed = _ansi.sub("", line).strip()
                     if parsed == "codex":
+                        header = False
                         section = "codex"
                     elif parsed == "user":
+                        header = False
                         section = "user"
                     elif parsed in {"thinking", "exec", "tool", "system", "developer", "file update", "tokens used"} or parsed.startswith(
                             ("mcp:", "mcp startup:", "warning:", "error:", "OpenAI Codex ")):
                         section = "other"
+                        if parsed in {"thinking", "exec", "tool", "system", "developer", "file update", "tokens used"}:
+                            header = False
                     policy = agent_similar_decisions[agent_id]
                     if section == "codex" and policy.automatic_question and parsed == _similar_handled_marker:
                         policy.handled = True
@@ -297,7 +309,7 @@ def _read_output(agent_id: str, process: subprocess.Popen) -> None:
                     if section == "codex" and always.automatic_attempt and parsed == _always_handled_marker:
                         always.handled = True
                     match = _session_line.search(parsed)
-                    if match:
+                    if header and parsed.lower().startswith('session id:') and match and agent_sessions[agent_id] is None:
                         agent_sessions[agent_id] = str(UUID(match[1]))
                     if section == "codex" and parsed.startswith(_waiting_marker):
                         question = parsed[len(_waiting_marker):].strip()

@@ -120,7 +120,10 @@ def list_agents():
 
 @app.get("/agents/{agent_id}")
 def get_mock_agent(agent_id: str, include_output: bool = True):
-    result = get_agent(agent_id, include_output=include_output)
+    try:
+        result = get_agent(agent_id, include_output=include_output)
+    except (sqlite3.Error, OSError) as exc:
+        raise HTTPException(status_code=503, detail='Output history is temporarily unavailable.') from exc
     if result is None:
         raise HTTPException(status_code=404, detail="Agent not found")
     return result

@@ -36,6 +36,7 @@ export default function AgentOutput({ agentId, refreshVersion }) {
         if (more) queue.request()
       } catch (err) {
         if (!controller.signal.aborted) setError(err.message)
+        return false
       }
     }
     const queue = createRefreshQueue(() => load('live'))

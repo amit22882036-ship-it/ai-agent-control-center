@@ -13,6 +13,29 @@ const agents = [
 const tree = buildAgentTree(agents)
 const ids = (nodes, collapsed = new Set()) => [...visibleAgentIds(nodes, collapsed)]
 
+test('corrupted cycles remain visible exactly once without changing parent records', () => {
+  const corrupted = [
+    { ...agents[0], agent_id: 'a', parent_id: 'b' },
+    { ...agents[1], agent_id: 'b', parent_id: 'a' },
+    { ...agents[2], agent_id: 'c', parent_id: 'b' },
+  ]
+  const snapshot = JSON.stringify(corrupted)
+  const forest = buildAgentTree(corrupted)
+  assert.deepEqual(ids(forest).sort(), ['a', 'b', 'c'])
+  assert.equal(ids(filterAgentTree(forest, '', 'all')).length, 3)
+  assert.equal(JSON.stringify(corrupted), snapshot)
+})
+
+test('deep hierarchy filtering and visibility do not overflow the call stack', () => {
+  const deep = Array.from({ length: 12000 }, (_, index) => ({
+    ...agents[0], agent_id: String(index), parent_id: index ? String(index - 1) : null,
+    task: index === 11999 ? 'needle' : 'context',
+  }))
+  const forest = filterAgentTree(buildAgentTree(deep), 'needle', 'all')
+  assert.equal(parentIds(forest).length, 11999)
+  assert.equal(visibleAgentIds(forest, new Set()).size, 12000)
+})
+
 test('searched child under collapsed root is visible and selected visibility uses the effective state', () => {
   const filtered = filterAgentTree(tree, 'authentication', 'all')
   const effective = effectiveCollapsedIds(filtered, new Set(['root']), true)

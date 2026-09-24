@@ -231,6 +231,7 @@ function AgentDetails({ agentId, onClose, onStopped, refreshVersion }) {
         if (!controller.signal.aborted) {
           setError(`${err.message} Retrying automatically.`)
         }
+        return false
       }
     }
 

@@ -37,6 +37,7 @@ function App() {
         if (!controller.signal.aborted) {
           setError('Backend unavailable. Unable to load agents; retrying automatically.')
         }
+        return false
       } finally {
         if (!controller.signal.aborted) setLoading(false)
       }

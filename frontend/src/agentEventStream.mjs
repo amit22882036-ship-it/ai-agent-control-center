@@ -9,11 +9,13 @@ export function createRefreshQueue(refresh, timers = globalThis) {
     if (disposed) return
     running = true
     dirty = false
+    let success = true
     try {
-      await refresh()
+      success = await refresh()
     } finally {
       running = false
-      if (dirty && !disposed) request()
+      if (!disposed && success === false) timer = timers.setTimeout(run, 2000)
+      else if (dirty && !disposed) request()
     }
   }
   function request(immediate = false) {

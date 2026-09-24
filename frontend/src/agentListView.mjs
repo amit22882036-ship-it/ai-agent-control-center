@@ -17,17 +17,37 @@ export function countStatuses(agents) {
 
 // Keep only matches and their ancestors, without changing the source tree.
 export function filterAgentTree(nodes, search, status) {
-  return nodes.flatMap((node) => {
-    const children = filterAgentTree(node.children, search, status)
+  const result = []
+  const pending = nodes.map((node) => ({ node, target: result, expanded: false })).reverse()
+  while (pending.length) {
+    const entry = pending.pop()
+    const { node, target } = entry
+    if (!entry.expanded) {
+      entry.children = []
+      entry.expanded = true
+      pending.push(entry)
+      for (let i = node.children.length - 1; i >= 0; i--) {
+        pending.push({ node: node.children[i], target: entry.children, expanded: false })
+      }
+      continue
+    }
+    const children = entry.children
     const matches = matchesSearch(node.agent, search)
       && (status === 'all' || node.agent.status === status)
-    return matches || children.length ? [{ ...node, children, contextOnly: !matches }] : []
-  })
+    if (matches || children.length) target.push({ ...node, children, contextOnly: !matches })
+  }
+  return result
 }
 
 export function parentIds(nodes) {
-  return nodes.flatMap((node) => node.children.length
-    ? [node.agent.agent_id, ...parentIds(node.children)] : [])
+  const ids = []
+  const pending = [...nodes].reverse()
+  while (pending.length) {
+    const node = pending.pop()
+    if (node.children.length) ids.push(node.agent.agent_id)
+    for (let i = node.children.length - 1; i >= 0; i--) pending.push(node.children[i])
+  }
+  return ids
 }
 
 export function effectiveCollapsedIds(filteredTree, collapsed, filtering) {
@@ -40,13 +60,14 @@ export function effectiveCollapsedIds(filteredTree, collapsed, filtering) {
 
 export function visibleAgentIds(nodes, collapsed) {
   const ids = new Set()
-  function visit(branches) {
-    for (const node of branches) {
-      ids.add(node.agent.agent_id)
-      if (!collapsed.has(node.agent.agent_id)) visit(node.children)
+  const pending = [...nodes].reverse()
+  while (pending.length) {
+    const node = pending.pop()
+    ids.add(node.agent.agent_id)
+    if (!collapsed.has(node.agent.agent_id)) {
+      for (let i = node.children.length - 1; i >= 0; i--) pending.push(node.children[i])
     }
   }
-  visit(nodes)
   return ids
 }
 
