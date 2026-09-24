@@ -4,6 +4,7 @@ import re
 import subprocess
 import sys
 import json
+import sqlite3
 from dataclasses import dataclass, field
 from pathlib import Path
 from functools import wraps
@@ -14,6 +15,7 @@ from uuid import UUID, uuid4
 from .system_notifications import notifications
 from .persistence import AgentStore
 from .realtime import changes
+from .output_history import OutputCache, RECENT_OUTPUT_LIMIT, OUTPUT_PAGE_SIZE, OUTPUT_MAX_LIMIT
 
 logger = logging.getLogger(__name__)
 
@@ -158,23 +160,36 @@ def _emit_agent_change(agent_id: str) -> None:
         logger.exception("Could not publish agent invalidation")
 
 
-def _save_agent(agent_id: str, output_lines=(), truncate_output_to=None, emit=True) -> None:
-    # Readers never take _state_lock: Stop/Redirect may join them while holding it.
-    # This separate lock serializes output + durable metadata writes only.
+def _save_agent(agent_id: str, emit=True) -> bool:
+    # Readers never take _state_lock: Stop/Redirect join them while holding it.
+    # Cache sequence assignment, persistence and publication share _data_lock.
     with _data_lock:
+        cache = agent_outputs[agent_id]
+        cache.dirty = True
+        if cache.hold:
+            return True
         if _store is not None:
             similar = agent_similar_decisions[agent_id]
             always = agent_always_decisions[agent_id]
-            _store.save_agent({
-                "agent_id": agent_id, "parent_id": agent_parents[agent_id],
-                "task": agent_tasks[agent_id], "agent_type": agent_types[agent_id],
-                "sandbox": agent_sandboxes[agent_id], "status": agent_statuses[agent_id],
-                "session_id": agent_sessions[agent_id], "waiting_question": agent_waiting_questions[agent_id],
-                "similar_decisions_enabled": similar.enabled, "similar_examples": similar.examples.copy(),
-                "always_decide_enabled": always.enabled, "always_decide_configured": always.configured,
-            }, output_lines, truncate_output_to)
+            try:
+                _store.save_agent({
+                    "agent_id": agent_id, "parent_id": agent_parents[agent_id],
+                    "task": agent_tasks[agent_id], "agent_type": agent_types[agent_id],
+                    "sandbox": agent_sandboxes[agent_id], "status": agent_statuses[agent_id],
+                    "session_id": agent_sessions[agent_id], "waiting_question": agent_waiting_questions[agent_id],
+                    "similar_decisions_enabled": similar.enabled, "similar_examples": similar.examples.copy(),
+                    "always_decide_enabled": always.enabled, "always_decide_configured": always.configured,
+                }, output_entries=cache.pending)
+            except (sqlite3.Error, OSError):
+                # Keep uncommitted entries for the next write/read/shutdown retry.
+                # This exceptional backlog must not be trimmed or silently lost.
+                logger.exception("Could not persist agent %s; output retained for retry", agent_id)
+                return False
+        cache.pending.clear()
+        cache.dirty = False
         if emit:
             _emit_agent_change(agent_id)
+        return True
 
 
 @_synchronized
@@ -184,7 +199,7 @@ def initialize_persistence(path=None) -> None:
     if any(process is not None for process in agents.values()):
         raise RuntimeError("Cannot reload persistence while managed processes are attached")
     store = AgentStore(path)
-    records = store.load_agents()
+    records = store.load_agents(output_limit=RECENT_OUTPUT_LIMIT)
     with _data_lock:
         for registry in (agents, agent_parents, agent_statuses, agent_outputs, agent_tasks, agent_types,
                          agent_sandboxes, agent_sessions, agent_waiting_questions, agent_readers,
@@ -202,7 +217,7 @@ def initialize_persistence(path=None) -> None:
             agent_statuses[key] = record['status']
             agent_sessions[key] = record['session_id']
             agent_waiting_questions[key] = record['waiting_question']
-            agent_outputs[key] = record['output']
+            agent_outputs[key] = OutputCache(record['output'], record['next_sequence'])
             agent_similar_decisions[key] = SimilarDecisions(
                 enabled=bool(record['similar_decisions_enabled']), examples=record['similar_examples'])
             agent_always_decisions[key] = AlwaysDecisions(
@@ -212,7 +227,7 @@ def initialize_persistence(path=None) -> None:
                 marker = ['--- Backend Restart ---',
                           'Agent was running when the backend stopped and cannot be safely reattached. Marked stopped.']
                 agent_outputs[key].extend(marker)
-                _save_agent(key, marker, emit=False)
+                _save_agent(key, emit=False)
 
 
 @_synchronized
@@ -263,6 +278,8 @@ def _read_output(agent_id: str, process: subprocess.Popen) -> None:
     with process.stdout as stdout:
         for line in stdout:
             with _data_lock:
+                if agents.get(agent_id) is not process:
+                    continue
                 agent_outputs[agent_id].append(line.rstrip("\r\n"))
                 if agent_types[agent_id] == "codex" and agents.get(agent_id) is process:
                     parsed = _ansi.sub("", line).strip()
@@ -286,7 +303,7 @@ def _read_output(agent_id: str, process: subprocess.Popen) -> None:
                         question = parsed[len(_waiting_marker):].strip()
                         if question:
                             agent_waiting_questions[agent_id] = question
-                _save_agent(agent_id, [line.rstrip("\r\n")], emit=agents.get(agent_id) is process)
+                _save_agent(agent_id)
 
 
 def _start_reader(agent_id: str, process: subprocess.Popen) -> None:
@@ -324,7 +341,7 @@ def start_agent(task: str, agent_type: AgentType = "mock", sandbox: CodexSandbox
     process = _spawn_process(command, agent_type)
     agent_statuses[agent_id] = "running"
     agent_parents[agent_id] = parent_id
-    agent_outputs[agent_id] = []
+    agent_outputs[agent_id] = OutputCache()
     agent_tasks[agent_id] = task
     agent_types[agent_id] = agent_type
     agent_sandboxes[agent_id] = sandbox if agent_type == "codex" else None
@@ -350,6 +367,8 @@ def get_agents() -> list[dict[str, str | None]]:
     result = []
     for agent_id in list(agents):
         _refresh_status(agent_id)
+        if agent_outputs[agent_id].dirty:
+            _save_agent(agent_id)
         result.append({
             "agent_id": agent_id,
             "parent_id": agent_parents[agent_id],
@@ -362,10 +381,21 @@ def get_agents() -> list[dict[str, str | None]]:
 
 
 @_synchronized
-def get_agent(agent_id: str) -> dict[str, str | bool | list[str] | None] | None:
+def get_agent(agent_id: str, include_output: bool = True) -> dict[str, str | bool | list[str] | None] | None:
     if agent_id not in agents:
         return None
     _refresh_status(agent_id)
+    with _data_lock:
+        cache = agent_outputs[agent_id]
+        if cache.dirty:
+            _save_agent(agent_id)
+        output = {}
+        if include_output:
+            lines = _store.full_output(agent_id) if _store else cache.copy()
+            if _store and cache.pending:
+                committed_count = len(lines)
+                lines.extend(text for seq, text in cache.pending if seq >= committed_count)
+            output = {"output": lines}
     return {
         "agent_id": agent_id,
         "status": agent_statuses[agent_id],
@@ -378,8 +408,34 @@ def get_agent(agent_id: str) -> dict[str, str | bool | list[str] | None] | None:
         "waiting_question": agent_waiting_questions[agent_id],
         "similar_decisions_enabled": agent_similar_decisions[agent_id].enabled,
         "always_decide_enabled": agent_always_decisions[agent_id].enabled,
-        "output": agent_outputs[agent_id].copy(),
+        **output,
     }
+
+
+@_synchronized
+def get_agent_output(agent_id: str, limit: int = OUTPUT_PAGE_SIZE,
+                     after: int | None = None, before: int | None = None):
+    if agent_id not in agents:
+        return None
+    if not 1 <= limit <= OUTPUT_MAX_LIMIT or (after is not None and before is not None):
+        raise ValueError('Use a limit between 1 and 1000 and only one output cursor')
+    if (after is not None and after < 0) or (before is not None and before < 0):
+        raise ValueError('Output cursors must be non-negative')
+    with _data_lock:
+        cache = agent_outputs[agent_id]
+        if cache.dirty and not _save_agent(agent_id):
+            raise RuntimeError('Output persistence is unavailable; please retry.')
+        if _store:
+            return _store.read_output(agent_id, limit, after, before)
+        # Direct manager users/tests without the application lifespan have no DB.
+        entries = [{'seq': cache.next_sequence - len(cache) + i, 'text': text}
+                   for i, text in enumerate(cache)]
+        matches = [item for item in entries if (after is None or item['seq'] > after)
+                   and (before is None or item['seq'] < before)]
+        items = matches[:limit] if after is not None else matches[-limit:]
+        return {'agent_id': agent_id, 'items': items,
+                'has_older': bool(items and entries and items[0]['seq'] > entries[0]['seq']),
+                'has_newer': bool(items and entries and items[-1]['seq'] < entries[-1]['seq'])}
 
 
 @_synchronized
@@ -614,11 +670,21 @@ def _resume_agent(agent_id: str, command: str, text: str, marker: str,
         if reader.is_alive():
             raise RuntimeError("Old process output has not closed; resume was not started.")
     previous = (agents[agent_id], agent_statuses[agent_id], agent_waiting_questions[agent_id],
-                agent_sessions[agent_id], len(agent_outputs[agent_id]))
+                agent_sessions[agent_id], agent_outputs[agent_id])
     replacement = _spawn_process(command, "codex")
     history = [marker, text if history_text is None else history_text]
-    agent_outputs[agent_id].extend(history)
-    agents[agent_id] = replacement
+    with _data_lock:
+        if always_decision:
+            # Stage tentative output while a reader drains the replacement pipe.
+            # Failed prompt delivery restores the old cache without deleting SQL
+            # rows or reusing any published sequence numbers.
+            old_cache = agent_outputs[agent_id]
+            staged = OutputCache(old_cache, old_cache.next_sequence)
+            staged.pending = old_cache.pending.copy()
+            staged.hold = True
+            agent_outputs[agent_id] = staged
+        agent_outputs[agent_id].extend(history)
+        agents[agent_id] = replacement
     agent_waiting_questions[agent_id] = None
     agent_statuses[agent_id] = "running"
     policy = agent_similar_decisions[agent_id]
@@ -628,7 +694,7 @@ def _resume_agent(agent_id: str, command: str, text: str, marker: str,
     always.automatic_attempt = automatic_always
     always.handled = False
     notifications.cancel(agent_id)
-    _save_agent(agent_id, history)
+    _save_agent(agent_id)
     _start_reader(agent_id, replacement)
     try:
         with replacement.stdin:
@@ -641,24 +707,37 @@ def _resume_agent(agent_id: str, command: str, text: str, marker: str,
                            "delegation, but do not apply earlier Always Decide authorization.")
             replacement.stdin.write(prompt)
     except OSError:
-        stop_agent(agent_id)
+        try:
+            stop_agent(agent_id)
+        except (OSError, RuntimeError):
+            if always_decision:
+                agent_outputs[agent_id].hold = False
+                _save_agent(agent_id)
+            raise
         if always_decision:
-            # A failed prompt delivery must not consume a manual waiting decision.
             agent_readers[agent_id].join(timeout=3)
             if agent_readers[agent_id].is_alive():
+                # Keep failed work tracked if its output cannot be safely drained.
+                agent_outputs[agent_id].hold = False
+                _save_agent(agent_id)
                 raise RuntimeError("Failed resume output is still closing; please retry.")
-            old_process, old_status, old_question, old_session, history_length = previous
-            agents[agent_id] = old_process
-            if reader is None:
-                agent_readers.pop(agent_id, None)
-            else:
-                agent_readers[agent_id] = reader
-            agent_statuses[agent_id] = old_status
-            agent_waiting_questions[agent_id] = old_question
-            agent_sessions[agent_id] = old_session
-            del agent_outputs[agent_id][history_length:]
-            _save_agent(agent_id, truncate_output_to=history_length)
+            with _data_lock:
+                old_process, old_status, old_question, old_session, old_cache = previous
+                agents[agent_id] = old_process
+                agent_statuses[agent_id] = old_status
+                agent_waiting_questions[agent_id] = old_question
+                agent_sessions[agent_id] = old_session
+                agent_outputs[agent_id] = old_cache
+                if reader is None:
+                    agent_readers.pop(agent_id, None)
+                else:
+                    agent_readers[agent_id] = reader
+                _save_agent(agent_id, emit=False)
         raise
+    if always_decision:
+        with _data_lock:
+            agent_outputs[agent_id].hold = False
+            _save_agent(agent_id)
     return {"agent_id": agent_id, "status": "running"}
 
 

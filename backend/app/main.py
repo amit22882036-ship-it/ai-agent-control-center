@@ -1,12 +1,16 @@
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
+from typing import Annotated
+import sqlite3
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.responses import StreamingResponse
 from .realtime import changes
 from pydantic import BaseModel, field_validator
 from .system_notifications import notifications
 from .agent_manager import initialize_persistence, shutdown_agents
+from .agent_manager import get_agent_output
+from .output_history import OUTPUT_PAGE_SIZE, OUTPUT_MAX_LIMIT
 
 from .agent_manager import AgentType, CodexSandbox, decide_always_agent, disable_always_agent, decide_similar_agent, disable_similar_agent, decide_agent, get_agent, get_agents, redirect_agent, reply_agent, start_agent, stop_agent, stop_branch
 
@@ -115,10 +119,26 @@ def list_agents():
 
 
 @app.get("/agents/{agent_id}")
-def get_mock_agent(agent_id: str):
-    result = get_agent(agent_id)
+def get_mock_agent(agent_id: str, include_output: bool = True):
+    result = get_agent(agent_id, include_output=include_output)
     if result is None:
         raise HTTPException(status_code=404, detail="Agent not found")
+    return result
+
+
+@app.get("/agents/{agent_id}/output")
+def agent_output(agent_id: str,
+                 limit: Annotated[int, Query(ge=1, le=OUTPUT_MAX_LIMIT)] = OUTPUT_PAGE_SIZE,
+                 after: Annotated[int | None, Query(ge=0)] = None,
+                 before: Annotated[int | None, Query(ge=0)] = None):
+    try:
+        result = get_agent_output(agent_id, limit, after, before)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except (sqlite3.Error, OSError, RuntimeError) as exc:
+        raise HTTPException(status_code=503, detail='Output history is temporarily unavailable.') from exc
+    if result is None:
+        raise HTTPException(status_code=404, detail='Agent not found')
     return result
 
 

@@ -204,6 +204,7 @@ h1 {
 }
 
 .agent-output {
+  overflow-anchor: none;
   max-height: 360px;
   overflow: auto;
   padding: 20px;

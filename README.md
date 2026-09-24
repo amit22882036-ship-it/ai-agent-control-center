@@ -12,6 +12,8 @@ A local dashboard for starting, stopping, and monitoring multiple agents. The Re
 
 Agent records, hierarchy, output, sessions, and autonomy settings are stored in local SQLite at `data/control_center.sqlite3`. Set `CONTROL_CENTER_DB_PATH` to use a different path. Use one backend worker for this local process manager. The database and sidecar files are ignored by Git.
 
+Output is appended incrementally to SQLite with stable per-agent sequence numbers; the existing normalized schema is retained. Only the latest 1,000 entries per agent are cached on startup. The dashboard loads a 300-entry tail, then requests incremental changes. **Load older output** retrieves earlier history on demand. The browser retains at most 2,000 entries; loading beyond that window switches to browsing older output until **Return to latest output** is selected. Complete history remains in SQLite. Failed database writes are logged and retained in a retry backlog (which can grow during an outage); subsequent activity, reads, or shutdown retry them. Uncommitted data cannot survive a crash during a storage outage.
+
 On normal shutdown, running agents are stopped; waiting agents stay waiting. After a crash, records last saved as running become stopped with a restart marker. No old PID is reattached or killed. Recovered waiting Codex agents can Reply or delegate through their saved session. Loading never starts agents or replays historical notifications. Autonomy settings survive, but temporary attempt flags reset. `finished` means the process exited; it does not distinguish success from failure.
 
 ## Requirements

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { createRefreshQueue } from './agentEventStream.mjs'
 import StartAgentForm from './StartAgentForm'
+import AgentOutput from './AgentOutput'
 
 function AgentDetails({ agentId, onClose, onStopped, refreshVersion }) {
   const refreshRef = useRef(null)
@@ -213,7 +214,7 @@ function AgentDetails({ agentId, onClose, onStopped, refreshVersion }) {
 
     async function fetchDetails() {
       try {
-        const response = await fetch(`http://127.0.0.1:8000/agents/${agentId}`, {
+        const response = await fetch(`http://127.0.0.1:8000/agents/${agentId}?include_output=false`, {
           signal: controller.signal,
         })
         if (!response.ok) {
@@ -381,10 +382,7 @@ function AgentDetails({ agentId, onClose, onStopped, refreshVersion }) {
             setDetailsVersion((version) => version + 1)
             onStopped()
           }} />
-          <h3 id="output-heading">Output</h3>
-          <pre className="agent-output" aria-labelledby="output-heading" tabIndex={0}>
-            {agent.output.length > 0 ? agent.output.join('\n') : 'No output yet'}
-          </pre>
+          <AgentOutput key={agentId} agentId={agentId} refreshVersion={refreshVersion} />
         </>
       )}
     </section>

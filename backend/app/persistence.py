@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 import sqlite3
 from threading import RLock
+from .output_history import OUTPUT_PAGE_SIZE, OUTPUT_MAX_LIMIT
 
 
 class AgentStore:
@@ -55,7 +56,7 @@ class AgentStore:
             finally:
                 db.close()
 
-    def save_agent(self, record, output_lines=(), truncate_output_to=None):
+    def save_agent(self, record, output_lines=(), output_entries=None):
         """Commit metadata and any new output together, retaining creation order."""
         values = dict(record)
         values['similar_examples'] = json.dumps(values['similar_examples'], ensure_ascii=False)
@@ -72,20 +73,66 @@ class AgentStore:
                 similar_decisions_enabled=excluded.similar_decisions_enabled, similar_examples=excluded.similar_examples,
                 always_decide_enabled=excluded.always_decide_enabled,
                 always_decide_configured=excluded.always_decide_configured''', values)
-            if truncate_output_to is not None:
-                db.execute('DELETE FROM output WHERE agent_id=? AND sequence>=?',
-                           (record['agent_id'], truncate_output_to))
             if output_lines:
                 sequence = db.execute('SELECT COALESCE(MAX(sequence)+1, 0) FROM output WHERE agent_id=?',
                                       (record['agent_id'],)).fetchone()[0]
                 db.executemany('INSERT INTO output (agent_id, sequence, line) VALUES (?, ?, ?)',
                                [(record['agent_id'], sequence + index, line) for index, line in enumerate(output_lines)])
+            if output_entries:
+                # Retrying an uncertain commit is safe; never replace existing text.
+                for seq, text in output_entries:
+                    inserted = db.execute('INSERT INTO output (agent_id, sequence, line) VALUES (?, ?, ?) '
+                                          'ON CONFLICT(agent_id, sequence) DO NOTHING',
+                                          (record['agent_id'], seq, text))
+                    if not inserted.rowcount:
+                        existing = db.execute('SELECT line FROM output WHERE agent_id=? AND sequence=?',
+                                              (record['agent_id'], seq)).fetchone()[0]
+                        if existing != text:
+                            raise sqlite3.IntegrityError('Output sequence collision with different text')
 
-    def load_agents(self):
+    def read_output(self, agent_id, limit=OUTPUT_PAGE_SIZE, after=None, before=None):
+        if not 1 <= limit <= OUTPUT_MAX_LIMIT or (after is not None and before is not None):
+            raise ValueError('Use a limit between 1 and 1000 and only one output cursor')
+        if (after is not None and after < 0) or (before is not None and before < 0):
+            raise ValueError('Output cursors must be non-negative')
+        with self._connection() as db:
+            where, params = 'agent_id=?', [agent_id]
+            if after is not None:
+                where += ' AND sequence>?'
+                params.append(after)
+            if before is not None:
+                where += ' AND sequence<?'
+                params.append(before)
+            order = 'ASC' if after is not None else 'DESC'
+            rows = db.execute(f'SELECT sequence, line FROM output WHERE {where} '
+                              f'ORDER BY sequence {order} LIMIT ?', [*params, limit]).fetchall()
+            items = sorted(({'seq': row[0], 'text': row[1]} for row in rows), key=lambda item: item['seq'])
+            oldest = items[0]['seq'] if items else (before if before is not None else after)
+            newest = items[-1]['seq'] if items else after
+            has_older = oldest is not None and db.execute(
+                'SELECT 1 FROM output WHERE agent_id=? AND sequence<? LIMIT 1', (agent_id, oldest)).fetchone() is not None
+            has_newer = newest is not None and db.execute(
+                'SELECT 1 FROM output WHERE agent_id=? AND sequence>? LIMIT 1', (agent_id, newest)).fetchone() is not None
+            return {'agent_id': agent_id, 'items': items, 'has_older': has_older, 'has_newer': has_newer}
+
+    def full_output(self, agent_id):
+        with self._connection() as db:
+            return [row[0] for row in db.execute(
+                'SELECT line FROM output WHERE agent_id=? ORDER BY sequence', (agent_id,))]
+
+    def load_agents(self, output_limit=None):
         with self._connection() as db:
             records = [dict(row) for row in db.execute('SELECT * FROM agents ORDER BY creation_order')]
             for record in records:
                 record['similar_examples'] = json.loads(record['similar_examples'])
-                record['output'] = [row[0] for row in db.execute(
-                    'SELECT line FROM output WHERE agent_id=? ORDER BY sequence', (record['agent_id'],))]
+                key = record['agent_id']
+                record['next_sequence'] = db.execute(
+                    'SELECT COALESCE(MAX(sequence)+1, 0) FROM output WHERE agent_id=?', (key,)).fetchone()[0]
+                if output_limit is None:
+                    record['output'] = [row[0] for row in db.execute(
+                        'SELECT line FROM output WHERE agent_id=? ORDER BY sequence', (key,))]
+                else:
+                    record['output'] = [row[0] for row in db.execute(
+                        'SELECT line FROM output WHERE agent_id=? ORDER BY sequence DESC LIMIT ?',
+                        (key, output_limit))][::-1]
             return records
