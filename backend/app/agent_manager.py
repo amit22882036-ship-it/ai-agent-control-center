@@ -12,6 +12,7 @@ from threading import RLock, Thread
 from typing import Literal
 from uuid import UUID, uuid4
 
+from .agent_names import default_display_name, validate_display_name, validate_display_color
 from .system_notifications import notifications
 from .persistence import AgentStore
 from .realtime import changes
@@ -26,6 +27,8 @@ agents: dict[str, subprocess.Popen | None] = {}
 agent_parents: dict[str, str | None] = {}
 agent_statuses: dict[str, str] = {}
 agent_outputs: dict[str, list[str]] = {}
+agent_names: dict[str, str] = {}
+agent_colors: dict[str, str] = {}
 agent_tasks: dict[str, str] = {}
 agent_types: dict[str, AgentType] = {}
 agent_sandboxes: dict[str, CodexSandbox | None] = {}
@@ -180,7 +183,9 @@ def _save_agent(agent_id: str, emit=True) -> bool:
             try:
                 _store.save_agent({
                     "agent_id": agent_id, "parent_id": agent_parents[agent_id],
-                    "task": agent_tasks[agent_id], "agent_type": agent_types[agent_id],
+                    "task": agent_tasks[agent_id],
+                    "display_name": agent_names[agent_id], "agent_type": agent_types[agent_id],
+                    "display_color": agent_colors.get(agent_id, "neutral"),
                     "sandbox": agent_sandboxes[agent_id], "status": agent_statuses[agent_id],
                     "session_id": agent_sessions[agent_id], "waiting_question": agent_waiting_questions[agent_id],
                     "similar_decisions_enabled": similar.enabled, "similar_examples": similar.examples.copy(),
@@ -207,7 +212,7 @@ def initialize_persistence(path=None) -> None:
     store = AgentStore(path)
     records = store.load_agents(output_limit=RECENT_OUTPUT_LIMIT)
     with _data_lock:
-        for registry in (agents, agent_parents, agent_statuses, agent_outputs, agent_tasks, agent_types,
+        for registry in (agents, agent_parents, agent_statuses, agent_outputs, agent_tasks, agent_names, agent_colors, agent_types,
                          agent_sandboxes, agent_sessions, agent_waiting_questions, agent_readers,
                          agent_similar_decisions, agent_always_decisions):
             registry.clear()
@@ -218,6 +223,8 @@ def initialize_persistence(path=None) -> None:
             agents[key] = None
             agent_parents[key] = record['parent_id']
             agent_tasks[key] = record['task']
+            agent_names[key] = record['display_name']
+            agent_colors[key] = record['display_color']
             agent_types[key] = record['agent_type']
             agent_sandboxes[key] = record['sandbox']
             agent_statuses[key] = record['status']
@@ -355,6 +362,8 @@ def start_agent(task: str, agent_type: AgentType = "mock", sandbox: CodexSandbox
     agent_parents[agent_id] = parent_id
     agent_outputs[agent_id] = OutputCache()
     agent_tasks[agent_id] = task
+    agent_names[agent_id] = default_display_name(task)
+    agent_colors[agent_id] = "neutral"
     agent_types[agent_id] = agent_type
     agent_sandboxes[agent_id] = sandbox if agent_type == "codex" else None
     agent_sessions[agent_id] = None
@@ -386,8 +395,11 @@ def get_agents() -> list[dict[str, str | None]]:
             "parent_id": agent_parents[agent_id],
             "status": agent_statuses[agent_id],
             "task": agent_tasks[agent_id],
+            "display_name": agent_names[agent_id],
+            "display_color": agent_colors.get(agent_id, "neutral"),
             "agent_type": agent_types[agent_id],
             "sandbox": agent_sandboxes[agent_id],
+            "waiting_question": agent_waiting_questions[agent_id],
         })
     return result
 
@@ -412,6 +424,8 @@ def get_agent(agent_id: str, include_output: bool = True) -> dict[str, str | boo
         "agent_id": agent_id,
         "status": agent_statuses[agent_id],
         "task": agent_tasks[agent_id],
+        "display_name": agent_names[agent_id],
+        "display_color": agent_colors.get(agent_id, "neutral"),
         "agent_type": agent_types[agent_id],
         "sandbox": agent_sandboxes[agent_id],
         "parent_id": agent_parents[agent_id],
@@ -769,3 +783,41 @@ def _stop_windows_tree(process: subprocess.Popen) -> None:
     # Killing only cmd.exe can leave Node/Codex children alive. Never report
     # stopped when tree termination failed.
     raise RuntimeError("Could not terminate the Codex process tree; stop was not confirmed.")
+
+
+@_synchronized
+def rename_agent(agent_id: str, display_name: str):
+    if agent_id not in agents:
+        return None
+    name = validate_display_name(display_name)
+    with _data_lock:
+        previous = agent_names[agent_id]
+        agent_names[agent_id] = name
+        if not _save_agent(agent_id):
+            agent_names[agent_id] = previous
+            raise RuntimeError("Unable to save agent name. Please retry.")
+    return {"agent_id": agent_id, "display_name": name}
+
+
+@_synchronized
+def set_agent_color(agent_id: str, display_color: str):
+    if agent_id not in agents:
+        return None
+    color = validate_display_color(display_color)
+    with _data_lock:
+        previous = agent_colors.get(agent_id, "neutral")
+        agent_colors[agent_id] = color
+        if not _save_agent(agent_id):
+            agent_colors[agent_id] = previous
+            raise RuntimeError("Unable to save agent color. Please retry.")
+    return {"agent_id": agent_id, "display_color": color}
+
+
+@_synchronized
+def get_name_history(agent_id: str):
+    if agent_id not in agents:
+        return None
+    if _store is None:
+        raise RuntimeError("Name history is temporarily unavailable.")
+    with _data_lock:
+        return {"agent_id": agent_id, "history": _store.name_history(agent_id)}

@@ -4,9 +4,21 @@ import StartAgentForm from './StartAgentForm'
 import AgentList from './AgentList'
 import useAgentNotifications from './useAgentNotifications'
 import { connectAgentEvents, createRefreshQueue } from './agentEventStream.mjs'
+import WorkspaceBar from './WorkspaceBar'
+import AttentionPanel from './AttentionPanel'
+import ResizeHandle from './ResizeHandle'
+import { readLayout, layoutKey } from './panelLayout.mjs'
 import './App.css'
 
 function App() {
+  const [layout, setLayout] = useState(() => readLayout())
+  useEffect(() => {
+    try { localStorage.setItem(layoutKey, JSON.stringify(layout)) } catch { /* Resizing still works for this session. */ }
+  }, [layout])
+  function resize(side, width) { setLayout((current) => ({ ...current, [side]: width })) }
+  const [search, setSearch] = useState('')
+  const [showStart, setShowStart] = useState(false)
+  const [rootStarting, setRootStarting] = useState(false)
   const [agents, setAgents] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -15,6 +27,7 @@ function App() {
   const [detailsRefresh, setDetailsRefresh] = useState(0)
   const [transport, setTransport] = useState('polling')
   const refreshRef = useRef(null)
+  const newAgentButtonRef = useRef(null)
   const notifications = useAgentNotifications(setSelectedAgentId)
   const { observeAgents } = notifications
 
@@ -62,39 +75,54 @@ function App() {
     if (listVersion > 0) refreshRef.current?.()
   }, [listVersion])
 
+  function restoreNewAgentFocus() {
+    requestAnimationFrame(() => newAgentButtonRef.current?.focus())
+  }
+
+  function closeStartComposer() {
+    if (rootStarting) return
+    setShowStart(false)
+    restoreNewAgentFocus()
+  }
+
+  function rootAgentStarted() {
+    setListVersion((version) => version + 1)
+    setShowStart(false)
+    restoreNewAgentFocus()
+  }
+
   return (
-    <main className="dashboard">
-      <header>
-        <h1>AI Agent Control Center</h1>
-        <p className="subtitle" role="status">{transport === 'live' ? 'Live updates' : 'Polling fallback'}</p>
-      </header>
-      <section className="notification-controls" aria-label="Browser notifications">
-        <button className="close-button" type="button"
-          onClick={notifications.toggleNotifications}
-          disabled={!notifications.supported || notifications.requesting}>
-          {notifications.requesting ? 'Requesting permission...'
-            : notifications.enabled ? 'Disable notifications' : 'Enable notifications'}
-        </button>
-        <div role="status">
-          <p>{notifications.status}</p>
-          {notifications.message && <p>{notifications.message}</p>}
-        </div>
-      </section>
-      <StartAgentForm onStarted={() => setListVersion((version) => version + 1)} />
+    <div className={`app-shell${selectedAgentId !== null ? ' has-details' : ''}`} style={{ '--details-width': `${layout.right}px` }}>
+      <WorkspaceBar agents={agents} search={search} onSearch={setSearch} notifications={notifications}
+        showStart={showStart} onStart={() => showStart ? closeStartComposer() : setShowStart(true)}
+        newAgentButtonRef={newAgentButtonRef} startingAgent={rootStarting} />
+      <main id="workspace" className="dashboard">
+        <header className="workspace-heading"><div><p className="eyebrow">YOUR AGENTS, IN FOCUS</p><h1>Agent Workspace</h1><p className="subtitle">Monitor, collaborate, and guide your AI agents.</p></div>
+          <span className={`connection-state ${transport}`} role="status">{transport === 'live' ? 'Live' : 'Polling fallback'}</span>
+        </header>
+      {showStart && <StartAgentForm sectionId="new-agent-composer" onCancel={closeStartComposer}
+        onStartingChange={setRootStarting} onStarted={rootAgentStarted} />}
+      <AttentionPanel agents={agents} onSelect={setSelectedAgentId} />
       {error && <p className="message error" role="alert">{error}</p>}
       {loading && <p className="message" role="status">Loading agents...</p>}
       <AgentList agents={agents} selectedAgentId={selectedAgentId} onSelect={setSelectedAgentId}
-        loading={loading} unavailable={Boolean(error)} />
+        loading={loading} unavailable={Boolean(error)} search={search} onStart={() => setShowStart(true)} />
+      </main>
       {selectedAgentId !== null && (
+        <div className="details-dock">
+        <ResizeHandle side="right" width={layout.right} onChange={(width) => resize('right', width)} />
         <AgentDetails
           key={selectedAgentId}
           agentId={selectedAgentId}
+          agents={agents}
+          onSelect={setSelectedAgentId}
           refreshVersion={detailsRefresh}
           onClose={() => setSelectedAgentId(null)}
           onStopped={() => setListVersion((version) => version + 1)}
         />
+        </div>
       )}
-    </main>
+    </div>
   )
 }
 

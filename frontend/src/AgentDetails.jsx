@@ -1,9 +1,21 @@
+import Icon from './Icon'
 import { useEffect, useRef, useState } from 'react'
 import { createRefreshQueue } from './agentEventStream.mjs'
 import StartAgentForm from './StartAgentForm'
 import AgentOutput from './AgentOutput'
+import AgentNameEditor from './AgentNameEditor'
+import AgentColorPicker from './AgentColorPicker'
+import AgentNameHistory from './AgentNameHistory'
+import { agentName, statusLabels } from './agentPresentation.mjs'
 
-function AgentDetails({ agentId, onClose, onStopped, refreshVersion }) {
+function AgentDetails({ agentId, onClose, onStopped, refreshVersion, agents, onSelect }) {
+  const [outputOpened, setOutputOpened] = useState(false)
+  const panelRef = useRef(null)
+  useEffect(() => {
+    const previous = document.activeElement
+    panelRef.current?.focus()
+    return () => { if (previous?.isConnected) previous.focus() }
+  }, [agentId])
   const refreshRef = useRef(null)
   const [detailsVersion, setDetailsVersion] = useState(0)
   const [agent, setAgent] = useState(null)
@@ -249,22 +261,17 @@ function AgentDetails({ agentId, onClose, onStopped, refreshVersion }) {
   }, [agentId, busy, detailsVersion, refreshVersion])
 
   return (
-    <section className="agent-details" aria-labelledby="details-heading">
+    <aside ref={panelRef} tabIndex={-1} onKeyDown={(event) => { if (event.key === 'Escape') onClose() }} className="agent-details" aria-labelledby="details-heading">
       <div className="details-header">
-        <h2 id="details-heading">Agent {agentId} details</h2>
+        <h2 id="details-heading">{agent ? agentName(agent) : 'Agent details'}</h2>
+        {agent && <span className={`status status-${agent.status}`}>{statusLabels[agent.status] || agent.status}</span>}
         <div className="details-actions">
-          {(agent?.status === 'running' || agent?.status === 'waiting') && (
-            <button className="stop-button" type="button" onClick={handleStop} disabled={busy}>
-              {stopping ? 'Stopping...' : 'Stop'}
-            </button>
-          )}
-          {agent?.child_ids?.length > 0 && (
-            <button className="stop-button" type="button" onClick={handleStopBranch} disabled={busy}>
-              {stoppingBranch ? 'Stopping branch...' : 'Stop branch'}
-            </button>
-          )}
-          <button className="close-button" type="button" onClick={onClose}>Close</button>
+          <button className="close-button" type="button" onClick={onClose} aria-label="Close inspector" title="Close inspector"><Icon name="close" /></button>
         </div>
+        {agent && <div className="identity-controls">
+          <AgentNameEditor agent={agent} disabled={busy} onSaved={(name) => { setAgent((current) => ({ ...current, display_name: name })); setDetailsVersion((version) => version + 1); onStopped() }} />
+          <AgentColorPicker agent={agent} onSaved={(color) => { setAgent((current) => ({ ...current, display_color: color })); onStopped() }} />
+        </div>}
       </div>
       {branchError && <p className="message error" role="alert">{branchError}</p>}
       {stopError && <p className="message error" role="alert">{stopError}</p>}
@@ -278,41 +285,8 @@ function AgentDetails({ agentId, onClose, onStopped, refreshVersion }) {
       {agent && (
         <>
           {error && <p>Showing last received details.</p>}
-          <dl>
-            <dt>Type</dt>
-            <dd>{agent.agent_type === 'codex' ? 'Codex' : 'Mock'}</dd>
-            {agent.agent_type === 'codex' && (
-              <>
-                <dt>Sandbox</dt>
-                <dd>{agent.sandbox === 'workspace-write' ? 'Workspace write' : 'Read only'}</dd>
-              </>
-            )}
-            <dt>Parent</dt>
-            <dd>{agent.parent_id ?? 'None / Root agent'}</dd>
-            <dt>Direct children</dt>
-            <dd>{agent.child_ids?.length ?? 0}</dd>
-            <dt>Task</dt>
-            <dd className="task">{agent.task}</dd>
-            <dt>Status</dt>
-            <dd><span className={`status status-${agent.status}`}>{agent.status === 'waiting' ? 'waiting for you' : agent.status}</span></dd>
-          </dl>
-          {agent.agent_type === 'codex' && agent.always_decide_enabled && (
-            <div className="waiting-panel">
-              <p>Always decide for this agent: On</p>
-              <p className="agent-type-note">Always Decide takes precedence over Similar Decisions. The agent can still ask for genuinely missing information.</p>
-              <button className="close-button" type="button" disabled={busy} onClick={() => handleAlways(true)}>
-                {alwaysAction === 'disabling' ? 'Turning off...' : 'Turn off'}
-              </button>
-            </div>
-          )}
-          {agent.agent_type === 'codex' && agent.similar_decisions_enabled && (
-            <div className="waiting-panel">
-              <p>Auto-decide similar questions: {agent.always_decide_enabled ? 'Saved (Always Decide is active)' : 'On'}</p>
-              <button className="close-button" type="button" disabled={busy} onClick={() => handleSimilar(true)}>
-                {similarAction === 'disabling' ? 'Turning off...' : 'Turn off'}
-              </button>
-            </div>
-          )}
+          <details className="detail-section overview-section" open><summary>Overview</summary>
+          <details className="assignment-disclosure"><summary>Assignment</summary><p className="task">{agent.task}</p></details>
           {agent.agent_type === 'codex' && agent.status === 'waiting' && (
             <section className="waiting-panel" aria-labelledby="waiting-heading">
               <h3 id="waiting-heading">Waiting for you</h3>
@@ -335,6 +309,7 @@ function AgentDetails({ agentId, onClose, onStopped, refreshVersion }) {
                   disabled={busy} aria-describedby="decide-help">
                   {deciding ? 'Deciding...' : 'Decide for me'}
                 </button>
+                <details className="delegation-options"><summary>Delegate future decisions</summary>
                 <button className="close-button" type="button" disabled={busy}
                   onClick={() => handleSimilar()} aria-describedby="similar-help">
                   {similarAction === 'enabling' ? 'Enabling...' : 'Decide similar automatically'}
@@ -353,15 +328,52 @@ function AgentDetails({ agentId, onClose, onStopped, refreshVersion }) {
                     </p>
                   </>
                 )}
+                </details>
                 <p id="decide-help" className="agent-type-note">
                   Let the agent make this decision itself and continue. This applies only this time.
                 </p>
               </form>
             </section>
           )}
+          </details>
+          {(agent.parent_id || agent.child_ids?.length > 0) && <details className="detail-section"><summary>Relationships</summary>
+            {agent.parent_id && <p>Parent <button onClick={() => onSelect(agent.parent_id)}>{agentName(agents.find((item) => item.agent_id === agent.parent_id))}</button></p>}
+            {agent.child_ids?.map((id) => <button className="relationship-link" key={id} onClick={() => onSelect(id)}>{agentName(agents.find((item) => item.agent_id === id))}<span>Child agent <Icon name="arrow" size={12} /></span></button>)}
+          </details>}
+
+          <details className="detail-section"><summary>Actions</summary>
+          <div className="details-actions">
+          {(agent?.status === 'running' || agent?.status === 'waiting') && (
+            <button className="stop-button" type="button" onClick={handleStop} disabled={busy}>
+              {stopping ? 'Stopping...' : 'Stop'}
+            </button>
+          )}
+          {agent?.child_ids?.length > 0 && (
+            <button className="stop-button" type="button" onClick={handleStopBranch} disabled={busy}>
+              {stoppingBranch ? 'Stopping branch...' : 'Stop branch'}
+            </button>
+          )}
+          </div>
+          {agent.agent_type === 'codex' && agent.always_decide_enabled && (
+            <div className="waiting-panel">
+              <p>Always decide for this agent: On</p>
+              <p className="agent-type-note">Always Decide takes precedence over Similar Decisions. The agent can still ask for genuinely missing information.</p>
+              <button className="close-button" type="button" disabled={busy} onClick={() => handleAlways(true)}>
+                {alwaysAction === 'disabling' ? 'Turning off...' : 'Turn off'}
+              </button>
+            </div>
+          )}
+          {agent.agent_type === 'codex' && agent.similar_decisions_enabled && (
+            <div className="waiting-panel">
+              <p>Auto-decide similar questions: {agent.always_decide_enabled ? 'Saved (Always Decide is active)' : 'On'}</p>
+              <button className="close-button" type="button" disabled={busy} onClick={() => handleSimilar(true)}>
+                {similarAction === 'disabling' ? 'Turning off...' : 'Turn off'}
+              </button>
+            </div>
+          )}
           {agent.agent_type === 'codex' && agent.status === 'running' && (
             agent.session_id ? (
-              <form className="redirect-form" onSubmit={handleRedirect}>
+              <details className="detail-section"><summary>Redirect this agent</summary><form className="redirect-form" onSubmit={handleRedirect}>
                 <label htmlFor="redirect-instruction">Redirect agent</label>
                 <textarea
                   id="redirect-instruction"
@@ -376,17 +388,27 @@ function AgentDetails({ agentId, onClose, onStopped, refreshVersion }) {
                   disabled={busy || !instruction.trim()}>
                   {redirecting ? 'Sending...' : 'Send'}
                 </button>
-              </form>
+              </form></details>
             ) : <p className="agent-type-note">Redirect will be available once the Codex session starts.</p>
           )}
-          <StartAgentForm parentId={agentId} disabled={busy} onStartingChange={setChildStarting} onStarted={() => {
+          <details className="detail-section"><summary>Start a child agent</summary><StartAgentForm parentId={agentId} disabled={busy} onStartingChange={setChildStarting} onStarted={() => {
             setDetailsVersion((version) => version + 1)
             onStopped()
           }} />
-          <AgentOutput key={agentId} agentId={agentId} refreshVersion={refreshVersion} />
+          </details>
+          </details>
+          <details className="detail-section" onToggle={(event) => { if (event.currentTarget.open) setOutputOpened(true) }}><summary>Output history</summary>
+            {outputOpened && <AgentOutput key={agentId} agentId={agentId} refreshVersion={refreshVersion} />}
+          </details>
+          <AgentNameHistory agentId={agentId} refreshVersion={`${refreshVersion}-${detailsVersion}`} />
+          <details className="detail-section advanced"><summary>Advanced information</summary><dl>
+            <dt>Agent UUID</dt><dd>{agentId}</dd><dt>Codex session</dt><dd>{agent.session_id || 'Not available'}</dd>
+            <dt>Agent type</dt><dd>{agent.agent_type}</dd><dt>Sandbox</dt><dd>{agent.sandbox || 'Not applicable'}</dd>
+            <dt>Internal status</dt><dd>{agent.status}</dd>
+          </dl></details>
         </>
       )}
-    </section>
+    </aside>
   )
 }
 

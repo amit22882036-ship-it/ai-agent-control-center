@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { createAgentNotifications } from './agentNotifications'
 import { HEARTBEAT_INTERVAL_MS, RECENT_POLL_MS, syncSystemNotifications } from './systemNotificationSync'
+import { desktopNotificationPrerequisite, notificationStatus } from './notificationGuidance'
 
 const preferenceKey = 'ai-agent-control-center.notifications'
 
@@ -120,14 +121,9 @@ export default function useAgentNotifications(onSelect) {
     }
   }
 
-  const status = !supported
-    ? 'This browser does not support notifications.'
-    : permission === 'denied'
-      ? 'Notifications are blocked. Allow them in your browser’s site settings to enable them.'
-      : enabled && permission === 'granted'
-        ? 'Notifications enabled. Windows alerts continue with the dashboard closed while the backend runs.'
-        : 'Notifications are off.'
+  const status = notificationStatus({ supported, permission, enabled })
 
-  return { observeAgents, toggleNotifications, enabled, supported, requesting, status,
+  return { observeAgents, toggleNotifications, enabled, supported, permission, requesting, status,
+    prerequisite: desktopNotificationPrerequisite,
     message: [message, syncError].filter(Boolean).join(' ') }
 }

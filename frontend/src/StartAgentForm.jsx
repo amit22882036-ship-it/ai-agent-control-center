@@ -1,6 +1,14 @@
 import { useId, useState } from 'react'
+import Icon from './Icon'
 
-export default function StartAgentForm({ parentId = null, onStarted, disabled = false, onStartingChange }) {
+export default function StartAgentForm({
+  parentId = null,
+  onStarted,
+  disabled = false,
+  onStartingChange,
+  onCancel,
+  sectionId,
+}) {
   const id = useId()
   const [task, setTask] = useState('')
   const [agentType, setAgentType] = useState('mock')
@@ -41,34 +49,59 @@ export default function StartAgentForm({ parentId = null, onStarted, disabled = 
   }
 
   return (
-    <section className="start-agent" aria-labelledby={`${id}-heading`}>
-      <h2 id={`${id}-heading`}>{child ? 'Start child agent' : 'Start new agent'}</h2>
+    <section id={sectionId} className={`start-agent ${child ? 'start-agent-child' : 'start-agent-root'}`} aria-labelledby={`${id}-heading`}
+      onKeyDown={(event) => {
+        if (event.key === 'Escape' && !unavailable && onCancel) {
+          event.stopPropagation()
+          onCancel()
+        }
+      }}>
+      <div className="start-agent-heading">
+        <span className="start-agent-icon"><Icon name="agent" size={18} /></span>
+        <div><h2 id={`${id}-heading`}>{child ? 'Start child agent' : 'New agent'}</h2>
+          <p>{child ? 'Add a focused agent to this branch.' : 'Describe the assignment, then choose how it should run.'}</p></div>
+        {!child && <button type="button" className="close-button composer-close" onClick={onCancel} disabled={unavailable} aria-label="Close new agent composer"><Icon name="close" /></button>}
+      </div>
       <form onSubmit={handleStart}>
-        <div className="agent-type-field">
-          <label htmlFor={`${id}-type`}>Agent Type</label>
-          <select id={`${id}-type`} value={agentType} onChange={(event) => setAgentType(event.target.value)} disabled={unavailable}>
-            <option value="mock">Mock</option><option value="codex">Codex</option>
-          </select>
+        <div className="task-field">
+          <label htmlFor={`${id}-task`}>Task</label>
+          <textarea id={`${id}-task`} value={task} onChange={(event) => setTask(event.target.value)}
+            placeholder="What should this agent work on?" rows={3} required disabled={unavailable} autoFocus={!child} />
         </div>
-        {agentType === 'codex' && (
-          <div className="agent-type-field">
-            <label htmlFor={`${id}-sandbox`}>Sandbox</label>
-            <select id={`${id}-sandbox`} value={sandbox} onChange={(event) => setSandbox(event.target.value)}
-              disabled={unavailable} aria-describedby={sandbox === 'workspace-write' ? `${id}-warning` : undefined}>
-              <option value="read-only">Read only</option><option value="workspace-write">Workspace write</option>
-            </select>
-            {sandbox === 'workspace-write' && (
-              <p id={`${id}-warning`} className="agent-type-note" role="status">Codex can modify files in this project.</p>
-            )}
+        <fieldset className="start-choice-field">
+          <legend>Agent type</legend>
+          <div className="segmented-control">
+            {['mock', 'codex'].map((value) => <label key={value}>
+              <input type="radio" name={`${id}-type`} value={value} checked={agentType === value}
+                onChange={() => setAgentType(value)} disabled={unavailable} />
+              <span>{value === 'mock' ? 'Mock' : 'Codex'}</span>
+            </label>)}
           </div>
+        </fieldset>
+        {agentType === 'codex' && (
+          <fieldset className="start-choice-field sandbox-field">
+            <legend>Access</legend>
+            <div className="segmented-control">
+              {[['read-only', 'Read only'], ['workspace-write', 'Workspace write']].map(([value, label]) => <label key={value}>
+                <input type="radio" name={`${id}-sandbox`} value={value} checked={sandbox === value}
+                  onChange={() => setSandbox(value)} disabled={unavailable}
+                  aria-describedby={value === 'workspace-write' ? `${id}-warning` : undefined} />
+                <span>{label}</span>
+              </label>)}
+            </div>
+            {sandbox === 'workspace-write' && (
+              <p id={`${id}-warning`} className="agent-type-note" role="status">Can modify files in this project.</p>
+            )}
+          </fieldset>
         )}
-        <label htmlFor={`${id}-task`}>Task</label>
-        <div className="start-controls">
-          <input id={`${id}-task`} type="text" value={task} onChange={(event) => setTask(event.target.value)}
-            placeholder="Refactor authentication module" required disabled={unavailable} />
-          <button className="start-button" type="submit" disabled={unavailable || !task.trim()}>
-            {starting ? 'Starting...' : child ? 'Start child agent' : 'Start Agent'}
-          </button>
+        <div className="start-agent-footer">
+          <p>{agentType === 'codex' ? `Codex · ${sandbox === 'workspace-write' ? 'Workspace write' : 'Read only'}` : 'Mock agent · Simulated work'}</p>
+          <div className="start-agent-actions">
+            {!child && <button className="close-button" type="button" onClick={onCancel} disabled={unavailable}>Cancel</button>}
+            <button className="start-button" type="submit" disabled={unavailable || !task.trim()}>
+              {starting ? 'Starting...' : child ? 'Start child agent' : 'Start agent'}<Icon name="arrow" size={15} />
+            </button>
+          </div>
         </div>
       </form>
       {error && <p className="message error" role="alert">{error}</p>}

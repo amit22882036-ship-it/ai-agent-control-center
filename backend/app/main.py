@@ -12,6 +12,9 @@ from .agent_manager import initialize_persistence, shutdown_agents
 from .agent_manager import get_agent_output
 from .output_history import OUTPUT_PAGE_SIZE, OUTPUT_MAX_LIMIT
 
+from .agent_manager import rename_agent, set_agent_color, get_name_history
+from .agent_names import DisplayColor
+from .agent_names import default_display_name, validate_display_name
 from .agent_manager import AgentType, CodexSandbox, decide_always_agent, disable_always_agent, decide_similar_agent, disable_similar_agent, decide_agent, get_agent, get_agents, redirect_agent, reply_agent, start_agent, stop_agent, stop_branch
 
 @asynccontextmanager
@@ -108,6 +111,8 @@ def _start_agent_response(request: StartAgentRequest, parent_id: str | None = No
         "status": "running",
         "parent_id": parent_id,
         "task": request.task,
+        "display_name": default_display_name(request.task),
+        "display_color": "neutral",
         "agent_type": request.agent_type,
         "sandbox": request.sandbox if request.agent_type == "codex" else None,
     }
@@ -255,3 +260,49 @@ def stop_agent_branch(agent_id: str):
 async def agent_events():
     return StreamingResponse(changes.stream(), media_type="text/event-stream",
                              headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+
+class RenameAgentRequest(BaseModel):
+    display_name: str
+
+    @field_validator("display_name")
+    @classmethod
+    def valid_name(cls, value: str) -> str:
+        return validate_display_name(value)
+
+
+@app.post("/agents/{agent_id}/rename")
+def rename_agent_route(agent_id: str, request: RenameAgentRequest):
+    try:
+        result = rename_agent(agent_id, request.display_name)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    if result is None:
+        raise HTTPException(status_code=404, detail="Agent not found")
+    return result
+
+
+class AgentColorRequest(BaseModel):
+    display_color: DisplayColor
+
+
+@app.post("/agents/{agent_id}/color")
+def agent_color_route(agent_id: str, request: AgentColorRequest):
+    try:
+        result = set_agent_color(agent_id, request.display_color)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    if result is None:
+        raise HTTPException(status_code=404, detail="Agent not found")
+    return result
+
+
+@app.get("/agents/{agent_id}/name-history")
+def agent_name_history_route(agent_id: str):
+    try:
+        result = get_name_history(agent_id)
+    except (sqlite3.Error, OSError, RuntimeError) as exc:
+        raise HTTPException(status_code=503, detail="Name history is temporarily unavailable.") from exc
+    if result is None:
+        raise HTTPException(status_code=404, detail="Agent not found")
+    return result

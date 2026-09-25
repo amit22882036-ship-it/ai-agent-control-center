@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 import sqlite3
 from threading import RLock
+from .agent_names import default_display_name, validate_display_color
 from .output_history import OUTPUT_PAGE_SIZE, OUTPUT_MAX_LIMIT
 
 
@@ -16,7 +17,7 @@ class AgentStore:
         self._lock = RLock()
         with self._connection() as db:
             version = db.execute('PRAGMA user_version').fetchone()[0]
-            if version not in (0, 1):
+            if version not in (0, 1, 2, 3):
                 raise RuntimeError(f'Unsupported control-center database schema version: {version}')
             if version == 0:
                 if db.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchone():
@@ -35,12 +36,38 @@ class AgentStore:
                     PRIMARY KEY (agent_id, sequence)
                 )''')
                 db.execute('PRAGMA user_version = 1')
+                version = 1
             # Validate versioned databases instead of silently recreating missing tables.
             try:
                 db.execute('''SELECT agent_id, parent_id, task, agent_type, sandbox, status,
                     session_id, waiting_question, similar_decisions_enabled, similar_examples,
                     always_decide_enabled, always_decide_configured, creation_order FROM agents LIMIT 0''')
                 db.execute('SELECT agent_id, sequence, line FROM output LIMIT 0')
+                if version == 1:
+                    # Explicit transactional v1 -> v2 migration, retaining every row.
+                    db.execute('BEGIN')
+                    db.execute("ALTER TABLE agents ADD COLUMN display_name TEXT NOT NULL DEFAULT ''")
+                    for row in db.execute('SELECT agent_id, task FROM agents').fetchall():
+                        db.execute('UPDATE agents SET display_name=? WHERE agent_id=?',
+                                   (default_display_name(row['task']), row['agent_id']))
+                    db.execute('PRAGMA user_version = 2')
+                    version = 2
+                db.execute('SELECT display_name FROM agents LIMIT 0')
+                if version == 2:
+                    if not db.in_transaction:
+                        db.execute('BEGIN')
+                    db.execute("ALTER TABLE agents ADD COLUMN display_color TEXT NOT NULL DEFAULT 'neutral' CHECK(display_color IN ('neutral','violet','blue','cyan','green','yellow','orange','red','pink'))")
+                    db.execute("""CREATE TABLE agent_name_history (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        agent_id TEXT NOT NULL REFERENCES agents(agent_id),
+                        name TEXT NOT NULL,
+                        changed_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+                    )""")
+                    db.execute('CREATE INDEX agent_name_history_agent ON agent_name_history(agent_id, id)')
+                    db.execute('INSERT INTO agent_name_history(agent_id, name) SELECT agent_id, display_name FROM agents ORDER BY creation_order')
+                    db.execute('PRAGMA user_version = 3')
+                db.execute('SELECT display_color FROM agents LIMIT 0')
+                db.execute('SELECT id, agent_id, name, changed_at FROM agent_name_history LIMIT 0')
             except sqlite3.DatabaseError as exc:
                 raise RuntimeError('Incompatible control-center database schema') from exc
 
@@ -59,20 +86,27 @@ class AgentStore:
     def save_agent(self, record, output_lines=(), output_entries=None):
         """Commit metadata and any new output together, retaining creation order."""
         values = dict(record)
+        values.setdefault('display_name', default_display_name(values['task']))
+        values['display_color'] = validate_display_color(values.get('display_color', 'neutral'))
         values['similar_examples'] = json.dumps(values['similar_examples'], ensure_ascii=False)
         with self._connection() as db:
             db.execute('''INSERT INTO agents (agent_id, parent_id, task, agent_type, sandbox,
                 status, session_id, waiting_question, similar_decisions_enabled, similar_examples,
-                always_decide_enabled, always_decide_configured)
+                always_decide_enabled, always_decide_configured, display_name, display_color)
                 VALUES (:agent_id, :parent_id, :task, :agent_type, :sandbox, :status, :session_id,
                 :waiting_question, :similar_decisions_enabled, :similar_examples,
-                :always_decide_enabled, :always_decide_configured)
+                :always_decide_enabled, :always_decide_configured, :display_name, :display_color)
                 ON CONFLICT(agent_id) DO UPDATE SET parent_id=excluded.parent_id,
-                task=excluded.task, agent_type=excluded.agent_type, sandbox=excluded.sandbox,
+                display_name=excluded.display_name, display_color=excluded.display_color, task=excluded.task, agent_type=excluded.agent_type, sandbox=excluded.sandbox,
                 status=excluded.status, session_id=excluded.session_id, waiting_question=excluded.waiting_question,
                 similar_decisions_enabled=excluded.similar_decisions_enabled, similar_examples=excluded.similar_examples,
                 always_decide_enabled=excluded.always_decide_enabled,
                 always_decide_configured=excluded.always_decide_configured''', values)
+            latest = db.execute('SELECT name FROM agent_name_history WHERE agent_id=? ORDER BY id DESC LIMIT 1',
+                                (record['agent_id'],)).fetchone()
+            if latest is None or latest['name'] != values['display_name']:
+                db.execute('INSERT INTO agent_name_history(agent_id, name) VALUES (?, ?)',
+                           (record['agent_id'], values['display_name']))
             if output_lines:
                 sequence = db.execute('SELECT COALESCE(MAX(sequence)+1, 0) FROM output WHERE agent_id=?',
                                       (record['agent_id'],)).fetchone()[0]
@@ -89,6 +123,12 @@ class AgentStore:
                                               (record['agent_id'], seq)).fetchone()[0]
                         if existing != text:
                             raise sqlite3.IntegrityError('Output sequence collision with different text')
+
+    def name_history(self, agent_id):
+        with self._connection() as db:
+            return [dict(row) for row in db.execute(
+                'SELECT name, changed_at FROM agent_name_history WHERE agent_id=? ORDER BY id DESC',
+                (agent_id,))]
 
     def read_output(self, agent_id, limit=OUTPUT_PAGE_SIZE, after=None, before=None):
         if not 1 <= limit <= OUTPUT_MAX_LIMIT or (after is not None and before is not None):

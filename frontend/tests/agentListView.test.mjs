@@ -1,14 +1,14 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { buildAgentTree } from '../src/buildAgentTree.mjs'
-import { matchesSearch, countStatuses, filterAgentTree, parentIds, effectiveCollapsedIds, visibleAgentIds, listEmptyMessage } from '../src/agentListView.mjs'
+import { matchesSearch, matchesColors, shouldExpandFilteredPaths, countStatuses, filterAgentTree, parentIds, effectiveCollapsedIds, visibleAgentIds, listEmptyMessage } from '../src/agentListView.mjs'
 
 const agents = [
-  { agent_id: 'root', task: 'Review project', agent_type: 'codex', status: 'finished', parent_id: null },
-  { agent_id: 'child', task: 'Inspect authentication', agent_type: 'codex', status: 'waiting', parent_id: 'root' },
-  { agent_id: 'leaf', task: 'Write tests', agent_type: 'mock', status: 'running', parent_id: 'child' },
-  { agent_id: 'sibling', task: 'Review docs', agent_type: 'mock', status: 'stopped', parent_id: 'root' },
-  { agent_id: 'other', task: 'Review data', agent_type: 'codex', status: 'running', parent_id: null },
+  { agent_id: 'root', task: 'Review project', agent_type: 'codex', status: 'finished', parent_id: null, display_color: 'blue' },
+  { agent_id: 'child', task: 'Inspect authentication', agent_type: 'codex', status: 'waiting', parent_id: 'root', display_color: 'green' },
+  { agent_id: 'leaf', task: 'Write tests', agent_type: 'mock', status: 'running', parent_id: 'child', display_color: 'cyan' },
+  { agent_id: 'sibling', task: 'Review docs', agent_type: 'mock', status: 'stopped', parent_id: 'root', display_color: 'violet' },
+  { agent_id: 'other', task: 'Review data', agent_type: 'codex', status: 'running', parent_id: null, display_color: 'blue' },
 ]
 const tree = buildAgentTree(agents)
 const ids = (nodes, collapsed = new Set()) => [...visibleAgentIds(nodes, collapsed)]
@@ -99,6 +99,53 @@ test('status filters retain only matches and necessary ancestor context', () => 
 test('search and status must match the same agent', () => {
   assert.deepEqual(ids(filterAgentTree(tree, 'review', 'running')), ['other'])
   assert.deepEqual(ids(filterAgentTree(tree, 'authentication', 'running')), [])
+})
+
+test('empty color selection is Any while one and multiple colors use OR semantics', () => {
+  assert.deepEqual(ids(filterAgentTree(tree, '', 'all', new Set())), agents.map((agent) => agent.agent_id))
+  assert.deepEqual(ids(filterAgentTree(tree, '', 'all', new Set(['blue']))), ['root', 'other'])
+  assert.deepEqual(ids(filterAgentTree(tree, '', 'all', new Set(['green', 'violet']))), ['root', 'child', 'sibling'])
+})
+
+test('neutral is independently filterable and malformed or missing colors normalize to neutral', () => {
+  const neutralAgents = [
+    { ...agents[0], agent_id: 'valid', parent_id: null, display_color: 'neutral' },
+    { ...agents[0], agent_id: 'malformed', parent_id: null, display_color: 'chartreuse' },
+    { ...agents[0], agent_id: 'missing', parent_id: null, display_color: undefined },
+  ]
+  assert.equal(matchesColors(neutralAgents[0], new Set(['neutral'])), true)
+  assert.deepEqual(ids(filterAgentTree(buildAgentTree(neutralAgents), '', 'all', new Set(['neutral']))), ['valid', 'malformed', 'missing'])
+  assert.deepEqual(ids(filterAgentTree(buildAgentTree(neutralAgents), '', 'all', new Set(['blue']))), [])
+})
+
+test('search, status and multiple colors compose with AND between criteria', () => {
+  assert.deepEqual(ids(filterAgentTree(tree, 'review', 'all', new Set(['violet']))), ['root', 'sibling'])
+  assert.deepEqual(ids(filterAgentTree(tree, '', 'running', new Set(['blue']))), ['other'])
+  assert.deepEqual(ids(filterAgentTree(tree, 'review', 'running', new Set(['blue', 'green']))), ['other'])
+  assert.deepEqual(ids(filterAgentTree(tree, 'authentication', 'waiting', new Set(['blue']))), [])
+})
+
+test('color matches retain ancestors, exclude siblings and reveal collapsed matching paths', () => {
+  const filtered = filterAgentTree(tree, '', 'all', new Set(['cyan']))
+  const collapsed = new Set(['root', 'child', 'other'])
+  const effective = effectiveCollapsedIds(filtered, collapsed, shouldExpandFilteredPaths('', 'all', new Set(['cyan'])))
+  assert.deepEqual(ids(filtered, effective), ['root', 'child', 'leaf'])
+  assert.equal(filtered[0].contextOnly, true)
+  assert.equal(filtered[0].children[0].contextOnly, true)
+  assert.equal(ids(filtered, effective).includes('sibling'), false)
+  assert.deepEqual([...collapsed], ['root', 'child', 'other'])
+})
+
+test('clearing color filtering restores collapse state and keeps hidden selection unchanged', () => {
+  const collapsed = new Set(['root', 'child'])
+  const selectedAgentId = 'sibling'
+  const filtered = filterAgentTree(tree, '', 'active', new Set(['cyan']))
+  assert.deepEqual(ids(filtered, effectiveCollapsedIds(filtered, collapsed, true)), ['root', 'child', 'leaf'])
+  const restored = effectiveCollapsedIds(tree, collapsed, shouldExpandFilteredPaths('', 'active', new Set()))
+  assert.equal(restored, collapsed)
+  assert.deepEqual(ids(tree, restored), ['root', 'other'])
+  assert.equal(visibleAgentIds(filtered, new Set()).has(selectedAgentId), false)
+  assert.equal(selectedAgentId, 'sibling')
 })
 
 test('counts derive from full snapshot including empty input', () => {
