@@ -181,6 +181,10 @@ def _save_agent(agent_id: str, emit=True) -> bool:
             similar = agent_similar_decisions[agent_id]
             always = agent_always_decisions[agent_id]
             try:
+                assignment_options = {}
+                pending_task = getattr(cache, 'assignment_task_id', None)
+                if pending_task is not None:
+                    assignment_options['assignment_task_id'] = pending_task
                 _store.save_agent({
                     "agent_id": agent_id, "parent_id": agent_parents[agent_id],
                     "task": agent_tasks[agent_id],
@@ -190,7 +194,8 @@ def _save_agent(agent_id: str, emit=True) -> bool:
                     "session_id": agent_sessions[agent_id], "waiting_question": agent_waiting_questions[agent_id],
                     "similar_decisions_enabled": similar.enabled, "similar_examples": similar.examples.copy(),
                     "always_decide_enabled": always.enabled, "always_decide_configured": always.configured,
-                }, output_entries=cache.pending)
+                }, output_entries=cache.pending, **assignment_options)
+                cache.assignment_task_id = None
             except (sqlite3.Error, OSError):
                 # Keep uncommitted entries for the next write/read/shutdown retry.
                 # This exceptional backlog must not be trimmed or silently lost.
@@ -210,6 +215,7 @@ def initialize_persistence(path=None) -> None:
     if any(process is not None for process in agents.values()):
         raise RuntimeError("Cannot reload persistence while managed processes are attached")
     store = AgentStore(path)
+    store.reconcile_task_recovery()
     records = store.load_agents(output_limit=RECENT_OUTPUT_LIMIT)
     with _data_lock:
         for registry in (agents, agent_parents, agent_statuses, agent_outputs, agent_tasks, agent_names, agent_colors, agent_types,
@@ -235,12 +241,6 @@ def initialize_persistence(path=None) -> None:
                 enabled=bool(record['similar_decisions_enabled']), examples=record['similar_examples'])
             agent_always_decisions[key] = AlwaysDecisions(
                 enabled=bool(record['always_decide_enabled']), configured=bool(record['always_decide_configured']))
-            if record['status'] == 'running':
-                agent_statuses[key] = 'stopped'
-                marker = ['--- Backend Restart ---',
-                          'Agent was running when the backend stopped and cannot be safely reattached. Marked stopped.']
-                agent_outputs[key].extend(marker)
-                _save_agent(key, emit=False)
 
 
 @_synchronized
@@ -349,18 +349,32 @@ def _spawn_process(command: str | list[str], agent_type: AgentType) -> subproces
 
 @_synchronized
 def start_agent(task: str, agent_type: AgentType = "mock", sandbox: CodexSandbox = "read-only",
-                parent_id: str | None = None) -> str:
+                parent_id: str | None = None, *, task_id: str | None = None) -> str:
     if parent_id is not None and parent_id not in agents:
         raise LookupError("Parent agent not found")
     script_path = Path(__file__).resolve().parent.parent / "mock_agent.py"
     if agent_type not in ("mock", "codex"):
         raise ValueError("Unknown agent type")
     command = _codex_command(sandbox) if agent_type == "codex" else [sys.executable, str(script_path)]
+    if _store is not None:
+        if task_id is None:
+            task_record = _store.create_task(task)
+        else:
+            task_record = _store.get_task(task_id)
+            if task_record is None:
+                raise LookupError('Task not found')
+            if task_record['status'] != 'pending' or _store.get_active_assignment_for_task(task_id):
+                raise ValueError('Only an unassigned pending Task can start an agent')
+        task_id = task_record['task_id']
+        task = task_record['description']
+    elif task_id is not None:
+        raise RuntimeError('Task persistence is unavailable')
     agent_id = str(uuid4())
     process = _spawn_process(command, agent_type)
     agent_statuses[agent_id] = "running"
     agent_parents[agent_id] = parent_id
     agent_outputs[agent_id] = OutputCache()
+    agent_outputs[agent_id].assignment_task_id = task_id
     agent_tasks[agent_id] = task
     agent_names[agent_id] = default_display_name(task)
     agent_colors[agent_id] = "neutral"
@@ -371,7 +385,29 @@ def start_agent(task: str, agent_type: AgentType = "mock", sandbox: CodexSandbox
     agent_similar_decisions[agent_id] = SimilarDecisions()
     agent_always_decisions[agent_id] = AlwaysDecisions()
     agents[agent_id] = process
-    _save_agent(agent_id)
+    try:
+        if not _save_agent(agent_id):
+            raise RuntimeError('Unable to persist agent start; please retry.')
+    except (ValueError, LookupError, RuntimeError) as exc:
+        # A concurrent claimant may win after validation but before the commit.
+        # Keep the worker tracked and terminate it; never steal its assignment.
+        if isinstance(exc, (ValueError, LookupError)):
+            agent_outputs[agent_id].assignment_task_id = None
+        cache = agent_outputs[agent_id]
+        # Drain output without allowing a retry to publish a successful start
+        # while compensation is still in progress.
+        cache.hold = True
+        try:
+            _start_reader(agent_id, process)
+            if process.poll() is not None:
+                agent_statuses[agent_id] = 'stopped'
+            stop_agent(agent_id)
+            # Even a process that exited before Stop belongs to a failed start.
+            agent_statuses[agent_id] = 'stopped'
+        finally:
+            cache.hold = False
+            _save_agent(agent_id)
+        raise
     _start_reader(agent_id, process)
     if agent_type == "codex":
         try:
@@ -381,6 +417,40 @@ def start_agent(task: str, agent_type: AgentType = "mock", sandbox: CodexSandbox
             stop_agent(agent_id)
             raise
     return agent_id
+
+
+def _task_store():
+    if _store is None:
+        raise RuntimeError('Task persistence is unavailable')
+    return _store
+
+
+@_synchronized
+def create_task(title: str, description: str):
+    task = _task_store().create_task(description, title=title)
+    # Task-only invalidation uses the existing generic change stream.
+    _emit_agent_change(None)
+    return {**task, 'current_assignment': None}
+
+
+@_synchronized
+def get_tasks(task_id=None):
+    return _task_store().task_summaries(task_id)
+
+
+@_synchronized
+def get_task_assignments(task_id):
+    store = _task_store()
+    if store.get_task(task_id) is None:
+        raise LookupError('Task not found')
+    # Oldest first; insertion order breaks equal timestamp ties.
+    return store.list_task_assignments(task_id)
+
+
+@_synchronized
+def start_task_agent(task_id, agent_type='mock', sandbox='read-only'):
+    agent_id = start_agent('', agent_type, sandbox, task_id=task_id)
+    return {'task_id': task_id, 'agent_id': agent_id, 'status': 'running'}
 
 
 @_synchronized
@@ -434,6 +504,7 @@ def get_agent(agent_id: str, include_output: bool = True) -> dict[str, str | boo
         "waiting_question": agent_waiting_questions[agent_id],
         "similar_decisions_enabled": agent_similar_decisions[agent_id].enabled,
         "always_decide_enabled": agent_always_decisions[agent_id].enabled,
+        "task_ids": _store.agent_task_ids(agent_id) if _store else [],
         **output,
     }
 

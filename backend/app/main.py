@@ -11,6 +11,8 @@ from .system_notifications import notifications
 from .agent_manager import initialize_persistence, shutdown_agents
 from .agent_manager import get_agent_output
 from .output_history import OUTPUT_PAGE_SIZE, OUTPUT_MAX_LIMIT
+from . import agent_manager as manager
+from .task_domain import normalize_task_title, normalize_task_description
 
 from .agent_manager import rename_agent, set_agent_color, get_name_history
 from .agent_names import DisplayColor
@@ -104,7 +106,7 @@ def _start_agent_response(request: StartAgentRequest, parent_id: str | None = No
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
-    except (OSError, RuntimeError) as exc:
+    except (OSError, RuntimeError, sqlite3.Error) as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     return {
         "agent_id": agent_id,
@@ -132,6 +134,66 @@ def get_mock_agent(agent_id: str, include_output: bool = True):
     if result is None:
         raise HTTPException(status_code=404, detail="Agent not found")
     return result
+
+
+class CreateTaskRequest(BaseModel):
+    title: str
+    description: str
+
+    @field_validator('title')
+    @classmethod
+    def valid_title(cls, value):
+        return normalize_task_title(value)
+
+    @field_validator('description')
+    @classmethod
+    def valid_description(cls, value):
+        return normalize_task_description(value)
+
+
+class StartTaskAgentRequest(BaseModel):
+    agent_type: AgentType = 'mock'
+    sandbox: CodexSandbox = 'read-only'
+
+
+def _task_action(action):
+    try:
+        return action()
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except (sqlite3.Error, OSError, RuntimeError) as exc:
+        raise HTTPException(status_code=503, detail='Task operation is unavailable. Please retry.') from exc
+
+
+@app.post('/tasks')
+def create_task_route(request: CreateTaskRequest):
+    return _task_action(lambda: manager.create_task(request.title, request.description))
+
+
+@app.get('/tasks')
+def list_tasks_route():
+    return {'tasks': _task_action(manager.get_tasks)}
+
+
+@app.get('/tasks/{task_id}')
+def get_task_route(task_id: str):
+    result = _task_action(lambda: manager.get_tasks(task_id))
+    if not result:
+        raise HTTPException(status_code=404, detail='Task not found')
+    return result[0]
+
+
+@app.get('/tasks/{task_id}/assignments')
+def task_assignments_route(task_id: str):
+    """Assignment history, oldest first (insertion order resolves timestamp ties)."""
+    return {'assignments': _task_action(lambda: manager.get_task_assignments(task_id))}
+
+
+@app.post('/tasks/{task_id}/start-agent')
+def start_task_agent_route(task_id: str, request: StartTaskAgentRequest):
+    return _task_action(lambda: manager.start_task_agent(task_id, request.agent_type, request.sandbox))
 
 
 @app.get("/agents/{agent_id}/output")

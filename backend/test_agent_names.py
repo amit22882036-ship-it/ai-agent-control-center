@@ -38,12 +38,14 @@ class AgentNameTests(unittest.TestCase):
             db.execute('ALTER TABLE agents DROP COLUMN display_name')
             db.execute('ALTER TABLE agents DROP COLUMN display_color')
             db.execute('DROP TABLE agent_name_history')
+            db.execute('DROP TABLE task_assignments')
+            db.execute('DROP TABLE tasks')
             db.execute('PRAGMA user_version=1')
         migrated = AgentStore(self.path).load_agents()
         self.assertEqual(migrated, before)
         self.assertEqual(AgentStore(self.path).load_agents(), before)
         with closing(sqlite3.connect(self.path)) as db, db:
-            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 3)
+            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 5)
         self.assertEqual(migrated[1]['parent_id'], parent)
         self.assertEqual(migrated[1]['agent_id'], child)
 

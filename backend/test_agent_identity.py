@@ -106,6 +106,8 @@ class AgentIdentityTests(unittest.TestCase):
         with closing(sqlite3.connect(self.path)) as db, db:
             db.execute('ALTER TABLE agents DROP COLUMN display_color')
             db.execute('DROP TABLE agent_name_history')
+            db.execute('DROP TABLE task_assignments')
+            db.execute('DROP TABLE tasks')
             db.execute('PRAGMA user_version=2')
         store = AgentStore(self.path)
         self.assertEqual(store.load_agents(), before)
