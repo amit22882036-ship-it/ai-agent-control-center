@@ -19,7 +19,7 @@ class AgentStore:
         self._lock = RLock()
         with self._connection() as db:
             version = db.execute('PRAGMA user_version').fetchone()[0]
-            if version not in (0, 1, 2, 3, 4, 5):
+            if version not in (0, 1, 2, 3, 4, 5, 6):
                 raise RuntimeError(f'Unsupported control-center database schema version: {version}')
             if version == 0:
                 if db.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchone():
@@ -84,6 +84,13 @@ class AgentStore:
                         db.execute('BEGIN')
                     self._backfill_unrepresented_agents(db)
                     db.execute('PRAGMA user_version = 5')
+                    version = 5
+                if version == 5:
+                    if not db.in_transaction:
+                        db.execute('BEGIN')
+                    self._migrate_task_hierarchy(db)
+                    db.execute('PRAGMA user_version = 6')
+                db.execute('SELECT parent_task_id FROM tasks LIMIT 0')
             except sqlite3.DatabaseError as exc:
                 raise RuntimeError('Incompatible control-center database schema') from exc
 
@@ -119,14 +126,63 @@ class AgentStore:
                 VALUES (?,?,?,CASE WHEN ? IS NOT NULL THEN strftime('%Y-%m-%dT%H:%M:%fZ','now') END,?)""",
                        (str(uuid4()), task_id, agent['agent_id'], reason, reason))
 
-    def create_task(self, description, title=None, status='pending'):
+    @staticmethod
+    def _migrate_task_hierarchy(db):
+        columns = {row['name'] for row in db.execute('PRAGMA table_info(tasks)')}
+        if 'parent_task_id' not in columns:
+            db.execute('ALTER TABLE tasks ADD COLUMN parent_task_id TEXT REFERENCES tasks(task_id) CHECK(parent_task_id <> task_id)')
+        else:
+            for row in db.execute('SELECT task_id, parent_task_id FROM tasks').fetchall():
+                AgentStore._validate_task_parent(db, row['task_id'], row['parent_task_id'])
+        db.execute('CREATE INDEX IF NOT EXISTS task_parent ON tasks(parent_task_id)')
+
+    @staticmethod
+    def _validate_task_parent(db, task_id, parent_task_id):
+        seen = {task_id}
+        current = parent_task_id
+        while current is not None:
+            if current in seen:
+                raise ValueError('Task parent relationship would contain a cycle')
+            seen.add(current)
+            row = db.execute('SELECT parent_task_id FROM tasks WHERE task_id=?', (current,)).fetchone()
+            if row is None:
+                raise LookupError('Parent Task not found')
+            current = row['parent_task_id']
+
+    def get_task_parent(self, task_id):
+        with self._connection() as db:
+            row = db.execute('SELECT p.* FROM tasks t JOIN tasks p ON p.task_id=t.parent_task_id WHERE t.task_id=?', (task_id,)).fetchone()
+            return dict(row) if row else None
+
+    def get_task_children(self, task_id):
+        with self._connection() as db:
+            return [dict(row) for row in db.execute('SELECT * FROM tasks WHERE parent_task_id=? ORDER BY rowid', (task_id,))]
+
+    def get_task_descendants(self, task_id):
+        # One snapshot, iterative traversal even for malformed cyclic data.
+        children = {}
+        for task in self.list_tasks():
+            children.setdefault(task['parent_task_id'], []).append(task)
+        seen, pending, result = {task_id}, [task_id], []
+        while pending:
+            for child in children.get(pending.pop(), []):
+                key = child['task_id']
+                if key not in seen:
+                    seen.add(key)
+                    result.append(child)
+                    pending.append(key)
+        return result
+
+    def create_task(self, description, title=None, status='pending', parent_task_id=None):
         validate_task_status(status)
         if status in ('in_progress', 'waiting'):
             raise ValueError('Working tasks require an active assignment')
         task_id = str(uuid4())
         with self._connection() as db:
-            db.execute('INSERT INTO tasks(task_id,title,description,status) VALUES (?,?,?,?)',
-                       (task_id, task_title(description) if title is None else title, description, status))
+            db.execute('BEGIN IMMEDIATE')
+            self._validate_task_parent(db, task_id, parent_task_id)
+            db.execute('INSERT INTO tasks(task_id,title,description,status,parent_task_id) VALUES (?,?,?,?,?)',
+                       (task_id, task_title(description) if title is None else title, description, status, parent_task_id))
         return self.get_task(task_id)
 
     @staticmethod

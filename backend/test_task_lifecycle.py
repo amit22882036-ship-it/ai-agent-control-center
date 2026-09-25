@@ -110,7 +110,9 @@ class TaskLifecycleTests(unittest.TestCase):
         self.assertEqual(len(tasks), 2)
         self.assertEqual([t['description'] for t in tasks], ['Legacy description', 'Child description'])
         self.assertEqual(len({root['agent_id'], child['agent_id'], *(t['task_id'] for t in tasks)}), 4)
-        self.assertTrue(all(t['status'] == 'in_progress' and 'parent_task_id' not in t for t in tasks))
+        self.assertTrue(all(t['status'] == 'in_progress' for t in tasks))
+        self.assertIsNone(tasks[0]['parent_task_id'])
+        self.assertEqual(tasks[1]['parent_task_id'], tasks[0]['task_id'])
 
     def test_wait_reply_decide_similar_always_preserve_assignment(self):
         actions = [lambda key: manager.reply_agent(key, 'Answer'), manager.decide_agent,

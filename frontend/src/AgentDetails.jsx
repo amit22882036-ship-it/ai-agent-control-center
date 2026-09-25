@@ -1,7 +1,6 @@
 import Icon from './Icon'
 import { useEffect, useRef, useState } from 'react'
 import { createRefreshQueue } from './agentEventStream.mjs'
-import StartAgentForm from './StartAgentForm'
 import AgentOutput from './AgentOutput'
 import AgentNameEditor from './AgentNameEditor'
 import AgentColorPicker from './AgentColorPicker'
@@ -37,8 +36,7 @@ function AgentDetails({ agentId, onClose, onStopped, refreshVersion, agents, onS
   const [alwaysError, setAlwaysError] = useState('')
   const [stoppingBranch, setStoppingBranch] = useState(false)
   const [branchError, setBranchError] = useState('')
-  const [childStarting, setChildStarting] = useState(false)
-  const busy = stoppingBranch || childStarting || stopping || redirecting || replying || deciding || Boolean(similarAction) || Boolean(alwaysAction)
+  const busy = stoppingBranch || stopping || redirecting || replying || deciding || Boolean(similarAction) || Boolean(alwaysAction)
 
   async function handleStopBranch() {
     if (busy || !window.confirm('Stop this agent and all of its descendants? This does not affect its parent or siblings outside this branch.')) return
@@ -391,11 +389,6 @@ function AgentDetails({ agentId, onClose, onStopped, refreshVersion, agents, onS
               </form></details>
             ) : <p className="agent-type-note">Redirect will be available once the Codex session starts.</p>
           )}
-          <details className="detail-section"><summary>Start a child agent</summary><StartAgentForm parentId={agentId} disabled={busy} onStartingChange={setChildStarting} onStarted={() => {
-            setDetailsVersion((version) => version + 1)
-            onStopped()
-          }} />
-          </details>
           </details>
           <details className="detail-section" onToggle={(event) => { if (event.currentTarget.open) setOutputOpened(true) }}><summary>Output history</summary>
             {outputOpened && <AgentOutput key={agentId} agentId={agentId} refreshVersion={refreshVersion} />}

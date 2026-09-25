@@ -356,19 +356,36 @@ def start_agent(task: str, agent_type: AgentType = "mock", sandbox: CodexSandbox
     if agent_type not in ("mock", "codex"):
         raise ValueError("Unknown agent type")
     command = _codex_command(sandbox) if agent_type == "codex" else [sys.executable, str(script_path)]
+    parent_task = None
     if _store is not None:
         if task_id is None:
-            task_record = _store.create_task(task)
+            if parent_id is not None:
+                # Ended workers retain their actual assignment history too.
+                assignment = _store.get_active_assignment_for_agent(parent_id)
+                related = _store.agent_task_ids(parent_id)
+                parent_task_id = assignment['task_id'] if assignment else (related[0] if related else None)
+                if parent_task_id is None:
+                    raise ValueError('Parent agent has no associated Task')
+                parent_task = _store.get_task(parent_task_id)
+            task_record = _store.create_task(task, parent_task_id=parent_task['task_id'] if parent_task else None)
         else:
             task_record = _store.get_task(task_id)
             if task_record is None:
                 raise LookupError('Task not found')
             if task_record['status'] != 'pending' or _store.get_active_assignment_for_task(task_id):
                 raise ValueError('Only an unassigned pending Task can start an agent')
+            parent_task = _store.get_task_parent(task_id)
+            assignment = _store.get_active_assignment_for_task(parent_task['task_id']) if parent_task else None
+            parent_id = assignment['agent_id'] if assignment else None
         task_id = task_record['task_id']
         task = task_record['description']
     elif task_id is not None:
         raise RuntimeError('Task persistence is unavailable')
+    provider_task = task
+    if parent_task is not None:
+        provider_task = (f"Parent work:\n{parent_task['description']}\n\n"
+                         f"Your assigned contribution:\n{task}\n\n"
+                         "Work specifically on your assigned contribution in support of the parent work.")
     agent_id = str(uuid4())
     process = _spawn_process(command, agent_type)
     agent_statuses[agent_id] = "running"
@@ -412,7 +429,7 @@ def start_agent(task: str, agent_type: AgentType = "mock", sandbox: CodexSandbox
     if agent_type == "codex":
         try:
             with process.stdin:
-                process.stdin.write(_codex_prompt(task))
+                process.stdin.write(_codex_prompt(provider_task))
         except OSError:
             stop_agent(agent_id)
             raise
