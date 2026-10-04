@@ -13,6 +13,7 @@ from .agent_manager import get_agent_output
 from .output_history import OUTPUT_PAGE_SIZE, OUTPUT_MAX_LIMIT
 from . import agent_manager as manager
 from .task_domain import normalize_task_title, normalize_task_description
+from .project_domain import project_name
 
 from .agent_manager import rename_agent, set_agent_color, get_name_history
 from .agent_names import DisplayColor
@@ -139,6 +140,7 @@ def get_mock_agent(agent_id: str, include_output: bool = True):
 class CreateTaskRequest(BaseModel):
     title: str
     description: str
+    project_id: str | None = None
 
     @field_validator('title')
     @classmethod
@@ -169,7 +171,46 @@ def _task_action(action):
 
 @app.post('/tasks')
 def create_task_route(request: CreateTaskRequest):
-    return _task_action(lambda: manager.create_task(request.title, request.description))
+    return _task_action(lambda: manager.create_task(request.title, request.description, request.project_id))
+
+
+class CreateProjectRequest(BaseModel):
+    name: str
+    root_path: str
+
+    @field_validator('name')
+    @classmethod
+    def valid_name(cls, value):
+        return project_name(value)
+
+
+def _project_action(action):
+    try:
+        return action()
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except (sqlite3.Error, OSError, RuntimeError) as exc:
+        raise HTTPException(status_code=503, detail='Project operation is unavailable. Please retry.') from exc
+
+
+@app.post('/projects')
+def create_project_route(request: CreateProjectRequest):
+    return _project_action(lambda: manager._task_store().create_project(request.name, request.root_path))
+
+
+@app.get('/projects')
+def list_projects_route():
+    return {'projects': _project_action(lambda: manager._task_store().list_projects())}
+
+
+@app.get('/projects/{project_id}')
+def get_project_route(project_id: str):
+    result = _project_action(lambda: manager._task_store().get_project(project_id))
+    if result is None:
+        raise HTTPException(status_code=404, detail='Project not found')
+    return result
 
 
 @app.get('/tasks')

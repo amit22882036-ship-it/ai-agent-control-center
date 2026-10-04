@@ -119,16 +119,19 @@ class TaskLifecycleTests(unittest.TestCase):
                    manager.decide_similar_agent, manager.decide_always_agent]
         for action in actions:
             key, _ = self.create()
+            project_id = self.task_for(key)['project_id']
             assignment = manager._store.get_active_assignment_for_agent(key)
             self.output(key, f'session id: {key}\nCONTROL_CENTER_WAITING: Question?\n', True)
             self.assertEqual(self.task_for(key)['status'], 'waiting')
             self.resume(key, action)
             self.assertEqual(self.task_for(key)['status'], 'in_progress')
             self.assertEqual(manager._store.get_active_assignment_for_agent(key), assignment)
+            self.assertEqual(self.task_for(key)['project_id'], project_id)
 
     def test_automatic_similar_and_always_resume_same_task_assignment(self):
         for mode in ['similar', 'always']:
             key, _ = self.create()
+            project_id = self.task_for(key)['project_id']
             assignment = manager._store.get_active_assignment_for_agent(key)
             self.output(key, f'session id: {key}\nCONTROL_CENTER_WAITING: Example\n', True)
             self.resume(key, manager.decide_similar_agent if mode == 'similar' else manager.decide_always_agent)
@@ -137,9 +140,12 @@ class TaskLifecycleTests(unittest.TestCase):
             self.resume(key, manager.get_agent)
             self.assertEqual(self.task_for(key)['status'], 'in_progress')
             self.assertEqual(manager._store.get_active_assignment_for_agent(key), assignment)
+            self.assertEqual(self.task_for(key)['project_id'], project_id)
 
     def test_redirect_and_stale_process_cannot_change_task(self):
         key, old = self.create()
+        project_id = self.task_for(key)['project_id']
+        projects = manager._store.list_projects()
         self.output(key, f'session id: {key}\n')
         assignment = manager._store.get_active_assignment_for_agent(key)
         with patch.object(manager, '_stop_windows_tree'):
@@ -152,6 +158,8 @@ class TaskLifecycleTests(unittest.TestCase):
             publish.assert_not_called()
         self.assertEqual(self.task_for(key)['status'], 'in_progress')
         self.assertEqual(manager._store.get_active_assignment_for_agent(key), assignment)
+        self.assertEqual(self.task_for(key)['project_id'], project_id)
+        self.assertEqual(manager._store.list_projects(), projects)
 
     def test_completion_stop_branch_and_later_new_worker_history(self):
         root, _ = self.create(kind='mock')

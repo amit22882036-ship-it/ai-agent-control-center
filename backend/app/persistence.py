@@ -9,6 +9,7 @@ from uuid import uuid4
 from .task_domain import task_title, validate_task_status, validate_end_reason
 from .agent_names import default_display_name, validate_display_color
 from .output_history import OUTPUT_PAGE_SIZE, OUTPUT_MAX_LIMIT
+from .project_domain import DEFAULT_ROOT, canonical_path, contains, project_name
 
 
 class AgentStore:
@@ -19,7 +20,7 @@ class AgentStore:
         self._lock = RLock()
         with self._connection() as db:
             version = db.execute('PRAGMA user_version').fetchone()[0]
-            if version not in (0, 1, 2, 3, 4, 5, 6):
+            if version not in (0, 1, 2, 3, 4, 5, 6, 7):
                 raise RuntimeError(f'Unsupported control-center database schema version: {version}')
             if version == 0:
                 if db.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchone():
@@ -90,9 +91,87 @@ class AgentStore:
                         db.execute('BEGIN')
                     self._migrate_task_hierarchy(db)
                     db.execute('PRAGMA user_version = 6')
+                    version = 6
                 db.execute('SELECT parent_task_id FROM tasks LIMIT 0')
+                if version == 6:
+                    if not db.in_transaction:
+                        db.execute('BEGIN')
+                    self._migrate_projects(db)
+                    db.execute('PRAGMA user_version = 7')
+                db.execute('SELECT project_id FROM tasks LIMIT 0')
+                db.execute('SELECT project_id, name, root_path, root_path_key, created_at, updated_at FROM projects LIMIT 0')
             except sqlite3.DatabaseError as exc:
                 raise RuntimeError('Incompatible control-center database schema') from exc
+
+    @staticmethod
+    def _migrate_projects(db):
+        db.execute("""CREATE TABLE IF NOT EXISTS projects (
+            project_id TEXT PRIMARY KEY NOT NULL, name TEXT NOT NULL,
+            root_path TEXT NOT NULL, root_path_key TEXT NOT NULL UNIQUE,
+            created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+            updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+        )""")
+        if 'project_id' not in {row['name'] for row in db.execute('PRAGMA table_info(tasks)')}:
+            db.execute('ALTER TABLE tasks ADD COLUMN project_id TEXT REFERENCES projects(project_id)')
+        # v6 has no persisted execution cwd. Assignment history, task text and
+        # hierarchy cannot supply that evidence: leave every legacy Task unresolved.
+        db.execute('CREATE INDEX IF NOT EXISTS task_project ON tasks(project_id)')
+
+    @staticmethod
+    def _public_project(row):
+        if row is None:
+            return None
+        return {key: row[key] for key in ('project_id', 'name', 'root_path', 'created_at', 'updated_at')}
+
+    @staticmethod
+    def _project_for_key(db, key):
+        matches = [row for row in db.execute('SELECT * FROM projects')
+                   if contains(row['root_path_key'], key)]
+        if len(matches) > 1:
+            raise ValueError('Ambiguous Project roots')
+        return matches[0] if matches else None
+
+    @classmethod
+    def _register_project(cls, db, root, key, name=None, *, ensure=False):
+        if ensure:
+            existing = cls._project_for_key(db, key)
+            if existing is not None:
+                return cls._public_project(existing)
+        for existing in db.execute('SELECT root_path_key FROM projects'):
+            other = existing['root_path_key']
+            if contains(other, key) or contains(key, other):
+                raise ValueError('Project root duplicates or overlaps a registered Project')
+        project_id = str(uuid4())
+        db.execute('INSERT INTO projects(project_id,name,root_path,root_path_key) VALUES (?,?,?,?)',
+                   (project_id, name or project_name(Path(root).name or 'Project'), root, key))
+        return cls._public_project(db.execute('SELECT * FROM projects WHERE project_id=?', (project_id,)).fetchone())
+
+    def create_project(self, name, root_path):
+        name = project_name(name)
+        root, key = canonical_path(root_path, require_directory=True)
+        with self._connection() as db:
+            db.execute('BEGIN IMMEDIATE')
+            return self._register_project(db, root, key, name)
+
+    def ensure_project_for_root(self, path):
+        root, key = canonical_path(path, require_directory=True)
+        with self._connection() as db:
+            # Serializes overlap checks across independent connections/processes.
+            db.execute('BEGIN IMMEDIATE')
+            return self._register_project(db, root, key, ensure=True)
+
+    def resolve_project_for_path(self, path):
+        _, key = canonical_path(path)
+        with self._connection() as db:
+            return self._public_project(self._project_for_key(db, key))
+
+    def get_project(self, project_id):
+        with self._connection() as db:
+            return self._public_project(db.execute('SELECT * FROM projects WHERE project_id=?', (project_id,)).fetchone())
+
+    def list_projects(self):
+        with self._connection() as db:
+            return [self._public_project(row) for row in db.execute('SELECT * FROM projects ORDER BY rowid')]
 
     @staticmethod
     def _migrate_tasks(db):
@@ -173,7 +252,8 @@ class AgentStore:
                     pending.append(key)
         return result
 
-    def create_task(self, description, title=None, status='pending', parent_task_id=None):
+    def create_task(self, description, title=None, status='pending', parent_task_id=None,
+                    project_id=None, *, root_path=DEFAULT_ROOT):
         validate_task_status(status)
         if status in ('in_progress', 'waiting'):
             raise ValueError('Working tasks require an active assignment')
@@ -181,8 +261,21 @@ class AgentStore:
         with self._connection() as db:
             db.execute('BEGIN IMMEDIATE')
             self._validate_task_parent(db, task_id, parent_task_id)
-            db.execute('INSERT INTO tasks(task_id,title,description,status,parent_task_id) VALUES (?,?,?,?,?)',
-                       (task_id, task_title(description) if title is None else title, description, status, parent_task_id))
+            if parent_task_id is not None:
+                parent_project = db.execute('SELECT project_id FROM tasks WHERE task_id=?', (parent_task_id,)).fetchone()[0]
+                if parent_project is None:
+                    raise ValueError('Parent Task has unresolved Project ownership')
+                if project_id is not None and project_id != parent_project:
+                    raise ValueError('Child Task must belong to the parent Project')
+                project_id = parent_project
+            if project_id is None:
+                root, key = canonical_path(root_path, require_directory=True)
+                project_id = self._register_project(db, root, key, ensure=True)['project_id']
+            elif db.execute('SELECT 1 FROM projects WHERE project_id=?', (project_id,)).fetchone() is None:
+                raise LookupError('Project not found')
+            # Project ensure and Task insertion commit or roll back together.
+            db.execute('INSERT INTO tasks(task_id,title,description,status,parent_task_id,project_id) VALUES (?,?,?,?,?,?)',
+                       (task_id, task_title(description) if title is None else title, description, status, parent_task_id, project_id))
         return self.get_task(task_id)
 
     @staticmethod

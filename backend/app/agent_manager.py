@@ -15,6 +15,7 @@ from uuid import UUID, uuid4
 from .agent_names import default_display_name, validate_display_name, validate_display_color
 from .system_notifications import notifications
 from .persistence import AgentStore
+from .project_domain import canonical_path, contains
 from .realtime import changes
 from .output_history import OutputCache, RECENT_OUTPUT_LIMIT, OUTPUT_PAGE_SIZE, OUTPUT_MAX_LIMIT
 
@@ -35,6 +36,8 @@ agent_sandboxes: dict[str, CodexSandbox | None] = {}
 agent_sessions: dict[str, str | None] = {}
 agent_waiting_questions: dict[str, str | None] = {}
 agent_readers: dict[str, Thread] = {}
+# Execution context only; Project ownership remains derived from TaskAssignment.
+agent_working_directories: dict[str, Path] = {}
 
 
 @dataclass
@@ -220,7 +223,7 @@ def initialize_persistence(path=None) -> None:
     with _data_lock:
         for registry in (agents, agent_parents, agent_statuses, agent_outputs, agent_tasks, agent_names, agent_colors, agent_types,
                          agent_sandboxes, agent_sessions, agent_waiting_questions, agent_readers,
-                         agent_similar_decisions, agent_always_decisions):
+                         agent_similar_decisions, agent_always_decisions, agent_working_directories):
             registry.clear()
         _store = store
         _shutting_down = False
@@ -332,7 +335,7 @@ def _start_reader(agent_id: str, process: subprocess.Popen) -> None:
     Thread(target=_watch_process, args=(agent_id, process, reader), daemon=True).start()
 
 
-def _spawn_process(command: str | list[str], agent_type: AgentType) -> subprocess.Popen:
+def _spawn_process(command: str | list[str], agent_type: AgentType, *, cwd=None) -> subprocess.Popen:
     return subprocess.Popen(
         command,
         stdin=subprocess.PIPE if agent_type == "codex" else None,
@@ -342,9 +345,32 @@ def _spawn_process(command: str | list[str], agent_type: AgentType) -> subproces
         bufsize=1,
         encoding="utf-8" if agent_type == "codex" else None,
         errors="replace",
-        cwd=_project_root if agent_type == "codex" else None,
+        cwd=cwd if cwd is not None else (_project_root if agent_type == "codex" else None),
         shell=False,
     )
+
+
+def _task_project_root(task):
+    if not task['project_id']:
+        raise ValueError('Task has unresolved Project ownership')
+    project = _store.get_project(task['project_id'])
+    if project is None:
+        raise LookupError('Project not found')
+    return Path(canonical_path(project['root_path'], require_directory=True)[0])
+
+
+def _resume_cwd(agent_id):
+    if agent_id in agent_working_directories:
+        return agent_working_directories[agent_id]
+    if _store is not None:
+        related = _store.agent_task_ids(agent_id)
+        if related:
+            task = _store.get_task(related[0])
+            if task['project_id']:
+                return _task_project_root(task)
+    # Legacy sessions have no reliable persisted cwd; preserve their pre-v7
+    # resume behavior without inventing or persisting Project ownership.
+    return _project_root
 
 
 @_synchronized
@@ -356,6 +382,11 @@ def start_agent(task: str, agent_type: AgentType = "mock", sandbox: CodexSandbox
     if agent_type not in ("mock", "codex"):
         raise ValueError("Unknown agent type")
     command = _codex_command(sandbox) if agent_type == "codex" else [sys.executable, str(script_path)]
+    # Codex has always used the repository root; Mock inherits the host cwd.
+    cwd = _project_root if agent_type == 'codex' else Path.cwd()
+    # A backend-directory launch still belongs to this canonical codebase.
+    # An unrelated host cwd is a separate Project, independent of provider.
+    root_path = _project_root if contains(canonical_path(_project_root)[1], canonical_path(cwd)[1]) else cwd
     parent_task = None
     if _store is not None:
         if task_id is None:
@@ -367,7 +398,14 @@ def start_agent(task: str, agent_type: AgentType = "mock", sandbox: CodexSandbox
                 if parent_task_id is None:
                     raise ValueError('Parent agent has no associated Task')
                 parent_task = _store.get_task(parent_task_id)
-            task_record = _store.create_task(task, parent_task_id=parent_task['task_id'] if parent_task else None)
+                project_root = _task_project_root(parent_task)
+                cwd = _resume_cwd(parent_id)
+                if not contains(canonical_path(project_root)[1], canonical_path(cwd)[1]):
+                    raise ValueError('Child execution directory is outside the parent Project')
+            task_record = _store.create_task(task, parent_task_id=parent_task['task_id'] if parent_task else None,
+                                             root_path=root_path,
+                                             project_id=(_store.resolve_project_for_path(cwd) or {}).get('project_id')
+                                             if parent_task is None else None)
         else:
             task_record = _store.get_task(task_id)
             if task_record is None:
@@ -377,6 +415,7 @@ def start_agent(task: str, agent_type: AgentType = "mock", sandbox: CodexSandbox
             parent_task = _store.get_task_parent(task_id)
             assignment = _store.get_active_assignment_for_task(parent_task['task_id']) if parent_task else None
             parent_id = assignment['agent_id'] if assignment else None
+            cwd = _task_project_root(task_record)
         task_id = task_record['task_id']
         task = task_record['description']
     elif task_id is not None:
@@ -387,7 +426,8 @@ def start_agent(task: str, agent_type: AgentType = "mock", sandbox: CodexSandbox
                          f"Your assigned contribution:\n{task}\n\n"
                          "Work specifically on your assigned contribution in support of the parent work.")
     agent_id = str(uuid4())
-    process = _spawn_process(command, agent_type)
+    process = _spawn_process(command, agent_type, cwd=cwd)
+    agent_working_directories[agent_id] = Path(cwd)
     agent_statuses[agent_id] = "running"
     agent_parents[agent_id] = parent_id
     agent_outputs[agent_id] = OutputCache()
@@ -443,8 +483,8 @@ def _task_store():
 
 
 @_synchronized
-def create_task(title: str, description: str):
-    task = _task_store().create_task(description, title=title)
+def create_task(title: str, description: str, project_id=None):
+    task = _task_store().create_task(description, title=title, project_id=project_id, root_path=_project_root)
     # Task-only invalidation uses the existing generic change stream.
     _emit_agent_change(None)
     return {**task, 'current_assignment': None}
@@ -785,7 +825,7 @@ def _resume_agent(agent_id: str, command: str, text: str, marker: str,
             raise RuntimeError("Old process output has not closed; resume was not started.")
     previous = (agents[agent_id], agent_statuses[agent_id], agent_waiting_questions[agent_id],
                 agent_sessions[agent_id], agent_outputs[agent_id])
-    replacement = _spawn_process(command, "codex")
+    replacement = _spawn_process(command, "codex", cwd=_resume_cwd(agent_id))
     history = [marker, text if history_text is None else history_text]
     with _data_lock:
         if always_decision:

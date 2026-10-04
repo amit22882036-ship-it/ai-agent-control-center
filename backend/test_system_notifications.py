@@ -124,10 +124,10 @@ class CompletionTests(unittest.TestCase):
 
     def test_completion_without_get_polling(self):
         for output, expected in [('Done', 'finished'), ('CONTROL_CENTER_WAITING: Which file?', 'waiting')]:
-            def spawn(command, agent_type):
+            def spawn(command, agent_type, *, cwd=None):
                 return subprocess.Popen(
                     [sys.executable, '-c', 'import sys; sys.stdin.read(); print("codex", flush=True); print(sys.argv[1], flush=True)', output],
-                    stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+                    stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, cwd=cwd)
             with patch.object(manager, '_spawn_process', side_effect=spawn), \
                  patch.object(manager, '_codex_command', return_value='fixed command'), \
                  patch.object(manager.notifications, 'transition') as notify:

@@ -5,7 +5,7 @@ A local dashboard for starting, stopping, and monitoring multiple agents. The Re
 ## Features
 
 - **Mock agents:** simulate a short workflow with progress messages. They do not execute the supplied task or change files.
-- **Codex agents:** run tasks through the installed Codex CLI, using this repository's root as the working directory.
+- **Codex agents:** run tasks through the installed Codex CLI. New root agents use this repository's root; workers started on existing Tasks use that Task's Project root.
 - **Codex sandbox modes:** `read-only` is the default; `workspace-write` allows Codex to modify files in this project. Choose the mode before starting a Codex agent.
 - **Start and stop:** enter a task and select an agent type to start a run. Select an agent to view its details and stop it while it is running.
 - **Status monitoring and live output:** SSE change notifications refresh agent cards and selected-agent details from the REST API. If the stream is unavailable, the dashboard falls back to refreshing every two seconds and reconnects automatically. Status and captured output remain available through the existing REST endpoints.
@@ -15,6 +15,16 @@ Agent records, hierarchy, output, sessions, and autonomy settings are stored in 
 Output is appended incrementally to SQLite with stable per-agent sequence numbers; the existing normalized schema is retained. Only the latest 1,000 entries per agent are cached on startup. The dashboard loads a 300-entry tail, then requests incremental changes. **Load older output** retrieves earlier history on demand. The browser retains at most 2,000 entries; loading beyond that window switches to browsing older output until **Return to latest output** is selected. Complete history remains in SQLite. Failed database writes are logged and retained in a retry backlog (which can grow during an outage); subsequent activity, reads, or shutdown retry them. Uncommitted data cannot survive a crash during a storage outage.
 
 On normal shutdown, running agents are stopped; waiting agents stay waiting. After a crash, records last saved as running become stopped with a restart marker. No old PID is reattached or killed. Recovered waiting Codex agents can Reply or delegate through their saved session. Loading never starts agents or replays historical notifications. Autonomy settings survive, but temporary attempt flags reset. `finished` means the process exited; it does not distinguish success from failure.
+
+## Project identity (Stage 2D)
+
+A **Project** identifies a logical codebase. Its **Canonical Workspace** is its canonical absolute root directory. Ownership is `Agent -> TaskAssignment -> Task -> Project`; Agents do not persist a second Project identity. This does not provide filesystem isolation or protection from shared databases, ports, caches, or external services. There are no isolated Agent Workspaces yet.
+
+`POST /projects` accepts `name` and `root_path`; `GET /projects` and `GET /projects/{project_id}` return Project metadata. New registration requires an existing directory. Canonical paths resolve relative components and filesystem aliases, with Windows case normalization for comparison. Duplicate and overlapping roots are rejected. The comparison key is internal. There are no Project mutation/deletion endpoints or Project UI.
+
+`POST /tasks` accepts an optional `project_id`; otherwise it uses the repository's canonical context. Existing `POST /agents/start` requests remain unchanged. Codex keeps its repository cwd; Mock keeps its inherited host cwd. A Mock cwd inside this repository shares its Project, while an unrelated cwd resolves independently. An already registered Project containing the effective cwd takes precedence. Child Tasks inherit their parent's Project, and child workers execute within it. A new worker on an existing Task starts at that Project's root. Live session resumes retain their original execution directory; after backend recovery, resolved Tasks use their Project root.
+
+Schema v7 adds Projects and nullable `tasks.project_id`. The v6 schema contains no persisted execution-directory evidence, so migration leaves historical Tasks unresolved without guessing from text, hierarchy, or today's cwd. Such Tasks cannot start a new worker or child. Existing legacy waiting-session continuation retains its previous default-directory behavior without assigning a Project. All new Tasks receive a Project. Project ensure and Task creation are transactional; failed worker launches leave a valid pending Task without an active assignment, following the existing lifecycle compensation rules.
 
 ## Requirements
 
