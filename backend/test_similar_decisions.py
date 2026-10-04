@@ -21,6 +21,7 @@ class SavedInput(io.StringIO):
 
 
 class SimilarDecisionTests(unittest.TestCase):
+    from workspace_test_support import process_test_setup as setUp
     fake_agent = test_waiting.WaitingTests.fake_agent
     tearDown = test_waiting.WaitingTests.tearDown
     make_launcher = test_waiting.WaitingTests.make_launcher
@@ -64,7 +65,7 @@ class SimilarDecisionTests(unittest.TestCase):
                     for payload in payloads[1:]:
                         self.assertEqual(payload['args'], ['exec', '--sandbox', sandbox, '--color', 'never',
                                                           '--skip-git-repo-check', 'resume', session, '-'])
-                        self.assertEqual(Path(payload['cwd']), manager._project_root)
+                        self.assertEqual(Path(payload['cwd']), self.workspace_path)
                     self.assertIn('Which local variable name?', payloads[-1]['prompt'])
                     self.assertIn('Which other variable name?', payloads[-1]['prompt'])
                     self.assertTrue(manager.agents[agent_id].stdin.closed)

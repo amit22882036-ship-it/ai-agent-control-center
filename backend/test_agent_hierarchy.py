@@ -9,6 +9,7 @@ import test_similar_decisions
 
 
 class HierarchyTests(unittest.TestCase):
+    from workspace_test_support import process_test_setup as setUp
     replacement = test_similar_decisions.SimilarDecisionTests.replacement
     resume = test_similar_decisions.SimilarDecisionTests.resume
     finish = test_similar_decisions.SimilarDecisionTests.finish
@@ -129,7 +130,7 @@ class HierarchyTests(unittest.TestCase):
         manager.agent_readers[child].is_alive.return_value = False
         command.assert_called_once_with('workspace-write')
         self.assertEqual(popen.call_args.args, ('fixed command',))
-        self.assertEqual(popen.call_args.kwargs['cwd'], manager._project_root)
+        self.assertEqual(popen.call_args.kwargs['cwd'], self.workspace_path)
         self.assertFalse(popen.call_args.kwargs['shell'])
         self.assertEqual(process.stdin.saved, manager._codex_prompt('Task & literal text'))
         self.assertNotIn(parent, str(popen.call_args))

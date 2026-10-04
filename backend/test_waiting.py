@@ -17,6 +17,7 @@ import test_redirect
 
 
 class WaitingTests(unittest.TestCase):
+    from workspace_test_support import process_test_setup as setUp
     fake_agent = test_redirect.RedirectTests.fake_agent
     make_launcher = test_redirect.RedirectTests.make_launcher
     tearDown = test_redirect.RedirectTests.tearDown
@@ -193,7 +194,7 @@ class WaitingTests(unittest.TestCase):
                         self.assertNotIn(answer, payload['args'])
                         self.assertIn('User request:\n' + answer, payload['prompt'])
                         self.assertIn('CONTROL_CENTER_WAITING: <your question>', payload['prompt'])
-                        self.assertEqual(Path(payload['cwd']), manager._project_root)
+                        self.assertEqual(Path(payload['cwd']), self.workspace_path)
                         self.assertEqual(sum(item['agent_id'] == agent_id for item in manager.get_agents()), 1)
                     self.assertEqual(manager.stop_agent(agent_id)['status'], 'stopped')
 

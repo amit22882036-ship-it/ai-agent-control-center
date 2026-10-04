@@ -15,6 +15,7 @@ import test_waiting
 
 
 class DecideTests(unittest.TestCase):
+    from workspace_test_support import process_test_setup as setUp
     fake_agent = test_waiting.WaitingTests.fake_agent
     make_launcher = test_waiting.WaitingTests.make_launcher
     tearDown = test_waiting.WaitingTests.tearDown
@@ -102,7 +103,7 @@ class DecideTests(unittest.TestCase):
                     payload = json.loads(detail['output'][len(history) + 3])
                     self.assertEqual(payload['args'], ['exec', '--sandbox', sandbox, '--color', 'never',
                                                      '--skip-git-repo-check', 'resume', session_id, '-'])
-                    self.assertEqual(Path(payload['cwd']), manager._project_root)
+                    self.assertEqual(Path(payload['cwd']), self.workspace_path)
                     self.assertIn(manager._delegated_decision, payload['prompt'])
                     self.assertIn('CONTROL_CENTER_WAITING: <your question>', payload['prompt'])
                     self.assertIn('only to the current decision', payload['prompt'])

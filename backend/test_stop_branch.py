@@ -11,6 +11,7 @@ import test_agent_hierarchy
 
 
 class StopBranchTests(unittest.TestCase):
+    from workspace_test_support import process_test_setup as setUp
     replacement = test_agent_hierarchy.HierarchyTests.replacement
     resume = test_agent_hierarchy.HierarchyTests.resume
     finish = test_agent_hierarchy.HierarchyTests.finish

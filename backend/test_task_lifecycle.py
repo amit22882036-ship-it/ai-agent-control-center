@@ -358,6 +358,7 @@ class TaskV5MigrationTests(unittest.TestCase):
         task = self.task_for(represented)
         missing_task = self.task_for(missing)
         with manager._store._connection() as db:
+            db.execute('DROP TABLE task_workspaces')  # Restore the pre-workspace migration fixture.
             db.execute('DELETE FROM task_assignments WHERE task_id=?', (missing_task['task_id'],))
             db.execute('DELETE FROM tasks WHERE task_id=?', (missing_task['task_id'],))
             db.execute('PRAGMA user_version=4')
@@ -375,6 +376,7 @@ class TaskV5MigrationTests(unittest.TestCase):
         task = self.task_for(represented)
         missing_task = self.task_for(missing)
         with manager._store._connection() as db:
+            db.execute('DROP TABLE task_workspaces')  # Restore the pre-workspace migration fixture.
             db.execute('DELETE FROM task_assignments WHERE task_id=?', (missing_task['task_id'],))
             db.execute('DELETE FROM tasks WHERE task_id=?', (missing_task['task_id'],))
             db.execute('PRAGMA user_version=4')
@@ -395,6 +397,7 @@ class TaskV5MigrationTests(unittest.TestCase):
             manager._save_agent(key)
         represented_task = self.task_for(keys['stopped'])
         with manager._store._connection() as db:
+            db.execute('DROP TABLE task_workspaces')  # Restore the pre-workspace migration fixture.
             db.execute('DELETE FROM task_assignments WHERE agent_id<>?', (keys['stopped'],))
             db.execute('DELETE FROM tasks WHERE task_id<>?', (represented_task['task_id'],))
             db.execute('PRAGMA user_version=4')

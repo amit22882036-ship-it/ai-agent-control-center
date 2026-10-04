@@ -19,6 +19,7 @@ from app.main import app, StartAgentRequest, start_mock_agent, stop_mock_agent
 
 
 class AgentTests(unittest.TestCase):
+    from workspace_test_support import process_test_setup as setUp
     def test_same_pid_keeps_separate_agents(self):
         first = Mock(pid=12345, stdout=io.StringIO("First output\n"))
         second = Mock(pid=12345, stdout=io.StringIO("Second output\n"))

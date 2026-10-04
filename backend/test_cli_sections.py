@@ -8,6 +8,7 @@ import test_redirect
 
 
 class CliSectionTests(unittest.TestCase):
+    from workspace_test_support import process_test_setup as setUp
     fake_agent = test_redirect.RedirectTests.fake_agent
     tearDown = test_redirect.RedirectTests.tearDown
 

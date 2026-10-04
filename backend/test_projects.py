@@ -10,6 +10,7 @@ from uuid import UUID
 from app import agent_manager as manager
 from app.persistence import AgentStore
 from app.project_domain import canonical_path, contains
+from workspace_test_support import make_repository
 import test_task_lifecycle
 
 
@@ -115,21 +116,23 @@ class ProjectTests(unittest.TestCase):
         self.assertEqual(manager._store.list_tasks(), [])
 
     def test_root_resolves_existing_project_containing_effective_cwd(self):
-        root = self.directory('host')
+        root = make_repository(self.directory('host'))
         project = manager._store.create_project('Host', root)
-        with patch.object(manager.Path, 'cwd', return_value=root):
+        with patch.object(manager, '_project_root', root):
             key, _ = self.create(kind='mock')
         self.assertEqual(self.task_for(key)['project_id'], project['project_id'])
-        self.assertEqual(manager.agent_working_directories[key], root)
+        self.assertNotEqual(manager._resume_cwd(key), root)
 
-    def test_child_rejects_mismatched_execution_context_before_mutation(self):
+    def test_child_rejects_corrupt_parent_workspace_before_spawn(self):
         key, _ = self.create()
-        tasks = manager._store.list_tasks()
-        with patch.dict(manager.agent_working_directories, {key: self.directory('outside')}), \
-                patch.object(manager, '_spawn_process') as spawn:
+        parent = self.task_for(key)
+        with manager._store._connection() as db:
+            db.execute('UPDATE task_workspaces SET workspace_path=? WHERE task_id=?',
+                       (str(self.directory('outside')), parent['task_id']))
+        with patch.object(manager, '_spawn_process') as spawn:
             self.request(f'/agents/{key}/children/start', {'task': 'Child'}, 422)
             spawn.assert_not_called()
-        self.assertEqual(manager._store.list_tasks(), tasks)
+        self.assertEqual(self.task_for(key), parent)
 
     def test_root_agents_provider_independent_and_unrelated_roots(self):
         first, _ = self.create(kind='mock')
@@ -139,7 +142,7 @@ class ProjectTests(unittest.TestCase):
         self.assertEqual(len(manager._store.list_projects()), 1)
         self.assertNotEqual(first, self.task_for(first)['task_id'])
         self.assertNotEqual(first, project_id)
-        other = self.directory('other')
+        other = make_repository(self.directory('other'))
         with patch.object(manager, '_project_root', other):
             third, _ = self.create()
         self.assertNotEqual(self.task_for(third)['project_id'], project_id)
@@ -168,7 +171,7 @@ class ProjectTests(unittest.TestCase):
         self.assertTrue(all(t['project_id'] == task['project_id'] for t in manager._store.list_tasks()))
 
     def test_existing_task_start_and_resume_use_project_not_current_default(self):
-        root = self.directory('assigned')
+        root = make_repository(self.directory('assigned'))
         project = manager._store.create_project('Assigned', root)
         task = manager._store.create_task('Work', project_id=project['project_id'])
         process = self.replacement()
@@ -176,15 +179,16 @@ class ProjectTests(unittest.TestCase):
                 patch.object(manager, '_codex_command', return_value='fixed'), patch.object(manager, 'Thread') as thread:
             thread.return_value.is_alive.return_value = False
             key = manager.start_task_agent(task['task_id'], 'codex')['agent_id']
-        self.assertEqual(spawn.call_args.kwargs['cwd'], root)
+        workspace = Path(manager._store.get_task_workspace(task['task_id'])['workspace_path'])
+        self.assertEqual(spawn.call_args.kwargs['cwd'], workspace)
         manager.agent_sessions[key] = '11111111-1111-1111-1111-111111111111'
         self.output(key, 'CONTROL_CENTER_WAITING: Which file?', True)
         _, _, _, popen = self.resume(key, lambda k: manager.reply_agent(k, 'Continue'))
-        self.assertEqual(popen.call_args.kwargs['cwd'], root)
+        self.assertEqual(popen.call_args.kwargs['cwd'], workspace)
         self.assertEqual(self.task_for(key)['project_id'], project['project_id'])
 
     def test_runtime_resume_keeps_original_directory_with_enclosing_project(self):
-        enclosing = self.directory('enclosing')
+        enclosing = make_repository(self.directory('enclosing'))
         nested = self.directory('enclosing/nested')
         project = manager._store.create_project('Enclosing', enclosing)
         with patch.object(manager, '_project_root', nested):
@@ -193,7 +197,7 @@ class ProjectTests(unittest.TestCase):
         manager.agent_sessions[key] = '11111111-1111-1111-1111-111111111111'
         self.output(key, 'CONTROL_CENTER_WAITING: Which file?', True)
         _, _, _, popen = self.resume(key, lambda k: manager.reply_agent(k, 'Continue'))
-        self.assertEqual(popen.call_args.kwargs['cwd'], nested)
+        self.assertEqual(popen.call_args.kwargs['cwd'], Path(manager._store.get_task_workspace(self.task_for(key)['task_id'])['workspace_path']))
 
     def test_unresolved_task_and_child_start_fail_before_spawn(self):
         parent, _ = self.create(kind='mock')
@@ -245,6 +249,7 @@ class ProjectTests(unittest.TestCase):
         agents, tasks, names = store.load_agents(), store.list_tasks(), store.name_history(child)
         assignments = [store.list_task_assignments(t['task_id']) for t in tasks]
         with store._connection() as db:
+            db.execute('DROP TABLE task_workspaces')
             db.execute('DROP INDEX task_project')
             db.execute('ALTER TABLE tasks DROP COLUMN project_id')
             db.execute('DROP TABLE projects')
@@ -266,7 +271,7 @@ class ProjectTests(unittest.TestCase):
         self.assertEqual(restored.name_history(child), names)
         self.assertEqual([restored.list_task_assignments(t['task_id']) for t in tasks], assignments)
         with restored._connection() as db:
-            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 7)
+            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 8)
             self.assertEqual(db.execute('PRAGMA foreign_key_check').fetchall(), [])
             self.assertIn('projects', {row['table'] for row in db.execute('PRAGMA foreign_key_list(tasks)')})
         self.assertEqual(AgentStore(self.path).list_tasks(), restored.list_tasks())

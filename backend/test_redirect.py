@@ -17,6 +17,7 @@ import test_agent_manager
 
 
 class RedirectTests(unittest.TestCase):
+    from workspace_test_support import process_test_setup as setUp
     make_launcher = test_agent_manager.AgentTests.make_launcher
 
     def tearDown(self):
@@ -139,7 +140,7 @@ class RedirectTests(unittest.TestCase):
                                                      "--skip-git-repo-check", "resume", session_id, "-"])
                     self.assertEqual(resumed["prompt"], manager._codex_prompt(instruction))
                     self.assertEqual(resumed["cwd"], json.loads(history[1])["cwd"])
-                    self.assertEqual(Path(resumed["cwd"]), manager._project_root)
+                    self.assertEqual(Path(resumed["cwd"]), self.workspace_path)
                     self.assertEqual(sum(item["agent_id"] == agent_id for item in manager.get_agents()), 1)
                     self.assertEqual(manager.stop_agent(agent_id)["status"], "stopped")
                     self.assertIsNotNone(replacement.poll())

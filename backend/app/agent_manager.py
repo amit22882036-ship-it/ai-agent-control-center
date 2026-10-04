@@ -15,7 +15,8 @@ from uuid import UUID, uuid4
 from .agent_names import default_display_name, validate_display_name, validate_display_color
 from .system_notifications import notifications
 from .persistence import AgentStore
-from .project_domain import canonical_path, contains
+from .task_workspaces import provision_task_workspace
+from .project_domain import canonical_path
 from .realtime import changes
 from .output_history import OutputCache, RECENT_OUTPUT_LIMIT, OUTPUT_PAGE_SIZE, OUTPUT_MAX_LIMIT
 
@@ -36,8 +37,6 @@ agent_sandboxes: dict[str, CodexSandbox | None] = {}
 agent_sessions: dict[str, str | None] = {}
 agent_waiting_questions: dict[str, str | None] = {}
 agent_readers: dict[str, Thread] = {}
-# Execution context only; Project ownership remains derived from TaskAssignment.
-agent_working_directories: dict[str, Path] = {}
 
 
 @dataclass
@@ -115,7 +114,7 @@ def _finalize_process(agent_id: str, process: subprocess.Popen | None, allow_aut
                               "--- Automatic Always Decision ---", history_text=question,
                               always_decision=True, automatic_always=True)
                 return
-            except (OSError, RuntimeError):
+            except (OSError, RuntimeError, ValueError, LookupError, sqlite3.Error):
                 logger.exception("Automatic Always decision could not resume")
                 current = agents[agent_id]
                 if current is not process and (current.poll() is None or not current.stdout.closed):
@@ -134,7 +133,7 @@ def _finalize_process(agent_id: str, process: subprocess.Popen | None, allow_aut
                               "--- Automatic Similar Decision ---", history_text=question,
                               automatic_question=question)
                 return
-            except (OSError, RuntimeError):
+            except (OSError, RuntimeError, ValueError, LookupError, sqlite3.Error):
                 logger.exception("Automatic similar decision could not resume")
                 current = agents[agent_id]
                 if current is not process and (current.poll() is None or not current.stdout.closed):
@@ -223,7 +222,7 @@ def initialize_persistence(path=None) -> None:
     with _data_lock:
         for registry in (agents, agent_parents, agent_statuses, agent_outputs, agent_tasks, agent_names, agent_colors, agent_types,
                          agent_sandboxes, agent_sessions, agent_waiting_questions, agent_readers,
-                         agent_similar_decisions, agent_always_decisions, agent_working_directories):
+                         agent_similar_decisions, agent_always_decisions):
             registry.clear()
         _store = store
         _shutting_down = False
@@ -335,7 +334,7 @@ def _start_reader(agent_id: str, process: subprocess.Popen) -> None:
     Thread(target=_watch_process, args=(agent_id, process, reader), daemon=True).start()
 
 
-def _spawn_process(command: str | list[str], agent_type: AgentType, *, cwd=None) -> subprocess.Popen:
+def _spawn_process(command: str | list[str], agent_type: AgentType, *, cwd) -> subprocess.Popen:
     return subprocess.Popen(
         command,
         stdin=subprocess.PIPE if agent_type == "codex" else None,
@@ -345,7 +344,7 @@ def _spawn_process(command: str | list[str], agent_type: AgentType, *, cwd=None)
         bufsize=1,
         encoding="utf-8" if agent_type == "codex" else None,
         errors="replace",
-        cwd=cwd if cwd is not None else (_project_root if agent_type == "codex" else None),
+        cwd=cwd,
         shell=False,
     )
 
@@ -359,34 +358,40 @@ def _task_project_root(task):
     return Path(canonical_path(project['root_path'], require_directory=True)[0])
 
 
+def _execution_workspace(task_id, origin_kind='legacy_project_snapshot'):
+    workspace = provision_task_workspace(_task_store(), task_id, origin_kind=origin_kind)
+    return Path(workspace['workspace_path'])
+
+
 def _resume_cwd(agent_id):
-    if agent_id in agent_working_directories:
-        return agent_working_directories[agent_id]
-    if _store is not None:
-        related = _store.agent_task_ids(agent_id)
-        if related:
-            task = _store.get_task(related[0])
-            if task['project_id']:
-                return _task_project_root(task)
-    # Legacy sessions have no reliable persisted cwd; preserve their pre-v7
-    # resume behavior without inventing or persisting Project ownership.
-    return _project_root
+    related = _store.agent_task_ids(agent_id) if _store is not None else []
+    return _execution_workspace(related[0] if related else None)
+
+
+def start_agent(task: str, agent_type: AgentType = "mock", sandbox: CodexSandbox = "read-only",
+                parent_id: str | None = None, *, task_id: str | None = None) -> str:
+    prepared = _prepare_agent_start(task, agent_type, sandbox, parent_id, task_id=task_id)
+    # Git/filesystem work runs outside the broad process-state lock. SQLite
+    # ownership is rechecked when launching after this potentially slow step.
+    cwd = _execution_workspace(prepared[2], prepared[5])
+    return _launch_prepared_agent(*prepared[:5], agent_type, sandbox, cwd)
 
 
 @_synchronized
-def start_agent(task: str, agent_type: AgentType = "mock", sandbox: CodexSandbox = "read-only",
-                parent_id: str | None = None, *, task_id: str | None = None) -> str:
+def _prepare_agent_start(task: str, agent_type: AgentType, sandbox: CodexSandbox,
+                         parent_id: str | None, *, task_id: str | None):
+    if _shutting_down:
+        raise RuntimeError('Backend is shutting down; agent start was not performed')
+    origin = 'project_snapshot' if task_id is None else 'legacy_project_snapshot'
     if parent_id is not None and parent_id not in agents:
         raise LookupError("Parent agent not found")
     script_path = Path(__file__).resolve().parent.parent / "mock_agent.py"
     if agent_type not in ("mock", "codex"):
         raise ValueError("Unknown agent type")
     command = _codex_command(sandbox) if agent_type == "codex" else [sys.executable, str(script_path)]
-    # Codex has always used the repository root; Mock inherits the host cwd.
-    cwd = _project_root if agent_type == 'codex' else Path.cwd()
-    # A backend-directory launch still belongs to this canonical codebase.
-    # An unrelated host cwd is a separate Project, independent of provider.
-    root_path = _project_root if contains(canonical_path(_project_root)[1], canonical_path(cwd)[1]) else cwd
+    # Resolve logical ownership from the canonical context, then execute only
+    # in the Task Workspace regardless of provider.
+    cwd = root_path = _project_root
     parent_task = None
     if _store is not None:
         if task_id is None:
@@ -398,10 +403,8 @@ def start_agent(task: str, agent_type: AgentType = "mock", sandbox: CodexSandbox
                 if parent_task_id is None:
                     raise ValueError('Parent agent has no associated Task')
                 parent_task = _store.get_task(parent_task_id)
-                project_root = _task_project_root(parent_task)
-                cwd = _resume_cwd(parent_id)
-                if not contains(canonical_path(project_root)[1], canonical_path(cwd)[1]):
-                    raise ValueError('Child execution directory is outside the parent Project')
+                _task_project_root(parent_task)  # Reject unresolved legacy ownership.
+                origin = 'parent_task_snapshot'
             task_record = _store.create_task(task, parent_task_id=parent_task['task_id'] if parent_task else None,
                                              root_path=root_path,
                                              project_id=(_store.resolve_project_for_path(cwd) or {}).get('project_id')
@@ -413,6 +416,8 @@ def start_agent(task: str, agent_type: AgentType = "mock", sandbox: CodexSandbox
             if task_record['status'] != 'pending' or _store.get_active_assignment_for_task(task_id):
                 raise ValueError('Only an unassigned pending Task can start an agent')
             parent_task = _store.get_task_parent(task_id)
+            if parent_task is not None:
+                origin = 'parent_task_snapshot'
             assignment = _store.get_active_assignment_for_task(parent_task['task_id']) if parent_task else None
             parent_id = assignment['agent_id'] if assignment else None
             cwd = _task_project_root(task_record)
@@ -420,6 +425,17 @@ def start_agent(task: str, agent_type: AgentType = "mock", sandbox: CodexSandbox
         task = task_record['description']
     elif task_id is not None:
         raise RuntimeError('Task persistence is unavailable')
+    return task, parent_id, task_id, parent_task, command, origin
+
+
+@_synchronized
+def _launch_prepared_agent(task, parent_id, task_id, parent_task, command, agent_type, sandbox, cwd):
+    if _shutting_down:
+        raise RuntimeError('Backend is shutting down; agent start was not performed')
+    if _store is not None:
+        current = _store.get_task(task_id)
+        if current is None or current['status'] != 'pending' or _store.get_active_assignment_for_task(task_id):
+            raise ValueError('Only an unassigned pending Task can start an agent')
     provider_task = task
     if parent_task is not None:
         provider_task = (f"Parent work:\n{parent_task['description']}\n\n"
@@ -427,7 +443,6 @@ def start_agent(task: str, agent_type: AgentType = "mock", sandbox: CodexSandbox
                          "Work specifically on your assigned contribution in support of the parent work.")
     agent_id = str(uuid4())
     process = _spawn_process(command, agent_type, cwd=cwd)
-    agent_working_directories[agent_id] = Path(cwd)
     agent_statuses[agent_id] = "running"
     agent_parents[agent_id] = parent_id
     agent_outputs[agent_id] = OutputCache()
@@ -504,7 +519,6 @@ def get_task_assignments(task_id):
     return store.list_task_assignments(task_id)
 
 
-@_synchronized
 def start_task_agent(task_id, agent_type='mock', sandbox='read-only'):
     agent_id = start_agent('', agent_type, sandbox, task_id=task_id)
     return {'task_id': task_id, 'agent_id': agent_id, 'status': 'running'}
@@ -675,9 +689,10 @@ def redirect_agent(agent_id: str, instruction: str) -> dict[str, str] | None:
         raise ValueError("Redirect will be available once the Codex session starts.")
     # Resolve and validate before interrupting the current process.
     command = _codex_command(agent_sandboxes[agent_id], session_id)
+    cwd = _resume_cwd(agent_id)
     _stop_windows_tree(process)
     try:
-        return _resume_agent(agent_id, command, instruction, "--- Redirect ---")
+        return _resume_agent(agent_id, command, instruction, "--- Redirect ---", cwd=cwd)
     except (OSError, RuntimeError):
         if agents[agent_id] is process:
             agent_statuses[agent_id] = "stopped"
@@ -816,7 +831,8 @@ def _waiting_resume_command(agent_id: str) -> str | None:
 def _resume_agent(agent_id: str, command: str, text: str, marker: str,
                   history_text: str | None = None,
                   automatic_question: str | None = None,
-                  always_decision: bool = False, automatic_always: bool = False) -> dict[str, str]:
+                  always_decision: bool = False, automatic_always: bool = False,
+                  cwd=None) -> dict[str, str]:
     # Drain the old process before adding the marker or resumed output.
     reader = agent_readers.get(agent_id)
     if reader is not None:
@@ -825,7 +841,7 @@ def _resume_agent(agent_id: str, command: str, text: str, marker: str,
             raise RuntimeError("Old process output has not closed; resume was not started.")
     previous = (agents[agent_id], agent_statuses[agent_id], agent_waiting_questions[agent_id],
                 agent_sessions[agent_id], agent_outputs[agent_id])
-    replacement = _spawn_process(command, "codex", cwd=_resume_cwd(agent_id))
+    replacement = _spawn_process(command, "codex", cwd=cwd if cwd is not None else _resume_cwd(agent_id))
     history = [marker, text if history_text is None else history_text]
     with _data_lock:
         if always_decision:

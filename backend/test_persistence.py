@@ -26,6 +26,11 @@ class PersistenceTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.path = Path(self.temp.name) / 'data' / 'test.sqlite3'
         self.assertIsNone(manager._store)
+        from workspace_test_support import make_repository
+        root = make_repository(Path(self.temp.name) / 'canonical')
+        patch.object(manager, '_project_root', root).start()
+        patch('app.persistence.DEFAULT_ROOT', root).start()
+        patch.dict(os.environ, {'CONTROL_CENTER_WORKSPACE_ROOT': str(Path(self.temp.name) / 'workspaces')}).start()
         manager.initialize_persistence(self.path)
         self.notify = patch.object(manager.notifications, 'transition').start()
         self.cancel = patch.object(manager.notifications, 'cancel').start()
@@ -82,9 +87,9 @@ class PersistenceTests(unittest.TestCase):
     def test_schema_override_and_safe_round_trip(self):
         self.assertTrue(self.path.is_file())
         with closing(sqlite3.connect(self.path)) as db, db:
-            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 7)
+            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 8)
             self.assertEqual({row[0] for row in db.execute("SELECT name FROM sqlite_master WHERE type='table'")},
-                             {'agents', 'output', 'agent_name_history', 'sqlite_sequence', 'tasks', 'task_assignments', 'projects'})
+                             {'agents', 'output', 'agent_name_history', 'sqlite_sequence', 'tasks', 'task_assignments', 'projects', 'task_workspaces'})
         with patch.dict(os.environ, {'CONTROL_CENTER_DB_PATH': str(self.path)}):
             self.assertEqual(AgentStore().path, self.path)
         text = "quotes '\"; DROP TABLE agents; --\nUnicode שלום 🐍"
@@ -184,7 +189,7 @@ class PersistenceTests(unittest.TestCase):
             self.assertEqual(result, {'agent_id': key, 'status': 'running'})
             command.assert_called_once_with('workspace-write', key)
             self.assertEqual(popen.call_args.args, ('fixed command',))
-            self.assertEqual(popen.call_args.kwargs['cwd'], manager._project_root)
+            self.assertEqual(popen.call_args.kwargs['cwd'], manager._resume_cwd(key))
             self.assertFalse(popen.call_args.kwargs['shell'])
             self.assertTrue(process.stdin.closed)
             self.assertIn('CONTROL_CENTER_WAITING', process.stdin.saved)
@@ -370,7 +375,7 @@ class PersistenceTests(unittest.TestCase):
             self.assertEqual(payload['args'], ['exec', '--sandbox', 'workspace-write', '--color', 'never',
                                               '--skip-git-repo-check', 'resume', session, '-'])
             self.assertEqual(payload['prompt'], manager._codex_prompt(answer))
-            self.assertEqual(Path(payload['cwd']), manager._project_root)
+            self.assertEqual(Path(payload['cwd']), manager._resume_cwd(child))
             self.assertEqual(after['session_id'], session)
             self.assertEqual(after['parent_id'], root)
             self.assertEqual(after['output'][:len(before['output'])], before['output'])

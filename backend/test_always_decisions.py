@@ -15,6 +15,7 @@ import test_similar_decisions
 
 
 class AlwaysDecisionTests(unittest.TestCase):
+    from workspace_test_support import process_test_setup as setUp
     fake_agent = test_similar_decisions.SimilarDecisionTests.fake_agent
     waiting_agent = test_similar_decisions.SimilarDecisionTests.waiting_agent
     replacement = test_similar_decisions.SimilarDecisionTests.replacement
@@ -320,7 +321,7 @@ class AlwaysDecisionTests(unittest.TestCase):
                     for payload in payloads[1:]:
                         self.assertEqual(payload['args'], ['exec', '--sandbox', sandbox, '--color', 'never',
                                                           '--skip-git-repo-check', 'resume', session, '-'])
-                        self.assertEqual(Path(payload['cwd']), manager._project_root)
+                        self.assertEqual(Path(payload['cwd']), self.workspace_path)
                     self.assertIn('Which approach?', payloads[1]['prompt'])
                     self.assertIn('Which other approach?', payloads[2]['prompt'])
                     self.assertEqual(manager.stop_agent(agent_id)['status'], 'stopped')

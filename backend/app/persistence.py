@@ -20,7 +20,7 @@ class AgentStore:
         self._lock = RLock()
         with self._connection() as db:
             version = db.execute('PRAGMA user_version').fetchone()[0]
-            if version not in (0, 1, 2, 3, 4, 5, 6, 7):
+            if version not in (0, 1, 2, 3, 4, 5, 6, 7, 8):
                 raise RuntimeError(f'Unsupported control-center database schema version: {version}')
             if version == 0:
                 if db.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchone():
@@ -98,10 +98,69 @@ class AgentStore:
                         db.execute('BEGIN')
                     self._migrate_projects(db)
                     db.execute('PRAGMA user_version = 7')
+                    version = 7
                 db.execute('SELECT project_id FROM tasks LIMIT 0')
                 db.execute('SELECT project_id, name, root_path, root_path_key, created_at, updated_at FROM projects LIMIT 0')
+                if version == 7:
+                    if not db.in_transaction:
+                        db.execute('BEGIN')
+                    self._migrate_workspaces(db)
+                    db.execute('PRAGMA user_version = 8')
+                db.execute('SELECT workspace_id,task_id,project_id,workspace_path,workspace_path_key,base_snapshot,origin_kind,source_task_id,created_at,updated_at FROM task_workspaces LIMIT 0')
             except sqlite3.DatabaseError as exc:
                 raise RuntimeError('Incompatible control-center database schema') from exc
+
+    @staticmethod
+    def _migrate_workspaces(db):
+        # Historical Tasks have no isolated filesystem state to reconstruct.
+        db.execute("""CREATE TABLE IF NOT EXISTS task_workspaces (
+            workspace_id TEXT PRIMARY KEY NOT NULL,
+            task_id TEXT NOT NULL UNIQUE REFERENCES tasks(task_id),
+            project_id TEXT NOT NULL REFERENCES projects(project_id),
+            workspace_path TEXT NOT NULL, workspace_path_key TEXT NOT NULL UNIQUE,
+            base_snapshot TEXT NOT NULL,
+            origin_kind TEXT NOT NULL CHECK(origin_kind IN ('project_snapshot','parent_task_snapshot','legacy_project_snapshot')),
+            source_task_id TEXT REFERENCES tasks(task_id),
+            created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+            updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+        )""")
+
+    def get_task_workspace(self, task_id):
+        with self._connection() as db:
+            row = db.execute('SELECT * FROM task_workspaces WHERE task_id=?', (task_id,)).fetchone()
+            return dict(row) if row else None
+
+    def workspace_for_path(self, key):
+        with self._connection() as db:
+            row = db.execute('SELECT * FROM task_workspaces WHERE workspace_path_key=?', (key,)).fetchone()
+            return dict(row) if row else None
+
+    def list_task_workspaces(self):
+        with self._connection() as db:
+            return [dict(row) for row in db.execute('SELECT * FROM task_workspaces')]
+
+    def save_task_workspace(self, record):
+        with self._connection() as db:
+            db.execute('BEGIN IMMEDIATE')
+            task = db.execute('SELECT * FROM tasks WHERE task_id=?', (record['task_id'],)).fetchone()
+            if task is None or task['project_id'] != record['project_id']:
+                raise ValueError('Task Workspace ownership mismatch')
+            for project in db.execute('SELECT root_path_key FROM projects'):
+                key, root = record['workspace_path_key'], project['root_path_key']
+                if contains(key, root) or contains(root, key):
+                    raise ValueError('Task Workspace storage must not overlap a canonical Project')
+            for existing in db.execute('SELECT workspace_path_key FROM task_workspaces'):
+                key, other = record['workspace_path_key'], existing['workspace_path_key']
+                if contains(key, other) or contains(other, key):
+                    raise ValueError('Task Workspace paths must not overlap')
+            if record['source_task_id'] is not None:
+                source = db.execute('SELECT * FROM tasks WHERE task_id=?', (record['source_task_id'],)).fetchone()
+                if source is None or source['project_id'] != task['project_id'] or source['task_id'] != task['parent_task_id']:
+                    raise ValueError('Task Workspace source must be its same-Project parent')
+            fields = ('workspace_id','task_id','project_id','workspace_path','workspace_path_key',
+                      'base_snapshot','origin_kind','source_task_id')
+            db.execute('INSERT INTO task_workspaces(' + ','.join(fields) + ') VALUES (?,?,?,?,?,?,?,?)',
+                       tuple(record[key] for key in fields))
 
     @staticmethod
     def _migrate_projects(db):
@@ -141,6 +200,10 @@ class AgentStore:
             other = existing['root_path_key']
             if contains(other, key) or contains(key, other):
                 raise ValueError('Project root duplicates or overlaps a registered Project')
+        for existing in db.execute('SELECT workspace_path_key FROM task_workspaces'):
+            other = existing['workspace_path_key']
+            if contains(other, key) or contains(key, other):
+                raise ValueError('Project root must not overlap a Task Workspace')
         project_id = str(uuid4())
         db.execute('INSERT INTO projects(project_id,name,root_path,root_path_key) VALUES (?,?,?,?)',
                    (project_id, name or project_name(Path(root).name or 'Project'), root, key))
@@ -253,7 +316,7 @@ class AgentStore:
         return result
 
     def create_task(self, description, title=None, status='pending', parent_task_id=None,
-                    project_id=None, *, root_path=DEFAULT_ROOT):
+                    project_id=None, *, root_path=None):
         validate_task_status(status)
         if status in ('in_progress', 'waiting'):
             raise ValueError('Working tasks require an active assignment')
@@ -269,7 +332,7 @@ class AgentStore:
                     raise ValueError('Child Task must belong to the parent Project')
                 project_id = parent_project
             if project_id is None:
-                root, key = canonical_path(root_path, require_directory=True)
+                root, key = canonical_path(root_path or DEFAULT_ROOT, require_directory=True)
                 project_id = self._register_project(db, root, key, ensure=True)['project_id']
             elif db.execute('SELECT 1 FROM projects WHERE project_id=?', (project_id,)).fetchone() is None:
                 raise LookupError('Project not found')

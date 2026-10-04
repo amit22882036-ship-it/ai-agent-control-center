@@ -5,8 +5,8 @@ A local dashboard for starting, stopping, and monitoring multiple agents. The Re
 ## Features
 
 - **Mock agents:** simulate a short workflow with progress messages. They do not execute the supplied task or change files.
-- **Codex agents:** run tasks through the installed Codex CLI. New root agents use this repository's root; workers started on existing Tasks use that Task's Project root.
-- **Codex sandbox modes:** `read-only` is the default; `workspace-write` allows Codex to modify files in this project. Choose the mode before starting a Codex agent.
+- **Codex agents:** run tasks through the installed Codex CLI inside a durable, isolated Task Workspace.
+- **Codex sandbox modes:** `read-only` is the default; `workspace-write` allows Codex to modify files in its Task Workspace. Choose the mode before starting a Codex agent.
 - **Start and stop:** enter a task and select an agent type to start a run. Select an agent to view its details and stop it while it is running.
 - **Status monitoring and live output:** SSE change notifications refresh agent cards and selected-agent details from the REST API. If the stream is unavailable, the dashboard falls back to refreshing every two seconds and reconnects automatically. Status and captured output remain available through the existing REST endpoints.
 
@@ -18,13 +18,27 @@ On normal shutdown, running agents are stopped; waiting agents stay waiting. Aft
 
 ## Project identity (Stage 2D)
 
-A **Project** identifies a logical codebase. Its **Canonical Workspace** is its canonical absolute root directory. Ownership is `Agent -> TaskAssignment -> Task -> Project`; Agents do not persist a second Project identity. This does not provide filesystem isolation or protection from shared databases, ports, caches, or external services. There are no isolated Agent Workspaces yet.
+A **Project** identifies a logical codebase. Its **Canonical Workspace** is its canonical absolute root directory. Ownership is `Agent -> TaskAssignment -> Task -> Project`; Agents do not persist a second Project identity. Project identity does not protect shared databases, ports, caches, or external services.
 
 `POST /projects` accepts `name` and `root_path`; `GET /projects` and `GET /projects/{project_id}` return Project metadata. New registration requires an existing directory. Canonical paths resolve relative components and filesystem aliases, with Windows case normalization for comparison. Duplicate and overlapping roots are rejected. The comparison key is internal. There are no Project mutation/deletion endpoints or Project UI.
 
-`POST /tasks` accepts an optional `project_id`; otherwise it uses the repository's canonical context. Existing `POST /agents/start` requests remain unchanged. Codex keeps its repository cwd; Mock keeps its inherited host cwd. A Mock cwd inside this repository shares its Project, while an unrelated cwd resolves independently. An already registered Project containing the effective cwd takes precedence. Child Tasks inherit their parent's Project, and child workers execute within it. A new worker on an existing Task starts at that Project's root. Live session resumes retain their original execution directory; after backend recovery, resolved Tasks use their Project root.
+`POST /tasks` accepts an optional `project_id`; otherwise it uses the repository's canonical context. Existing `POST /agents/start` requests remain unchanged. Both providers resolve the default canonical context before provisioning isolated execution. Child Tasks inherit their parent's Project.
 
-Schema v7 adds Projects and nullable `tasks.project_id`. The v6 schema contains no persisted execution-directory evidence, so migration leaves historical Tasks unresolved without guessing from text, hierarchy, or today's cwd. Such Tasks cannot start a new worker or child. Existing legacy waiting-session continuation retains its previous default-directory behavior without assigning a Project. All new Tasks receive a Project. Project ensure and Task creation are transactional; failed worker launches leave a valid pending Task without an active assignment, following the existing lifecycle compensation rules.
+Schema v7 adds Projects and nullable `tasks.project_id`. The v6 schema contains no persisted execution-directory evidence, so migration leaves historical Tasks unresolved without guessing from text, hierarchy, or today's cwd. Such Tasks cannot start or resume a worker or child. All new Tasks receive a Project. Project ensure and Task creation are transactional; failed worker launches leave a valid pending Task without an active assignment, following the existing lifecycle compensation rules.
+
+## Durable Task Workspaces (Stage 2E.1)
+
+Schema v8 adds one `task_workspaces` record per Task, allocated lazily, without fabricating historical filesystem state during migration. The workspace belongs to the Task, never to an Agent. A replacement worker, Reply, Redirect, Decide, Similar, Always, or recovered waiting session reuses that persisted path. Missing, corrupt, wrong-repository, or unresolved workspaces fail safely; execution never falls back to the canonical directory.
+
+Set `CONTROL_CENTER_WORKSPACE_ROOT` to an external storage directory. The default is `%LOCALAPPDATA%/AI Agent Control Center/task-workspaces` on Windows (or `~/.local/share/AI Agent Control Center/task-workspaces` without LOCALAPPDATA). Paths are generated as `<root>/<project-id>/<task-id>` and must not overlap any canonical Project. Do not move or manually replace these directories.
+
+Provisioning requires a Git working-tree root with a usable HEAD. A temporary alternate index captures current source bytes, including staged/unstaged tracked changes and non-ignored untracked files. It creates an internal snapshot commit and a detached linked worktree, without changing the user's branch, HEAD, index, or canonical files. No branch is created. Children snapshot their parent's current Task Workspace, recursively. Independent roots and siblings have separate files. New work on an existing legacy root Task without a workspace snapshots today's canonical source (`legacy_project_snapshot`), not historical state. Child starts use the current parent workspace, provisioning a legacy parent first if necessary.
+
+Ignored files and common environment/secret/build/cache paths are excluded, including tracked `.env*`, private-key files, `node_modules`, `.venv`, and `dist`. This is filename-based filtering, not a secret scanner; linked worktrees still share the repository's Git object database and history. Symbolic links, submodules, and non-Git/unborn repositories are currently unsupported. Source snapshots do not provision runtime dependencies or copy environments. Snapshots read files sequentially; there is no coordinated freeze of a concurrently editing parent.
+
+`GET /tasks/{task_id}/workspace` returns metadata, `null` when not yet provisioned, or 404 for an unknown Task. It never provisions a workspace. There are no mutation/reset/delete/sync APIs or Workspace UI. Stop, completion, waiting, shutdown, and worker replacement retain workspace files. Nothing is integrated back into canonical or parent files.
+
+Provisioning uses per-Task synchronization, exclusive filesystem reservation, and database uniqueness. If persistence fails, only a newly created, unrecorded worktree is compensated. An uncertain commit preserves a durably recorded workspace; an unavailable database leaves files untouched. A crash leaving an unrecorded path requires manual recovery instead of silent adoption or deletion. Spawn failure retains valid workspace state. No automatic retention cleanup, staleness detection, merging, or resource coordination is implemented.
 
 ## Requirements
 
