@@ -8,7 +8,7 @@ import sqlite3
 from dataclasses import dataclass, field
 from pathlib import Path
 from functools import wraps
-from contextlib import nullcontext
+from contextlib import nullcontext, contextmanager, ExitStack
 from threading import RLock, Thread
 from typing import Literal
 from uuid import UUID, uuid4
@@ -219,6 +219,8 @@ def initialize_persistence(path=None) -> None:
     if any(process is not None for process in agents.values()):
         raise RuntimeError("Cannot reload persistence while managed processes are attached")
     store = AgentStore(path)
+    from .integrations import recover_integrations
+    recover_integrations(store)
     store.reconcile_task_recovery()
     records = store.load_agents(output_limit=RECENT_OUTPUT_LIMIT)
     with _data_lock:
@@ -361,6 +363,7 @@ def _task_project_root(task):
 
 
 def _execution_workspace(task_id, origin_kind='legacy_project_snapshot'):
+    _task_store().check_task_integrations(task_id)
     workspace = provision_task_workspace(_task_store(), task_id, origin_kind=origin_kind)
     return Path(workspace['workspace_path'])
 
@@ -375,6 +378,26 @@ def _agent_task_id(agent_id):
     return related[0] if related else None
 
 
+@contextmanager
+def _upstream_guard(task_id):
+    if _store is None or task_id is None:
+        yield
+        return
+    task = _store.get_task(task_id)
+    if task is None:
+        raise LookupError('Task not found')
+    keys = {task['parent_task_id'] or 'project:' + str(task['project_id'])}
+    if task['parent_task_id'] and _store.get_task_workspace(task['parent_task_id']) is None:
+        # Legacy parent bootstrap also snapshots canonical source.
+        keys.add('project:' + str(task['project_id']))
+    # Use integration destination locks while observing upstream. Nonblocking
+    # acquisition avoids child/parent lock-order inversions with integrations.
+    with ExitStack() as guards:
+        for key in sorted(keys):
+            guards.enter_context(task_lock(_store, key, blocking=False))
+        yield
+
+
 def _workspace_session(action):
     @wraps(action)
     def locked(agent_id, *args, **kwargs):
@@ -382,7 +405,7 @@ def _workspace_session(action):
         # Nonblocking under the process-state lock avoids lock-order inversions
         # with starts, which do slow Git work outside that broad lock.
         guard = task_lock(_store, task_id, blocking=False) if task_id else nullcontext()
-        with guard:
+        with guard, _upstream_guard(task_id):
             return action(agent_id, *args, **kwargs)
     return locked
 
@@ -394,7 +417,7 @@ def start_agent(task: str, agent_type: AgentType = "mock", sandbox: CodexSandbox
     # ownership is rechecked when launching after this potentially slow step.
     task_id = prepared[2]
     guard = task_lock(_store, task_id, blocking=False) if _store is not None else nullcontext()
-    with guard:
+    with guard, _upstream_guard(task_id):
         if _store is not None:
             current = _store.get_task(task_id)
             if current['status'] != 'pending' or _store.get_active_assignment_for_task(task_id):
@@ -461,6 +484,7 @@ def _launch_prepared_agent(task, parent_id, task_id, parent_task, command, agent
     if _shutting_down:
         raise RuntimeError('Backend is shutting down; agent start was not performed')
     if _store is not None:
+        _store.check_task_integrations(task_id)
         current = _store.get_task(task_id)
         if current is None or current['status'] != 'pending' or _store.get_active_assignment_for_task(task_id):
             raise ValueError('Only an unassigned pending Task can start an agent')
@@ -877,6 +901,8 @@ def _resume_agent(agent_id: str, command: str, text: str, marker: str,
     cwd = cwd if cwd is not None else _resume_cwd(agent_id)
     task_id = _agent_task_id(agent_id)
     state = ensure_workspace_current(_store, task_id) if task_id else None
+    if state:
+        state['integration_order'] = _store.integration_cursor(task_id)
     invalidation = session_context(_store, agent_id, state) if state else ''
     replacement = _spawn_process(command, "codex", cwd=cwd)
     history = [marker, text if history_text is None else history_text]
@@ -943,7 +969,7 @@ def _resume_agent(agent_id: str, command: str, text: str, marker: str,
         raise
     if state:
         try:
-            _store.acknowledge_agent_source_context(agent_id, state['base_snapshot'])
+            _store.acknowledge_agent_source_context(agent_id, state['base_snapshot'], state['integration_order'])
         except (sqlite3.Error, OSError):
             # Repeating a warning next time is safe; forgetting it is not.
             logger.exception('Could not acknowledge session source context')
@@ -1008,3 +1034,22 @@ def get_name_history(agent_id: str):
         raise RuntimeError("Name history is temporarily unavailable.")
     with _data_lock:
         return {"agent_id": agent_id, "history": _store.name_history(agent_id)}
+
+
+def integrate_task(task_id):
+    from .integrations import integrate
+    store = _task_store()
+
+    def assert_quiet(current_task_id):
+        # Do not refresh statuses here: that could automatically resume a policy.
+        with _state_lock:
+            for assignment in store.list_task_assignments(current_task_id):
+                key = assignment['agent_id']
+                process = agents.get(key)
+                if process is not None and process.poll() is None:
+                    raise ValueError('Integration refuses a Task Workspace with a live Agent process')
+                if key not in agents or process is None:
+                    record = next((r for r in store.load_agents(output_limit=0) if r['agent_id'] == key), None)
+                    if record and record['status'] == 'running':
+                        raise ValueError('Integration refuses a Task with an unowned running Agent')
+    return integrate(store, task_id, assert_quiet)

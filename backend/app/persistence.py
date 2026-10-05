@@ -20,7 +20,7 @@ class AgentStore:
         self._lock = RLock()
         with self._connection() as db:
             version = db.execute('PRAGMA user_version').fetchone()[0]
-            if version not in (0, 1, 2, 3, 4, 5, 6, 7, 8, 9):
+            if version not in (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10):
                 raise RuntimeError(f'Unsupported control-center database schema version: {version}')
             if version == 0:
                 if db.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchone():
@@ -116,13 +116,125 @@ class AgentStore:
                         base_snapshot TEXT NOT NULL)""")
                     # No filesystem side effects during migration. Existing v8
                     # sessions remember the source baseline of their assignment.
-                    db.execute("""INSERT OR IGNORE INTO agent_source_context
+                    db.execute("""INSERT OR IGNORE INTO agent_source_context(agent_id,base_snapshot)
                         SELECT a.agent_id,w.base_snapshot FROM task_assignments a
                         JOIN task_workspaces w ON w.task_id=a.task_id""")
                     db.execute('PRAGMA user_version = 9')
+                    version = 9
                 db.execute('SELECT agent_id,base_snapshot FROM agent_source_context LIMIT 0')
+                if version == 9:
+                    if not db.in_transaction:
+                        db.execute('BEGIN')
+                    self._migrate_integrations(db)
+                    db.execute('PRAGMA user_version = 10')
+                db.execute('SELECT integration_order, integration_id, plan FROM integrations LIMIT 0')
+                db.execute('SELECT integration_order FROM agent_source_context LIMIT 0')
             except sqlite3.DatabaseError as exc:
                 raise RuntimeError('Incompatible control-center database schema') from exc
+
+    @staticmethod
+    def _migrate_integrations(db):
+        db.execute("""CREATE TABLE IF NOT EXISTS integrations (
+            integration_order INTEGER PRIMARY KEY AUTOINCREMENT,
+            integration_id TEXT NOT NULL UNIQUE,
+            source_task_id TEXT NOT NULL REFERENCES tasks(task_id),
+            destination_kind TEXT NOT NULL CHECK(destination_kind IN ('task','project')),
+            destination_id TEXT NOT NULL, destination_key TEXT NOT NULL,
+            base_snapshot TEXT NOT NULL, source_snapshot TEXT NOT NULL,
+            destination_before_snapshot TEXT NOT NULL, result_snapshot TEXT,
+            status TEXT NOT NULL CHECK(status IN ('preparing','ready','applying','applied','noop',
+                'conflict','failed','source_changed','destination_changed','recovery_required')),
+            conflict_paths TEXT NOT NULL DEFAULT '[]', changed_paths TEXT NOT NULL DEFAULT '[]',
+            plan TEXT NOT NULL DEFAULT '[]',
+            changed_paths_remaining INTEGER NOT NULL DEFAULT 0, conflict_paths_remaining INTEGER NOT NULL DEFAULT 0,
+            validation_status TEXT NOT NULL DEFAULT 'not_run' CHECK(validation_status='not_run'),
+            failure_reason TEXT,
+            created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+            updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+            applied_at TEXT
+        )""")
+        db.execute("""CREATE UNIQUE INDEX IF NOT EXISTS integration_destination_active
+            ON integrations(destination_key) WHERE status IN ('preparing','ready','applying','recovery_required')""")
+        db.execute("""CREATE UNIQUE INDEX IF NOT EXISTS integration_source_active
+            ON integrations(source_task_id) WHERE status IN ('preparing','ready','applying','recovery_required')""")
+        if 'integration_order' not in {r['name'] for r in db.execute('PRAGMA table_info(agent_source_context)')}:
+            db.execute('ALTER TABLE agent_source_context ADD COLUMN integration_order INTEGER NOT NULL DEFAULT 0')
+
+    @staticmethod
+    def _integration_record(row):
+        if row is None:
+            return None
+        record = dict(row)
+        for field in ('conflict_paths', 'changed_paths', 'plan'):
+            record[field] = json.loads(record[field])
+        return record
+
+    def get_integration(self, integration_id):
+        with self._connection() as db:
+            return self._integration_record(db.execute('SELECT * FROM integrations WHERE integration_id=?', (integration_id,)).fetchone())
+
+    def list_integrations(self, task_id=None):
+        with self._connection() as db:
+            rows = db.execute('SELECT * FROM integrations' + (' WHERE source_task_id=?' if task_id else '') +
+                              ' ORDER BY integration_order', (task_id,) if task_id else ())
+            return [self._integration_record(r) for r in rows]
+
+    def claim_integration(self, record):
+        with self._connection() as db:
+            db.execute('BEGIN IMMEDIATE')
+            if db.execute("""SELECT 1 FROM integrations WHERE status IN ('preparing','ready','applying','recovery_required')
+                AND (destination_key IN (?,?) OR source_task_id=? OR (?='task' AND source_task_id=?))""",
+                (record['destination_key'], 'task:' + record['source_task_id'], record['source_task_id'],
+                 record['destination_kind'], record['destination_id'])).fetchone():
+                raise ValueError('Destination has an active integration or requires recovery')
+            existing = db.execute("""SELECT * FROM integrations WHERE source_task_id=? AND destination_key=?
+                AND source_snapshot=? AND status='applied' ORDER BY integration_order DESC LIMIT 1""",
+                (record['source_task_id'], record['destination_key'], record['source_snapshot'])).fetchone()
+            if existing:
+                return self._integration_record(existing)
+            fields = ('integration_id','source_task_id','destination_kind','destination_id','destination_key',
+                      'base_snapshot','source_snapshot','destination_before_snapshot','status')
+            try:
+                db.execute('INSERT INTO integrations (' + ','.join(fields) + ') VALUES (?,?,?,?,?,?,?,?,?)',
+                           tuple(record[k] for k in fields))
+            except sqlite3.IntegrityError:
+                raise ValueError('Source or destination already has an active integration') from None
+        return self.get_integration(record['integration_id'])
+
+    def update_integration(self, integration_id, status, **fields):
+        allowed = {'result_snapshot','conflict_paths','changed_paths','plan','failure_reason','changed_paths_remaining','conflict_paths_remaining'}
+        if not fields.keys() <= allowed:
+            raise ValueError('Invalid integration metadata')
+        values = {k: json.dumps(v) if k in ('conflict_paths','changed_paths','plan') else v for k,v in fields.items()}
+        with self._connection() as db:
+            db.execute("UPDATE integrations SET status=?,updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now')" +
+                       (",applied_at=strftime('%Y-%m-%dT%H:%M:%fZ','now')" if status == 'applied' else '') +
+                       ''.join(',' + k + '=?' for k in values) + ' WHERE integration_id=?',
+                       (status, *values.values(), integration_id))
+        return self.get_integration(integration_id)
+
+    def check_task_integrations(self, task_id):
+        with self._connection() as db:
+            task = db.execute('SELECT * FROM tasks WHERE task_id=?', (task_id,)).fetchone()
+            if task is None:
+                raise LookupError('Task not found')
+            upstream = 'task:' + task['parent_task_id'] if task['parent_task_id'] else 'project:' + str(task['project_id'])
+            if db.execute("""SELECT 1 FROM integrations WHERE status IN ('preparing','ready','applying','recovery_required')
+                AND (source_task_id=? OR destination_key IN (?,?))""", (task_id, 'task:' + task_id, upstream)).fetchone():
+                raise ValueError('Task source has an active integration or requires recovery')
+
+    def session_integrations(self, agent_id, task_id):
+        with self._connection() as db:
+            row = db.execute('SELECT integration_order FROM agent_source_context WHERE agent_id=?', (agent_id,)).fetchone()
+            since = row[0] if row else 0
+            return [self._integration_record(r) for r in db.execute("""SELECT * FROM integrations
+                WHERE destination_key=? AND status='applied' AND integration_order>? ORDER BY integration_order""",
+                ('task:' + task_id, since))]
+
+    def integration_cursor(self, task_id):
+        with self._connection() as db:
+            return db.execute("SELECT COALESCE(MAX(integration_order),0) FROM integrations WHERE destination_key=? AND status='applied'",
+                              ('task:' + task_id,)).fetchone()[0]
 
     @staticmethod
     def _migrate_workspaces(db):
@@ -157,10 +269,11 @@ class AgentStore:
             row = db.execute('SELECT base_snapshot FROM agent_source_context WHERE agent_id=?', (agent_id,)).fetchone()
             return row[0] if row else None
 
-    def acknowledge_agent_source_context(self, agent_id, snapshot):
+    def acknowledge_agent_source_context(self, agent_id, snapshot, integration_order=0):
         with self._connection() as db:
-            db.execute('INSERT INTO agent_source_context VALUES (?,?) ON CONFLICT(agent_id) '
-                       'DO UPDATE SET base_snapshot=excluded.base_snapshot', (agent_id, snapshot))
+            db.execute('INSERT INTO agent_source_context(agent_id,base_snapshot,integration_order) VALUES (?,?,?) ON CONFLICT(agent_id) '
+                       'DO UPDATE SET base_snapshot=excluded.base_snapshot,integration_order=excluded.integration_order',
+                       (agent_id, snapshot, integration_order))
 
     def workspace_for_path(self, key):
         with self._connection() as db:
@@ -552,8 +665,10 @@ class AgentStore:
             if assignment_task_id is not None and existing_assignment is None:
                 db.execute('INSERT INTO task_assignments(assignment_id,task_id,agent_id) VALUES (?,?,?)',
                            (str(uuid4()), assignment_task_id, record['agent_id']))
-                db.execute('INSERT OR IGNORE INTO agent_source_context SELECT ?,base_snapshot '
-                           'FROM task_workspaces WHERE task_id=?', (record['agent_id'], assignment_task_id))
+                db.execute('INSERT OR IGNORE INTO agent_source_context(agent_id,base_snapshot,integration_order) '
+                           'SELECT ?,base_snapshot,(SELECT COALESCE(MAX(integration_order),0) FROM integrations '
+                           "WHERE destination_key=? AND status='applied') FROM task_workspaces WHERE task_id=?",
+                           (record['agent_id'], 'task:' + assignment_task_id, assignment_task_id))
             self._sync_task(db, record['agent_id'], record['status'])
             latest = db.execute('SELECT name FROM agent_name_history WHERE agent_id=? ORDER BY id DESC LIMIT 1',
                                 (record['agent_id'],)).fetchone()

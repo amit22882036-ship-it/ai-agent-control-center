@@ -414,3 +414,37 @@ def agent_name_history_route(agent_id: str):
     if result is None:
         raise HTTPException(status_code=404, detail="Agent not found")
     return result
+
+
+class IntegrationRequest(BaseModel):
+    model_config = {'extra': 'forbid'}
+
+
+@app.post('/tasks/{task_id}/integrate')
+def integrate_task_route(task_id: str, request: IntegrationRequest | None = None):
+    result = _task_action(lambda: manager.integrate_task(task_id))
+    if result['status'] not in ('applied', 'noop'):
+        raise HTTPException(status_code=409, detail=result)
+    return result
+
+
+@app.get('/tasks/{task_id}/integrations')
+def task_integrations_route(task_id: str):
+    from .integrations import public
+    def read():
+        store = manager._task_store()
+        if store.get_task(task_id) is None:
+            raise LookupError('Task not found')
+        return {'integrations': [public(r) for r in store.list_integrations(task_id)]}
+    return _task_action(read)
+
+
+@app.get('/integrations/{integration_id}')
+def integration_route(integration_id: str):
+    from .integrations import public
+    def read():
+        record = manager._task_store().get_integration(integration_id)
+        if record is None:
+            raise LookupError('Integration not found')
+        return public(record)
+    return _task_action(read)

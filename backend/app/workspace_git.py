@@ -8,7 +8,7 @@ import tempfile
 from .project_domain import canonical_path
 
 
-def git(root, *args, data=None, extra_env=None):
+def git(root, *args, data=None, extra_env=None, accepted=(0,), with_status=False):
     env = {key: value for key, value in os.environ.items() if not key.startswith('GIT_')}
     env.update({'GIT_TERMINAL_PROMPT': '0', 'GIT_OPTIONAL_LOCKS': '0'})
     env.update(extra_env or {})
@@ -16,9 +16,9 @@ def git(root, *args, data=None, extra_env=None):
         with Popen(['git', '-c', 'core.hooksPath=' + os.devnull, '-C', str(root), *args],
                    stdin=PIPE, stdout=PIPE, stderr=PIPE, env=env, shell=False) as process:
             output, _ = process.communicate(data)
-            if process.returncode:
+            if process.returncode not in accepted:
                 raise ValueError('Task Workspace Git operation failed; verify repository and workspace integrity')
-            return output
+            return (process.returncode, output) if with_status else output
     except OSError:
         raise ValueError('Task Workspaces require an available Git installation') from None
 
