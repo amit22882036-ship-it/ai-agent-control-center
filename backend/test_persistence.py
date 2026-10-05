@@ -87,7 +87,7 @@ class PersistenceTests(unittest.TestCase):
     def test_schema_override_and_safe_round_trip(self):
         self.assertTrue(self.path.is_file())
         with closing(sqlite3.connect(self.path)) as db, db:
-            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 10)
+            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 11)
             self.assertEqual({row[0] for row in db.execute("SELECT name FROM sqlite_master WHERE type='table'")},
                              {'agents', 'output', 'agent_name_history', 'sqlite_sequence', 'tasks', 'task_assignments', 'projects', 'task_workspaces', 'agent_source_context', 'integrations'})
         with patch.dict(os.environ, {'CONTROL_CENTER_DB_PATH': str(self.path)}):
@@ -170,9 +170,14 @@ class PersistenceTests(unittest.TestCase):
         self.recover()
         self.assertEqual(manager.get_agent(child)['status'], 'stopped')
         self.assertEqual(manager.get_agent(grandchild)['status'], 'finished')
-        for parent in (child, grandchild, unrelated):
+        for parent in (child, unrelated):
             new, _ = self.create(parent)
             self.assertEqual(manager.agent_parents[new], parent)
+        # Stage 2F.1 forbids creating new work from completed parent work.
+        with patch.object(manager, '_spawn_process') as spawn:
+            with self.assertRaises(ValueError):
+                manager.start_agent('Child', 'mock', parent_id=grandchild)
+            spawn.assert_not_called()
 
     def test_recovered_waiting_actions_reuse_session_stdin_cwd_and_history(self):
         for action, marker in ((lambda key: manager.reply_agent(key, 'Reply & "literal"'), '--- User Reply ---'),

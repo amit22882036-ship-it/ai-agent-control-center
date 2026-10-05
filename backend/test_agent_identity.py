@@ -40,7 +40,7 @@ class AgentIdentityTests(unittest.TestCase):
 
     def test_palette_defaults_persistence_and_independent_child(self):
         key, _ = self.create(sandbox='workspace-write')
-        self.output(key, f'session id: {key}\n', finish=True)
+        self.output(key, f'session id: {key}\nCONTROL_CENTER_WAITING: Continue?\n', finish=True)
         before = manager.get_agent(key)
         history = self.history(key)
         self.assertEqual(before['display_color'], 'neutral')
@@ -106,6 +106,10 @@ class AgentIdentityTests(unittest.TestCase):
         with closing(sqlite3.connect(self.path)) as db, db:
             db.execute('ALTER TABLE agents DROP COLUMN display_color')
             db.execute('DROP TABLE agent_name_history')
+            # Remove post-v2 Task-owned tables when constructing a genuine legacy DB.
+            db.execute('DROP TABLE integrations')
+            db.execute('DROP TABLE agent_source_context')
+            db.execute('DROP TABLE task_workspaces')
             db.execute('DROP TABLE task_assignments')
             db.execute('DROP TABLE tasks')
             db.execute('PRAGMA user_version=2')

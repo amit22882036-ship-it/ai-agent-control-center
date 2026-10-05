@@ -271,7 +271,7 @@ class ProjectTests(unittest.TestCase):
         self.assertEqual(restored.name_history(child), names)
         self.assertEqual([restored.list_task_assignments(t['task_id']) for t in tasks], assignments)
         with restored._connection() as db:
-            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 10)
+            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 11)
             self.assertEqual(db.execute('PRAGMA foreign_key_check').fetchall(), [])
             self.assertIn('projects', {row['table'] for row in db.execute('PRAGMA foreign_key_list(tasks)')})
         self.assertEqual(AgentStore(self.path).list_tasks(), restored.list_tasks())

@@ -448,3 +448,18 @@ def integration_route(integration_id: str):
             raise LookupError('Integration not found')
         return public(record)
     return _task_action(read)
+
+
+@app.post('/tasks/{task_id}/pause')
+def pause_task_route(task_id: str):
+    return _task_action(lambda: manager.control_task(task_id, 'paused'))
+
+
+@app.post('/tasks/{task_id}/resume')
+def resume_task_route(task_id: str):
+    return _task_action(lambda: manager.control_task(task_id, 'active'))
+
+
+@app.post('/tasks/{task_id}/cancel')
+def cancel_task_route(task_id: str):
+    return _task_action(lambda: manager.control_task(task_id, 'canceled'))

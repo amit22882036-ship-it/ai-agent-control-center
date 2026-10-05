@@ -6,6 +6,7 @@ from pathlib import Path
 import sqlite3
 from threading import RLock
 from uuid import uuid4
+from . import work_control
 from .task_domain import task_title, validate_task_status, validate_end_reason
 from .agent_names import default_display_name, validate_display_color
 from .output_history import OUTPUT_PAGE_SIZE, OUTPUT_MAX_LIMIT
@@ -20,8 +21,10 @@ class AgentStore:
         self._lock = RLock()
         with self._connection() as db:
             version = db.execute('PRAGMA user_version').fetchone()[0]
-            if version not in (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10):
+            if version not in (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11):
                 raise RuntimeError(f'Unsupported control-center database schema version: {version}')
+            if version < 11:
+                db.execute('PRAGMA foreign_keys = OFF')
             if version == 0:
                 if db.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchone():
                     raise RuntimeError('Unversioned non-empty control-center database is unsupported')
@@ -127,8 +130,15 @@ class AgentStore:
                         db.execute('BEGIN')
                     self._migrate_integrations(db)
                     db.execute('PRAGMA user_version = 10')
+                    version = 10
                 db.execute('SELECT integration_order, integration_id, plan FROM integrations LIMIT 0')
                 db.execute('SELECT integration_order FROM agent_source_context LIMIT 0')
+                if version == 10:
+                    if not db.in_transaction:
+                        db.execute('BEGIN')
+                    work_control.migrate(db)
+                    db.execute('PRAGMA user_version = 11')
+                db.execute('SELECT control_intent,resume_status FROM tasks LIMIT 0')
             except sqlite3.DatabaseError as exc:
                 raise RuntimeError('Incompatible control-center database schema') from exc
 
@@ -470,6 +480,7 @@ class AgentStore:
             db.execute('BEGIN IMMEDIATE')
             self._validate_task_parent(db, task_id, parent_task_id)
             if parent_task_id is not None:
+                work_control.require_active(db.execute('SELECT * FROM tasks WHERE task_id=?', (parent_task_id,)).fetchone())
                 parent_project = db.execute('SELECT project_id FROM tasks WHERE task_id=?', (parent_task_id,)).fetchone()[0]
                 if parent_project is None:
                     raise ValueError('Parent Task has unresolved Project ownership')
@@ -484,6 +495,8 @@ class AgentStore:
             # Project ensure and Task insertion commit or roll back together.
             db.execute('INSERT INTO tasks(task_id,title,description,status,parent_task_id,project_id) VALUES (?,?,?,?,?,?)',
                        (task_id, task_title(description) if title is None else title, description, status, parent_task_id, project_id))
+            if status in ('canceled', 'paused'):
+                db.execute('UPDATE tasks SET control_intent=?,resume_status=? WHERE task_id=?', (status, 'pending' if status == 'paused' else None, task_id))
         return self.get_task(task_id)
 
     @staticmethod
@@ -529,12 +542,7 @@ class AgentStore:
                                 (agent_id,)).fetchone()
         if assignment is None:
             return
-        target = {'running': 'in_progress', 'waiting': 'waiting', 'finished': 'completed', 'stopped': 'pending'}[status]
-        db.execute("UPDATE tasks SET status=?, updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE task_id=? AND status<>?",
-                   (target, assignment['task_id'], target))
-        if status in ('finished', 'stopped'):
-            db.execute("UPDATE task_assignments SET ended_at=strftime('%Y-%m-%dT%H:%M:%fZ','now'), ended_reason=? WHERE assignment_id=?",
-                       ('completed' if status == 'finished' else 'stopped', assignment['assignment_id']))
+        work_control.sync(db, assignment, status)
 
     def get_task(self, task_id):
         with self._connection() as db:
@@ -551,7 +559,9 @@ class AgentStore:
             if db.execute('SELECT 1 FROM task_assignments WHERE ended_at IS NULL AND (task_id=? OR agent_id=?)',
                           (task_id, agent_id)).fetchone():
                 raise ValueError('Task or agent already has an active assignment')
-            task = db.execute('SELECT status FROM tasks WHERE task_id=?', (task_id,)).fetchone()
+            task = db.execute('SELECT * FROM tasks WHERE task_id=?', (task_id,)).fetchone()
+            if task:
+                work_control.require_active(task, pending=True)
             if task and task['status'] != 'pending':
                 raise ValueError('Only pending tasks can be assigned')
             assignment_id = str(uuid4())
@@ -577,12 +587,22 @@ class AgentStore:
     def end_assignment(self, assignment_id, reason):
         validate_end_reason(reason)
         with self._connection() as db:
+            db.execute('BEGIN IMMEDIATE')
+            original = db.execute('SELECT * FROM task_assignments WHERE assignment_id=?', (assignment_id,)).fetchone()
+            task = db.execute('SELECT * FROM tasks WHERE task_id=?', (original['task_id'],)).fetchone() if original else None
+            if task and task['control_intent'] != 'active':
+                reason = task['control_intent']
             updated = db.execute("""UPDATE task_assignments SET ended_at=strftime('%Y-%m-%dT%H:%M:%fZ','now'), ended_reason=?
                 WHERE assignment_id=? AND ended_at IS NULL""", (reason, assignment_id))
             row = db.execute('SELECT * FROM task_assignments WHERE assignment_id=?', (assignment_id,)).fetchone()
             if updated.rowcount:
-                target = reason if reason in ('completed', 'canceled') else 'pending'
+                target = task['control_intent'] if task['control_intent'] != 'active' else (reason if reason in ('completed', 'canceled', 'paused') else 'pending')
+                if task['status'] == 'blocked' and task['control_intent'] == 'active' and reason not in ('canceled', 'paused', 'completed'):
+                    target = 'blocked'
                 db.execute("UPDATE tasks SET status=?, updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE task_id=?", (target, row['task_id']))
+                if target in ('paused', 'canceled'):
+                    db.execute('UPDATE tasks SET control_intent=?,resume_status=? WHERE task_id=?',
+                               (target, 'pending' if target == 'paused' else None, row['task_id']))
             return dict(row) if row else None
 
     def reconcile_task_recovery(self):
@@ -614,9 +634,27 @@ class AgentStore:
                     db.execute("UPDATE agents SET status='stopped' WHERE agent_id=? AND status='waiting'", (agent_id,))
                 else:
                     self._sync_task(db, agent_id, status)
+            db.execute("UPDATE tasks SET status=control_intent WHERE control_intent<>'active' AND NOT EXISTS (SELECT 1 FROM task_assignments a WHERE a.task_id=tasks.task_id AND a.ended_at IS NULL)")
             db.execute("""UPDATE tasks SET status='pending', updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now')
-                WHERE status IN ('in_progress','waiting') AND NOT EXISTS
+                WHERE control_intent='active' AND status IN ('in_progress','waiting') AND NOT EXISTS
                 (SELECT 1 FROM task_assignments a WHERE a.task_id=tasks.task_id AND a.ended_at IS NULL)""")
+
+    def request_work_control(self, task_id, intent):
+        with self._connection() as db:
+            db.execute('BEGIN IMMEDIATE')
+            work_control.request(db, task_id, intent)
+        return self.get_task(task_id)
+
+    def finalize_work_control(self, task_id):
+        with self._connection() as db:
+            db.execute('BEGIN IMMEDIATE')
+            assignment = db.execute('SELECT * FROM task_assignments WHERE task_id=? AND ended_at IS NULL', (task_id,)).fetchone()
+            if assignment:
+                status = db.execute('SELECT status FROM agents WHERE agent_id=?', (assignment['agent_id'],)).fetchone()[0]
+                work_control.sync(db, assignment, status)
+            else:
+                db.execute("UPDATE tasks SET status=control_intent WHERE task_id=? AND control_intent<>'active'", (task_id,))
+        return self.get_task(task_id)
 
     @contextmanager
     def _connection(self):
@@ -645,6 +683,8 @@ class AgentStore:
                 task = db.execute('SELECT * FROM tasks WHERE task_id=?', (assignment_task_id,)).fetchone()
                 if task is None:
                     raise LookupError('Task not found')
+                if existing_assignment is None:
+                    work_control.require_active(task, pending=True)
                 if existing_assignment is None and (task['status'] != 'pending' or db.execute(
                         'SELECT 1 FROM task_assignments WHERE task_id=? AND ended_at IS NULL', (assignment_task_id,)).fetchone()):
                     raise ValueError('Only an unassigned pending Task can start an agent')

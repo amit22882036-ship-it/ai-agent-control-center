@@ -1,3 +1,4 @@
+from .work_control import require_active
 import os
 import logging
 import re
@@ -99,6 +100,13 @@ def _finalize_process(agent_id: str, process: subprocess.Popen | None, allow_aut
     with _state_lock:
         if (process is None or agents.get(agent_id) is not process or agent_statuses[agent_id] != "running"
                 or process.poll() is None or not process.stdout.closed):
+            return
+        task_id = _agent_task_id(agent_id)
+        controlled = _store.get_task(task_id) if task_id else None
+        if controlled and controlled['control_intent'] != 'active':
+            agent_statuses[agent_id] = 'stopped'
+            notifications.cancel(agent_id)
+            _save_agent(agent_id)
             return
         allow_auto = allow_auto and not _shutting_down
         question = agent_waiting_questions[agent_id]
@@ -402,6 +410,8 @@ def _workspace_session(action):
     @wraps(action)
     def locked(agent_id, *args, **kwargs):
         task_id = _agent_task_id(agent_id)
+        if task_id:
+            require_active(_store.get_task(task_id))
         # Nonblocking under the process-state lock avoids lock-order inversions
         # with starts, which do slow Git work outside that broad lock.
         guard = task_lock(_store, task_id, blocking=False) if task_id else nullcontext()
@@ -420,6 +430,7 @@ def start_agent(task: str, agent_type: AgentType = "mock", sandbox: CodexSandbox
     with guard, _upstream_guard(task_id):
         if _store is not None:
             current = _store.get_task(task_id)
+            require_active(current, pending=True)
             if current['status'] != 'pending' or _store.get_active_assignment_for_task(task_id):
                 raise ValueError('Only an unassigned pending Task can start an agent')
         cwd = _execution_workspace(task_id, prepared[5])
@@ -454,6 +465,7 @@ def _prepare_agent_start(task: str, agent_type: AgentType, sandbox: CodexSandbox
                 if parent_task_id is None:
                     raise ValueError('Parent agent has no associated Task')
                 parent_task = _store.get_task(parent_task_id)
+                require_active(parent_task)
                 _task_project_root(parent_task)  # Reject unresolved legacy ownership.
                 origin = 'parent_task_snapshot'
             task_record = _store.create_task(task, parent_task_id=parent_task['task_id'] if parent_task else None,
@@ -464,6 +476,7 @@ def _prepare_agent_start(task: str, agent_type: AgentType, sandbox: CodexSandbox
             task_record = _store.get_task(task_id)
             if task_record is None:
                 raise LookupError('Task not found')
+            require_active(task_record, pending=True)
             if task_record['status'] != 'pending' or _store.get_active_assignment_for_task(task_id):
                 raise ValueError('Only an unassigned pending Task can start an agent')
             parent_task = _store.get_task_parent(task_id)
@@ -486,6 +499,7 @@ def _launch_prepared_agent(task, parent_id, task_id, parent_task, command, agent
     if _store is not None:
         _store.check_task_integrations(task_id)
         current = _store.get_task(task_id)
+        require_active(current, pending=True)
         if current is None or current['status'] != 'pending' or _store.get_active_assignment_for_task(task_id):
             raise ValueError('Only an unassigned pending Task can start an agent')
     provider_task = task
@@ -871,6 +885,9 @@ This instruction authorizes only this check, not permanent or unrestricted auton
 
 
 def _waiting_resume_command(agent_id: str) -> str | None:
+    task_id = _agent_task_id(agent_id)
+    if task_id:
+        require_active(_store.get_task(task_id))
     if agent_id not in agents:
         return None
     if agent_types[agent_id] != "codex":
@@ -1053,3 +1070,51 @@ def integrate_task(task_id):
                     if record and record['status'] == 'running':
                         raise ValueError('Integration refuses a Task with an unowned running Agent')
     return integrate(store, task_id, assert_quiet)
+
+
+@_synchronized
+def control_task(task_id, intent):
+    store = _task_store()
+    with task_lock(store, task_id, blocking=False):
+        # Commit intent before any process operation. Completion uses this same
+        # state lock and SQLite transaction authority; whichever commits first wins.
+        task = store.request_work_control(task_id, intent)
+        assignment = store.get_active_assignment_for_task(task_id)
+        if intent != 'active' and assignment:
+            key = assignment['agent_id']
+            preserve_wait = intent == 'paused' and task['resume_status'] == 'waiting' and agent_statuses.get(key) == 'waiting'
+            process = agents.get(key)
+            if preserve_wait and process is not None and process.poll() is None:
+                preserve_wait = False
+            if not preserve_wait:
+                if key not in agents:
+                    raise RuntimeError('Worker state unavailable; control intent retained for recovery')
+                # Unlike generic Stop, work control must drain output before
+                # publishing the final work state. Failure leaves intent durable.
+                if process is not None and process.poll() is None:
+                    if agent_types[key] == 'codex' and os.name == 'nt':
+                        _stop_windows_tree(process)
+                    else:
+                        process.terminate()
+                        try:
+                            process.wait(timeout=2)
+                        except subprocess.TimeoutExpired:
+                            process.kill()
+                            process.wait(timeout=2)
+                if process is not None:
+                    if process.poll() is None:
+                        raise RuntimeError('Worker has not stopped; control intent retained')
+                    reader = agent_readers.get(key)
+                    if reader is not None:
+                        reader.join(timeout=3)
+                        if reader.is_alive():
+                            raise RuntimeError('Final output is still being read; retry work control')
+                agent_statuses[key] = 'stopped'
+                notifications.cancel(key)
+                if not _save_agent(key):
+                    raise RuntimeError('Could not persist stopped worker; retry work control')
+        if intent != 'active':
+            task = store.finalize_work_control(task_id)
+        # All state above is durable before observers are invalidated.
+        _emit_agent_change(assignment['agent_id'] if assignment else None)
+        return task
