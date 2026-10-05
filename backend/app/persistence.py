@@ -20,7 +20,7 @@ class AgentStore:
         self._lock = RLock()
         with self._connection() as db:
             version = db.execute('PRAGMA user_version').fetchone()[0]
-            if version not in (0, 1, 2, 3, 4, 5, 6, 7, 8):
+            if version not in (0, 1, 2, 3, 4, 5, 6, 7, 8, 9):
                 raise RuntimeError(f'Unsupported control-center database schema version: {version}')
             if version == 0:
                 if db.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchone():
@@ -106,7 +106,21 @@ class AgentStore:
                         db.execute('BEGIN')
                     self._migrate_workspaces(db)
                     db.execute('PRAGMA user_version = 8')
+                    version = 8
                 db.execute('SELECT workspace_id,task_id,project_id,workspace_path,workspace_path_key,base_snapshot,origin_kind,source_task_id,created_at,updated_at FROM task_workspaces LIMIT 0')
+                if version == 8:
+                    if not db.in_transaction:
+                        db.execute('BEGIN')
+                    db.execute("""CREATE TABLE IF NOT EXISTS agent_source_context (
+                        agent_id TEXT PRIMARY KEY REFERENCES agents(agent_id),
+                        base_snapshot TEXT NOT NULL)""")
+                    # No filesystem side effects during migration. Existing v8
+                    # sessions remember the source baseline of their assignment.
+                    db.execute("""INSERT OR IGNORE INTO agent_source_context
+                        SELECT a.agent_id,w.base_snapshot FROM task_assignments a
+                        JOIN task_workspaces w ON w.task_id=a.task_id""")
+                    db.execute('PRAGMA user_version = 9')
+                db.execute('SELECT agent_id,base_snapshot FROM agent_source_context LIMIT 0')
             except sqlite3.DatabaseError as exc:
                 raise RuntimeError('Incompatible control-center database schema') from exc
 
@@ -129,6 +143,24 @@ class AgentStore:
         with self._connection() as db:
             row = db.execute('SELECT * FROM task_workspaces WHERE task_id=?', (task_id,)).fetchone()
             return dict(row) if row else None
+
+    def update_workspace_base(self, task_id, expected, snapshot):
+        with self._connection() as db:
+            changed = db.execute("""UPDATE task_workspaces SET base_snapshot=?,
+                updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE task_id=? AND base_snapshot=?""",
+                (snapshot, task_id, expected))
+            if changed.rowcount != 1:
+                raise ValueError('Task Workspace base changed during refresh; retry after checking its state')
+
+    def get_agent_source_context(self, agent_id):
+        with self._connection() as db:
+            row = db.execute('SELECT base_snapshot FROM agent_source_context WHERE agent_id=?', (agent_id,)).fetchone()
+            return row[0] if row else None
+
+    def acknowledge_agent_source_context(self, agent_id, snapshot):
+        with self._connection() as db:
+            db.execute('INSERT INTO agent_source_context VALUES (?,?) ON CONFLICT(agent_id) '
+                       'DO UPDATE SET base_snapshot=excluded.base_snapshot', (agent_id, snapshot))
 
     def workspace_for_path(self, key):
         with self._connection() as db:
@@ -520,6 +552,8 @@ class AgentStore:
             if assignment_task_id is not None and existing_assignment is None:
                 db.execute('INSERT INTO task_assignments(assignment_id,task_id,agent_id) VALUES (?,?,?)',
                            (str(uuid4()), assignment_task_id, record['agent_id']))
+                db.execute('INSERT OR IGNORE INTO agent_source_context SELECT ?,base_snapshot '
+                           'FROM task_workspaces WHERE task_id=?', (record['agent_id'], assignment_task_id))
             self._sync_task(db, record['agent_id'], record['status'])
             latest = db.execute('SELECT name FROM agent_name_history WHERE agent_id=? ORDER BY id DESC LIMIT 1',
                                 (record['agent_id'],)).fetchone()

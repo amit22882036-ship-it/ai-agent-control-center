@@ -3,7 +3,7 @@ from contextlib import contextmanager
 import os
 from pathlib import Path
 import shutil
-from threading import Lock
+from threading import Lock, RLock
 from uuid import UUID, uuid4
 
 from .project_domain import canonical_path, contains
@@ -14,14 +14,19 @@ _locks = {}
 
 
 @contextmanager
-def task_lock(store, task_id):
+def task_lock(store, task_id, *, blocking=True):
     key = (canonical_path(store.path)[1], task_id)
     with _guard:
-        lock, users = _locks.get(key, (Lock(), 0))
+        lock, users = _locks.get(key, (RLock(), 0))
         _locks[key] = (lock, users + 1)
     try:
-        with lock:
+        acquired = lock.acquire(blocking=blocking)
+        if not acquired:
+            raise ValueError("Task Workspace operation already in progress; retry shortly")
+        try:
             yield
+        finally:
+            lock.release()
     finally:
         with _guard:
             _, users = _locks[key]
@@ -56,6 +61,8 @@ def _outside_workspaces(store, key, task_id=None):
 def validate_task_workspace(store, task, workspace):
     if workspace['task_id'] != task['task_id'] or workspace['project_id'] != task['project_id']:
         raise ValueError('Task Workspace ownership mismatch')
+    if workspace['source_task_id'] is not None and workspace['source_task_id'] != task['parent_task_id']:
+        raise ValueError('Task Workspace source association mismatch')
     project = store.get_project(task['project_id'])
     if project is None:
         raise ValueError('Task Project is unresolved')

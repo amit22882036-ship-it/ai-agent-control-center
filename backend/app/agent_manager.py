@@ -8,6 +8,7 @@ import sqlite3
 from dataclasses import dataclass, field
 from pathlib import Path
 from functools import wraps
+from contextlib import nullcontext
 from threading import RLock, Thread
 from typing import Literal
 from uuid import UUID, uuid4
@@ -15,7 +16,8 @@ from uuid import UUID, uuid4
 from .agent_names import default_display_name, validate_display_name, validate_display_color
 from .system_notifications import notifications
 from .persistence import AgentStore
-from .task_workspaces import provision_task_workspace
+from .task_workspaces import provision_task_workspace, task_lock
+from .workspace_freshness import evaluate_workspace_freshness, ensure_workspace_current, reject_divergence, session_context
 from .project_domain import canonical_path
 from .realtime import changes
 from .output_history import OutputCache, RECENT_OUTPUT_LIMIT, OUTPUT_PAGE_SIZE, OUTPUT_MAX_LIMIT
@@ -368,13 +370,39 @@ def _resume_cwd(agent_id):
     return _execution_workspace(related[0] if related else None)
 
 
+def _agent_task_id(agent_id):
+    related = _store.agent_task_ids(agent_id) if _store is not None else []
+    return related[0] if related else None
+
+
+def _workspace_session(action):
+    @wraps(action)
+    def locked(agent_id, *args, **kwargs):
+        task_id = _agent_task_id(agent_id)
+        # Nonblocking under the process-state lock avoids lock-order inversions
+        # with starts, which do slow Git work outside that broad lock.
+        guard = task_lock(_store, task_id, blocking=False) if task_id else nullcontext()
+        with guard:
+            return action(agent_id, *args, **kwargs)
+    return locked
+
+
 def start_agent(task: str, agent_type: AgentType = "mock", sandbox: CodexSandbox = "read-only",
                 parent_id: str | None = None, *, task_id: str | None = None) -> str:
     prepared = _prepare_agent_start(task, agent_type, sandbox, parent_id, task_id=task_id)
     # Git/filesystem work runs outside the broad process-state lock. SQLite
     # ownership is rechecked when launching after this potentially slow step.
-    cwd = _execution_workspace(prepared[2], prepared[5])
-    return _launch_prepared_agent(*prepared[:5], agent_type, sandbox, cwd)
+    task_id = prepared[2]
+    guard = task_lock(_store, task_id, blocking=False) if _store is not None else nullcontext()
+    with guard:
+        if _store is not None:
+            current = _store.get_task(task_id)
+            if current['status'] != 'pending' or _store.get_active_assignment_for_task(task_id):
+                raise ValueError('Only an unassigned pending Task can start an agent')
+        cwd = _execution_workspace(task_id, prepared[5])
+        if _store is not None:
+            ensure_workspace_current(_store, task_id)
+        return _launch_prepared_agent(*prepared[:5], agent_type, sandbox, cwd)
 
 
 @_synchronized
@@ -674,6 +702,7 @@ def stop_branch(agent_id: str) -> dict | None:
 
 
 @_synchronized
+@_workspace_session
 def redirect_agent(agent_id: str, instruction: str) -> dict[str, str] | None:
     if not instruction.strip():
         raise ValueError("Redirect instruction must not be blank.")
@@ -690,10 +719,13 @@ def redirect_agent(agent_id: str, instruction: str) -> dict[str, str] | None:
     # Resolve and validate before interrupting the current process.
     command = _codex_command(agent_sandboxes[agent_id], session_id)
     cwd = _resume_cwd(agent_id)
+    task_id = _agent_task_id(agent_id)
+    if task_id:
+        reject_divergence(evaluate_workspace_freshness(_store, task_id))
     _stop_windows_tree(process)
     try:
         return _resume_agent(agent_id, command, instruction, "--- Redirect ---", cwd=cwd)
-    except (OSError, RuntimeError):
+    except (OSError, RuntimeError, ValueError, sqlite3.Error):
         if agents[agent_id] is process:
             agent_statuses[agent_id] = "stopped"
             _save_agent(agent_id)
@@ -828,6 +860,7 @@ def _waiting_resume_command(agent_id: str) -> str | None:
     return _codex_command(agent_sandboxes[agent_id], session_id)
 
 
+@_workspace_session
 def _resume_agent(agent_id: str, command: str, text: str, marker: str,
                   history_text: str | None = None,
                   automatic_question: str | None = None,
@@ -841,7 +874,11 @@ def _resume_agent(agent_id: str, command: str, text: str, marker: str,
             raise RuntimeError("Old process output has not closed; resume was not started.")
     previous = (agents[agent_id], agent_statuses[agent_id], agent_waiting_questions[agent_id],
                 agent_sessions[agent_id], agent_outputs[agent_id])
-    replacement = _spawn_process(command, "codex", cwd=cwd if cwd is not None else _resume_cwd(agent_id))
+    cwd = cwd if cwd is not None else _resume_cwd(agent_id)
+    task_id = _agent_task_id(agent_id)
+    state = ensure_workspace_current(_store, task_id) if task_id else None
+    invalidation = session_context(_store, agent_id, state) if state else ''
+    replacement = _spawn_process(command, "codex", cwd=cwd)
     history = [marker, text if history_text is None else history_text]
     with _data_lock:
         if always_decision:
@@ -868,7 +905,7 @@ def _resume_agent(agent_id: str, command: str, text: str, marker: str,
     _start_reader(agent_id, replacement)
     try:
         with replacement.stdin:
-            prompt = _codex_prompt(text)
+            prompt = invalidation + _codex_prompt(text)
             if not always_decision and always.configured:
                 setting = "enabled" if always.enabled else "disabled"
                 prompt += (f"\n\nCurrent control-center setting: Always Decide is {setting}. "
@@ -904,6 +941,12 @@ def _resume_agent(agent_id: str, command: str, text: str, marker: str,
                     agent_readers[agent_id] = reader
                 _save_agent(agent_id, emit=False)
         raise
+    if state:
+        try:
+            _store.acknowledge_agent_source_context(agent_id, state['base_snapshot'])
+        except (sqlite3.Error, OSError):
+            # Repeating a warning next time is safe; forgetting it is not.
+            logger.exception('Could not acknowledge session source context')
     if always_decision:
         with _data_lock:
             agent_outputs[agent_id].hold = False

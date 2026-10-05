@@ -46,7 +46,7 @@ def excluded(name):
             or Path(name).name.lower() in {'credentials', 'credentials.json', 'secrets.json'})
 
 
-def snapshot_worktree_source(root):
+def snapshot_source_tree(root):
     repository(root)
     # Start empty so excluded tracked secrets and ignored files cannot survive
     # from HEAD. Hash actual source bytes without invoking clean/smudge filters.
@@ -79,10 +79,84 @@ def snapshot_worktree_source(root):
             entries.append(mode + b' ' + blob + b'\t' + raw + b'\0')
         git(root, 'update-index', '-z', '--index-info', data=b''.join(entries), extra_env=env)
         tree = git(root, 'write-tree', extra_env=env).strip().decode()
-        identity = {'GIT_AUTHOR_NAME': 'Control Center', 'GIT_AUTHOR_EMAIL': 'control-center@localhost',
-                    'GIT_COMMITTER_NAME': 'Control Center', 'GIT_COMMITTER_EMAIL': 'control-center@localhost'}
-        return git(root, '-c', 'commit.gpgSign=false', 'commit-tree', tree,
-                   data=b'Control Center Task source snapshot\n', extra_env=identity).decode().strip()
+        return tree
+
+
+def snapshot_commit(root, tree):
+    identity = {'GIT_AUTHOR_NAME': 'Control Center', 'GIT_AUTHOR_EMAIL': 'control-center@localhost',
+                'GIT_COMMITTER_NAME': 'Control Center', 'GIT_COMMITTER_EMAIL': 'control-center@localhost'}
+    return git(root, '-c', 'commit.gpgSign=false', 'commit-tree', tree,
+               data=b'Control Center Task source snapshot\n', extra_env=identity).decode().strip()
+
+
+def snapshot_worktree_source(root):
+    return snapshot_commit(root, snapshot_source_tree(root))
+
+
+def source_tree(root, snapshot):
+    return git(root, 'rev-parse', '--verify', snapshot + '^{tree}').decode().strip()
+
+
+def refresh_source(root, base, tree, revalidate):
+    """Two-tree clean update, with Git's overwrite checks and raw-byte attributes.
+
+    An isolated Git directory prevents repository filters/line conversions from
+    executing. Only this Task's index and detached HEAD are updated. No force,
+    reset, clean, merge of local edits, or upstream checkout is involved.
+    """
+    root = Path(root)
+    head = git(root, 'rev-parse', 'HEAD').strip().decode()
+    if git(root, 'rev-parse', '--abbrev-ref', 'HEAD').strip() != b'HEAD':
+        raise ValueError('Task Workspace refresh requires a detached HEAD')
+    index = Path(git(root, 'rev-parse', '--path-format=absolute', '--git-path', 'index').decode().strip())
+    lock = index.with_name('index.lock')
+    snapshot = snapshot_commit(root, tree)
+    # Exclusive index reservation also makes concurrent external Git operations
+    # fail safely instead of losing staging changes during refresh.
+    with lock.open('xb') as reserved:
+        owns_lock = True
+        try:
+            with tempfile.TemporaryDirectory(prefix='control-center-refresh-') as temp:
+                isolated = Path(temp) / 'git'
+                git(root, 'init', '--bare', '--template=', str(isolated))
+                (isolated / 'info').mkdir(exist_ok=True)
+                (isolated / 'info' / 'attributes').write_text('* -text -filter -ident -working-tree-encoding\n')
+                temporary_index = Path(temp) / 'index'
+                temporary_index.write_bytes(index.read_bytes())
+                objects = git(root, 'rev-parse', '--path-format=absolute', '--git-path', 'objects').decode().strip()
+                env = {'GIT_DIR': str(isolated), 'GIT_WORK_TREE': str(root),
+                       'GIT_INDEX_FILE': str(temporary_index), 'GIT_OBJECT_DIRECTORY': objects,
+                       'GIT_ATTR_NOSYSTEM': '1'}
+                old_tree = source_tree(root, base)
+                if git(root, 'write-tree', extra_env=env).strip().decode() != old_tree:
+                    raise ValueError('Task Workspace staging differs from its base; reconciliation is required')
+                git(root, '-c', 'core.autocrlf=false', '-c', 'core.attributesFile=' + os.devnull,
+                    'update-index', '--refresh', extra_env=env)
+                revalidate()
+                old_paths = set(git(root, 'ls-tree', '-rz', '--name-only', old_tree).split(b'\0'))
+                new_paths = set(git(root, 'ls-tree', '-rz', '--name-only', tree).split(b'\0'))
+                for raw in new_paths - old_paths:
+                    target = root / os.fsdecode(raw)
+                    # Git may otherwise overwrite an ignored untracked path.
+                    # Exclusion from source snapshots is not permission to delete.
+                    if raw and (target.exists() or target.is_symlink()):
+                        raise ValueError('Task Workspace refresh would overwrite an existing local path; '
+                                         'reconciliation is required')
+                git(root, '-c', 'core.autocrlf=false', '-c', 'core.attributesFile=' + os.devnull,
+                    'read-tree', '-m', '-u', old_tree, tree, extra_env=env)
+                reserved.write(temporary_index.read_bytes())
+            reserved.close()
+            os.replace(lock, index)
+            owns_lock = False
+            # Never follow a symbolic HEAD into a user branch.
+            if git(root, 'rev-parse', '--abbrev-ref', 'HEAD').strip() != b'HEAD':
+                raise ValueError('Task Workspace HEAD changed during refresh')
+            git(root, 'update-ref', '--no-deref', 'HEAD', snapshot, head)
+            return snapshot
+        finally:
+            reserved.close()
+            if owns_lock:
+                lock.unlink(missing_ok=True)
 
 
 def materialize(root, target, snapshot):

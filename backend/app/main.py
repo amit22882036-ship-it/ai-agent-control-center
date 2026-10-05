@@ -234,13 +234,7 @@ def task_assignments_route(task_id: str):
 
 @app.get('/tasks/{task_id}/workspace')
 def task_workspace_route(task_id: str):
-    def read():
-        store = manager._task_store()
-        if store.get_task(task_id) is None:
-            raise LookupError('Task not found')
-        record = store.get_task_workspace(task_id)
-        return {key: value for key, value in record.items() if key != 'workspace_path_key'} if record else None
-    return _task_action(read)
+    return _task_action(lambda: manager.evaluate_workspace_freshness(manager._task_store(), task_id))
 
 
 @app.post('/tasks/{task_id}/start-agent')
