@@ -6,7 +6,7 @@ from pathlib import Path
 import sqlite3
 from threading import RLock
 from uuid import uuid4
-from . import work_control
+from . import work_control, dependencies
 from .task_domain import task_title, validate_task_status, validate_end_reason
 from .agent_names import default_display_name, validate_display_color
 from .output_history import OUTPUT_PAGE_SIZE, OUTPUT_MAX_LIMIT
@@ -21,9 +21,9 @@ class AgentStore:
         self._lock = RLock()
         with self._connection() as db:
             version = db.execute('PRAGMA user_version').fetchone()[0]
-            if version not in (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11):
+            if version not in (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12):
                 raise RuntimeError(f'Unsupported control-center database schema version: {version}')
-            if version < 11:
+            if version < 12:
                 db.execute('PRAGMA foreign_keys = OFF')
             if version == 0:
                 if db.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchone():
@@ -138,7 +138,17 @@ class AgentStore:
                         db.execute('BEGIN')
                     work_control.migrate(db)
                     db.execute('PRAGMA user_version = 11')
+                    version = 11
                 db.execute('SELECT control_intent,resume_status FROM tasks LIMIT 0')
+                if version == 11:
+                    if not db.in_transaction:
+                        db.execute('BEGIN')
+                    dependencies.migrate(db)
+                    if db.execute('PRAGMA foreign_key_check').fetchone():
+                        raise sqlite3.IntegrityError('Invalid dependency migration references')
+                    db.execute('PRAGMA user_version = 12')
+                db.execute('SELECT block_resume_status,stop_required,legacy_pause FROM tasks LIMIT 0')
+                db.execute('SELECT task_id,depends_on_task_id FROM task_dependencies LIMIT 0')
             except sqlite3.DatabaseError as exc:
                 raise RuntimeError('Incompatible control-center database schema') from exc
 
@@ -449,11 +459,11 @@ class AgentStore:
     def get_task_parent(self, task_id):
         with self._connection() as db:
             row = db.execute('SELECT p.* FROM tasks t JOIN tasks p ON p.task_id=t.parent_task_id WHERE t.task_id=?', (task_id,)).fetchone()
-            return dict(row) if row else None
+            return dependencies.describe(db, row) if row else None
 
     def get_task_children(self, task_id):
         with self._connection() as db:
-            return [dict(row) for row in db.execute('SELECT * FROM tasks WHERE parent_task_id=? ORDER BY rowid', (task_id,))]
+            return [dependencies.describe(db, row) for row in db.execute('SELECT * FROM tasks WHERE parent_task_id=? ORDER BY rowid', (task_id,))]
 
     def get_task_descendants(self, task_id):
         # One snapshot, iterative traversal even for malformed cyclic data.
@@ -480,7 +490,7 @@ class AgentStore:
             db.execute('BEGIN IMMEDIATE')
             self._validate_task_parent(db, task_id, parent_task_id)
             if parent_task_id is not None:
-                work_control.require_active(db.execute('SELECT * FROM tasks WHERE task_id=?', (parent_task_id,)).fetchone())
+                work_control.require_active(db.execute('SELECT * FROM tasks WHERE task_id=?', (parent_task_id,)).fetchone(), db=db)
                 parent_project = db.execute('SELECT project_id FROM tasks WHERE task_id=?', (parent_task_id,)).fetchone()[0]
                 if parent_project is None:
                     raise ValueError('Parent Task has unresolved Project ownership')
@@ -524,7 +534,7 @@ class AgentStore:
                 WHERE (? IS NULL OR t.task_id=?) ORDER BY t.rowid''', (task_id, task_id)).fetchall()
             result = []
             for row in rows:
-                item = dict(row)
+                item = dependencies.describe(db, row)
                 assignment = {key: item.pop(key) for key in ('assignment_id', 'agent_id', 'agent_display_name',
                                                                'agent_display_color', 'agent_status')}
                 item['current_assignment'] = assignment if assignment['assignment_id'] else None
@@ -542,16 +552,19 @@ class AgentStore:
                                 (agent_id,)).fetchone()
         if assignment is None:
             return
+        before = dependencies.task(db, assignment['task_id'])
         work_control.sync(db, assignment, status)
+        if dependencies.task(db, assignment['task_id']) != before:
+            dependencies.reconcile(db)
 
     def get_task(self, task_id):
         with self._connection() as db:
             row = db.execute('SELECT * FROM tasks WHERE task_id=?', (task_id,)).fetchone()
-            return dict(row) if row else None
+            return dependencies.describe(db, row) if row else None
 
     def list_tasks(self):
         with self._connection() as db:
-            return [dict(row) for row in db.execute('SELECT * FROM tasks ORDER BY rowid')]
+            return [dependencies.describe(db, row) for row in db.execute('SELECT * FROM tasks ORDER BY rowid')]
 
     def create_assignment(self, task_id, agent_id):
         with self._connection() as db:
@@ -561,13 +574,14 @@ class AgentStore:
                 raise ValueError('Task or agent already has an active assignment')
             task = db.execute('SELECT * FROM tasks WHERE task_id=?', (task_id,)).fetchone()
             if task:
-                work_control.require_active(task, pending=True)
+                work_control.require_active(task, pending=True, db=db)
             if task and task['status'] != 'pending':
                 raise ValueError('Only pending tasks can be assigned')
             assignment_id = str(uuid4())
             db.execute('INSERT INTO task_assignments(assignment_id,task_id,agent_id) VALUES (?,?,?)',
                        (assignment_id, task_id, agent_id))
             db.execute("UPDATE tasks SET status='in_progress', updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE task_id=?", (task_id,))
+            dependencies.reconcile(db)
             return dict(db.execute('SELECT * FROM task_assignments WHERE assignment_id=?', (assignment_id,)).fetchone())
 
     def get_active_assignment_for_task(self, task_id):
@@ -592,17 +606,21 @@ class AgentStore:
             task = db.execute('SELECT * FROM tasks WHERE task_id=?', (original['task_id'],)).fetchone() if original else None
             if task and task['control_intent'] != 'active':
                 reason = task['control_intent']
+            elif task and (task['stop_required'] or dependencies.hard_blocked(db, task['task_id'])):
+                reason = 'blocked'
             updated = db.execute("""UPDATE task_assignments SET ended_at=strftime('%Y-%m-%dT%H:%M:%fZ','now'), ended_reason=?
                 WHERE assignment_id=? AND ended_at IS NULL""", (reason, assignment_id))
             row = db.execute('SELECT * FROM task_assignments WHERE assignment_id=?', (assignment_id,)).fetchone()
             if updated.rowcount:
-                target = task['control_intent'] if task['control_intent'] != 'active' else (reason if reason in ('completed', 'canceled', 'paused') else 'pending')
+                target = task['control_intent'] if task['control_intent'] != 'active' else (reason if reason in ('completed', 'canceled', 'paused', 'blocked') else 'pending')
                 if task['status'] == 'blocked' and task['control_intent'] == 'active' and reason not in ('canceled', 'paused', 'completed'):
                     target = 'blocked'
                 db.execute("UPDATE tasks SET status=?, updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE task_id=?", (target, row['task_id']))
+                db.execute("UPDATE tasks SET stop_required=0,block_resume_status=CASE WHEN block_resume_status='waiting' THEN 'pending' ELSE block_resume_status END WHERE task_id=?", (row['task_id'],))
                 if target in ('paused', 'canceled'):
                     db.execute('UPDATE tasks SET control_intent=?,resume_status=? WHERE task_id=?',
                                (target, 'pending' if target == 'paused' else None, row['task_id']))
+            dependencies.reconcile(db)
             return dict(row) if row else None
 
     def reconcile_task_recovery(self):
@@ -639,10 +657,13 @@ class AgentStore:
                 WHERE control_intent='active' AND status IN ('in_progress','waiting') AND NOT EXISTS
                 (SELECT 1 FROM task_assignments a WHERE a.task_id=tasks.task_id AND a.ended_at IS NULL)""")
 
+            dependencies.reconcile(db)
+            dependencies.finish_operations(db)
+
     def request_work_control(self, task_id, intent):
         with self._connection() as db:
             db.execute('BEGIN IMMEDIATE')
-            work_control.request(db, task_id, intent)
+            dependencies.begin_control(db, task_id, intent)
         return self.get_task(task_id)
 
     def finalize_work_control(self, task_id):
@@ -654,7 +675,42 @@ class AgentStore:
                 work_control.sync(db, assignment, status)
             else:
                 db.execute("UPDATE tasks SET status=control_intent WHERE task_id=? AND control_intent<>'active'", (task_id,))
+            dependencies.reconcile(db)
         return self.get_task(task_id)
+
+    def change_dependency(self, task_id, source_id, remove=False):
+        with self._connection() as db:
+            db.execute('BEGIN IMMEDIATE')
+            dependencies.change_edge(db, task_id, source_id, remove)
+        return self.get_task(task_id)
+
+    def list_dependencies(self, task_id, reverse=False):
+        with self._connection() as db:
+            dependencies.task(db, task_id)
+            column = 'depends_on_task_id' if reverse else 'task_id'
+            return [dict(r) for r in db.execute(f'SELECT * FROM task_dependencies WHERE {column}=? ORDER BY rowid', (task_id,))]
+
+    def control_impact(self, task_id, action):
+        with self._connection() as db:
+            db.execute('BEGIN')
+            return dependencies.impact(db, task_id, action)
+
+    def control_operations(self, task_id):
+        with self._connection() as db:
+            dependencies.task(db, task_id)
+            result = []
+            for r in db.execute('SELECT * FROM task_control_operations WHERE root_task_id=? ORDER BY rowid', (task_id,)):
+                item = dict(r)
+                item['impact'] = json.loads(item['impact'])
+                item['failures'] = json.loads(item['failures'])
+                result.append(item)
+            return result
+
+    def finish_control_operations(self, failures=()):
+        with self._connection() as db:
+            db.execute('BEGIN IMMEDIATE')
+            dependencies.reconcile(db)
+            dependencies.finish_operations(db, failures)
 
     @contextmanager
     def _connection(self):
@@ -684,7 +740,7 @@ class AgentStore:
                 if task is None:
                     raise LookupError('Task not found')
                 if existing_assignment is None:
-                    work_control.require_active(task, pending=True)
+                    work_control.require_active(task, pending=True, db=db)
                 if existing_assignment is None and (task['status'] != 'pending' or db.execute(
                         'SELECT 1 FROM task_assignments WHERE task_id=? AND ended_at IS NULL', (assignment_task_id,)).fetchone()):
                     raise ValueError('Only an unassigned pending Task can start an agent')

@@ -1,7 +1,7 @@
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException, Query
-from typing import Annotated
+from typing import Annotated, Literal
 import sqlite3
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.responses import StreamingResponse
@@ -463,3 +463,41 @@ def resume_task_route(task_id: str):
 @app.post('/tasks/{task_id}/cancel')
 def cancel_task_route(task_id: str):
     return _task_action(lambda: manager.control_task(task_id, 'canceled'))
+
+
+class DependencyRequest(BaseModel):
+    depends_on_task_id: str
+
+
+class ControlImpactRequest(BaseModel):
+    action: Literal['pause', 'cancel']
+
+
+@app.post('/tasks/{task_id}/dependencies')
+def add_dependency_route(task_id: str, request: DependencyRequest):
+    return _task_action(lambda: manager.change_dependency(task_id, request.depends_on_task_id))
+
+
+@app.delete('/tasks/{task_id}/dependencies/{depends_on_task_id}')
+def remove_dependency_route(task_id: str, depends_on_task_id: str):
+    return _task_action(lambda: manager.change_dependency(task_id, depends_on_task_id, remove=True))
+
+
+@app.get('/tasks/{task_id}/dependencies')
+def dependencies_route(task_id: str):
+    return {'dependencies': _task_action(lambda: manager._task_store().list_dependencies(task_id))}
+
+
+@app.get('/tasks/{task_id}/dependents')
+def dependents_route(task_id: str):
+    return {'dependents': _task_action(lambda: manager._task_store().list_dependencies(task_id, reverse=True))}
+
+
+@app.post('/tasks/{task_id}/control-impact')
+def control_impact_route(task_id: str, request: ControlImpactRequest):
+    return _task_action(lambda: manager._task_store().control_impact(task_id, request.action))
+
+
+@app.get('/tasks/{task_id}/control-operations')
+def control_operations_route(task_id: str):
+    return {'operations': _task_action(lambda: manager._task_store().control_operations(task_id))}

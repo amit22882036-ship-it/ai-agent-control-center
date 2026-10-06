@@ -87,9 +87,9 @@ class PersistenceTests(unittest.TestCase):
     def test_schema_override_and_safe_round_trip(self):
         self.assertTrue(self.path.is_file())
         with closing(sqlite3.connect(self.path)) as db, db:
-            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 11)
+            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 12)
             self.assertEqual({row[0] for row in db.execute("SELECT name FROM sqlite_master WHERE type='table'")},
-                             {'agents', 'output', 'agent_name_history', 'sqlite_sequence', 'tasks', 'task_assignments', 'projects', 'task_workspaces', 'agent_source_context', 'integrations'})
+                             {'agents', 'output', 'agent_name_history', 'sqlite_sequence', 'tasks', 'task_assignments', 'projects', 'task_workspaces', 'agent_source_context', 'integrations', 'task_dependencies', 'task_blockers', 'task_replan_reasons', 'task_control_operations', 'task_control_members'})
         with patch.dict(os.environ, {'CONTROL_CENTER_DB_PATH': str(self.path)}):
             self.assertEqual(AgentStore().path, self.path)
         text = "quotes '\"; DROP TABLE agents; --\nUnicode שלום 🐍"

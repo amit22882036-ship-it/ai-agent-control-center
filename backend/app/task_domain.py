@@ -2,7 +2,7 @@
 from typing import Literal, get_args
 
 TaskStatus = Literal['pending', 'in_progress', 'waiting', 'blocked', 'paused', 'completed', 'canceled']
-AssignmentEndReason = Literal['completed', 'stopped', 'reassigned', 'paused', 'canceled']
+AssignmentEndReason = Literal['completed', 'stopped', 'reassigned', 'paused', 'blocked', 'canceled']
 TASK_TITLE_LIMIT = 100
 TASK_DESCRIPTION_LIMIT = 20000
 

@@ -103,7 +103,7 @@ def _finalize_process(agent_id: str, process: subprocess.Popen | None, allow_aut
             return
         task_id = _agent_task_id(agent_id)
         controlled = _store.get_task(task_id) if task_id else None
-        if controlled and controlled['control_intent'] != 'active':
+        if controlled and (controlled['control_intent'] != 'active' or controlled['stop_required'] or any(b['hard'] for b in controlled['active_blockers'])):
             agent_statuses[agent_id] = 'stopped'
             notifications.cancel(agent_id)
             _save_agent(agent_id)
@@ -1072,49 +1072,84 @@ def integrate_task(task_id):
     return integrate(store, task_id, assert_quiet)
 
 
+def _settle_tasks(task_ids):
+    """Phase 2: durable gates already exist; never wait on a process in SQL."""
+    failures, first_error = [], None
+    for task_id in sorted(set(task_ids)):
+        try:
+            task = _store.get_task(task_id)
+            assignment = _store.get_active_assignment_for_task(task_id)
+            gated = task['control_intent'] != 'active' or task['stop_required'] or any(b['hard'] for b in task['active_blockers'])
+            if gated and assignment:
+                key = assignment['agent_id']
+                if key not in agents:
+                    raise RuntimeError('Worker ownership unavailable; restart recovery required')
+                process = agents[key]
+                preserve_wait = task['control_intent'] != 'canceled' and agent_statuses[key] == 'waiting' and not task['stop_required']
+                if preserve_wait and process is not None and process.poll() is None:
+                    preserve_wait = False
+                if not preserve_wait:
+                    if process is not None and process.poll() is None:
+                        if agent_types[key] == 'codex' and os.name == 'nt':
+                            _stop_windows_tree(process)
+                        else:
+                            process.terminate()
+                            try:
+                                process.wait(timeout=2)
+                            except subprocess.TimeoutExpired:
+                                process.kill()
+                                process.wait(timeout=2)
+                    if process is not None:
+                        if process.poll() is None:
+                            raise RuntimeError('Worker has not stopped; durable execution gate retained')
+                        reader = agent_readers.get(key)
+                        if reader is not None:
+                            reader.join(timeout=3)
+                            if reader.is_alive():
+                                raise RuntimeError('Final output is still being read; retry work control')
+                    agent_statuses[key] = 'stopped'
+                    notifications.cancel(key)
+                    if not _save_agent(key):
+                        raise RuntimeError('Could not persist stopped worker; retry work control')
+            _store.finalize_work_control(task_id)
+        except (OSError, RuntimeError, ValueError, sqlite3.Error, subprocess.SubprocessError) as exc:
+            failures.append({'task_id': task_id, 'reason': 'worker_reconciliation_required'})
+            first_error = first_error or (RuntimeError('Worker termination did not complete')
+                                          if isinstance(exc, subprocess.SubprocessError) else exc)
+    _store.finish_control_operations(failures)
+    if not failures:
+        _emit_agent_change(None)
+    if first_error is not None:
+        raise first_error
+
+
 @_synchronized
 def control_task(task_id, intent):
     store = _task_store()
+    if intent == 'active':
+        store.request_work_control(task_id, intent)
+        store.finish_control_operations()
+        _emit_agent_change(None)
+        return store.get_task(task_id)
+    action = 'pause' if intent == 'paused' else 'cancel'
+    preview = store.control_impact(task_id, action)
+    keys = set(preview['affected_task_ids']) | set(preview['external_dependent_task_ids']) | {task_id}
+    with ExitStack() as locks:
+        for key in sorted(keys):
+            locks.enter_context(task_lock(store, key, blocking=False))
+        # This call recomputes impact inside the intent transaction. The preview
+        # above is only used to respect existing workspace operation locks.
+        store.request_work_control(task_id, intent)
+        operation = next(o for o in reversed(store.control_operations(task_id)) if o['action'] == action and not o['released'])
+        plan = operation['impact']
+        _settle_tasks(set(plan['affected_task_ids']) | set(plan['external_dependent_task_ids']) | {task_id})
+    return store.get_task(task_id)
+
+
+@_synchronized
+def change_dependency(task_id, source_id, remove=False):
+    store = _task_store()
     with task_lock(store, task_id, blocking=False):
-        # Commit intent before any process operation. Completion uses this same
-        # state lock and SQLite transaction authority; whichever commits first wins.
-        task = store.request_work_control(task_id, intent)
-        assignment = store.get_active_assignment_for_task(task_id)
-        if intent != 'active' and assignment:
-            key = assignment['agent_id']
-            preserve_wait = intent == 'paused' and task['resume_status'] == 'waiting' and agent_statuses.get(key) == 'waiting'
-            process = agents.get(key)
-            if preserve_wait and process is not None and process.poll() is None:
-                preserve_wait = False
-            if not preserve_wait:
-                if key not in agents:
-                    raise RuntimeError('Worker state unavailable; control intent retained for recovery')
-                # Unlike generic Stop, work control must drain output before
-                # publishing the final work state. Failure leaves intent durable.
-                if process is not None and process.poll() is None:
-                    if agent_types[key] == 'codex' and os.name == 'nt':
-                        _stop_windows_tree(process)
-                    else:
-                        process.terminate()
-                        try:
-                            process.wait(timeout=2)
-                        except subprocess.TimeoutExpired:
-                            process.kill()
-                            process.wait(timeout=2)
-                if process is not None:
-                    if process.poll() is None:
-                        raise RuntimeError('Worker has not stopped; control intent retained')
-                    reader = agent_readers.get(key)
-                    if reader is not None:
-                        reader.join(timeout=3)
-                        if reader.is_alive():
-                            raise RuntimeError('Final output is still being read; retry work control')
-                agent_statuses[key] = 'stopped'
-                notifications.cancel(key)
-                if not _save_agent(key):
-                    raise RuntimeError('Could not persist stopped worker; retry work control')
-        if intent != 'active':
-            task = store.finalize_work_control(task_id)
-        # All state above is durable before observers are invalidated.
-        _emit_agent_change(assignment['agent_id'] if assignment else None)
-        return task
+        store.change_dependency(task_id, source_id, remove)
+        _settle_tasks([task_id])
+    return store.get_task(task_id)

@@ -285,17 +285,18 @@ class WorkControlTests(unittest.TestCase):
                         action()
                 spawn.assert_not_called()
 
-    def test_descendant_guard_no_mutation_and_leaf_can_pause(self):
+    def test_subtree_control_replaces_temporary_descendant_guard(self):
         key, process = self.create(kind='mock')
         parent = self.task_for(key)
         child = self.task(parent)
-        for intent in ('paused', 'canceled'):
-            with self.assertRaisesRegex(ValueError, 'impact_analysis_required'):
-                self.control(parent, intent)
-        process.terminate.assert_not_called()
-        self.assertEqual(self.state(parent), parent)
-        self.assertEqual(self.state(child), child)
-        self.assertEqual(self.control(child, 'paused')['status'], 'paused')
+        self.control(parent, 'paused')
+        process.terminate.assert_called_once()
+        self.assertEqual(self.state(parent)['status'], 'paused')
+        self.assertEqual(self.state(child)['status'], 'paused')
+        self.control(parent, 'active')
+        self.assertEqual(self.state(child)['status'], 'pending')
+        self.control(parent, 'canceled')
+        self.assertEqual(self.state(child)['status'], 'canceled')
 
     def test_restart_finalizes_interrupted_intents_and_preserves_terminal_work(self):
         tasks = []
@@ -391,7 +392,7 @@ class WorkControlTests(unittest.TestCase):
         self.assertEqual(store.create_task('Blocked', status='blocked')['status'], 'blocked')
         self.assertEqual(AgentStore(self.path).list_tasks(), store.list_tasks())
         with store._connection() as db:
-            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 11)
+            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 12)
             self.assertEqual(db.execute('PRAGMA foreign_key_check').fetchall(), [])
 
     def test_migration_rollback_is_atomic(self):
