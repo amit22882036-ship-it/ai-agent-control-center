@@ -97,9 +97,8 @@ class ResourceTests(unittest.TestCase):
         self.claim(a, 'main.py', 'file_path', mode='exclusive')
         self.assertEqual(self.claim(b, 'main.py', 'file_path', mode='exclusive')['status'], 'active')
         owner = self.claim(a)
-        # B already holds a file claim, so the temporary guard applies.
-        with self.assertRaisesRegex(ValueError, 'multi_resource'):
-            self.claim(b)
+        # A held file does not forbid waiting for a global resource.
+        self.assertEqual(self.claim(b)['status'], 'waiting')
         for c in manager._store.resource_claims(b['task_id']):
             self.release(c)
         waiter = self.claim(b)
@@ -135,15 +134,16 @@ class ResourceTests(unittest.TestCase):
         self.assertIsNotNone(self.current(claim)['released_at'])
         self.assertNotEqual(self.claim(a)['claim_id'], claim['claim_id'])
 
-    def test_hold_and_wait_guard_has_no_partial_state(self):
+    def test_hold_and_wait_retains_owned_resources_until_available(self):
         a, b = self.task(), self.task()
-        self.claim(a, '8000')
-        self.claim(b, '8001')
-        before = manager._store.resource_claims(a['task_id'])
-        with self.assertRaisesRegex(ValueError, 'multi_resource_wait_requires_coordination'):
-            self.claim(a, '8001')
-        self.assertEqual(manager._store.resource_claims(a['task_id']), before)
-        self.assertEqual(self.claim(a, '8002')['status'], 'active')
+        held = self.claim(a, '8000')
+        owner = self.claim(b, '8001')
+        waiter = self.claim(a, '8001')
+        self.assertEqual(waiter['status'], 'waiting')
+        self.assertEqual(self.current(held)['status'], 'active')
+        self.assertEqual(self.state(a)['status'], 'blocked')
+        self.release(owner)
+        self.assertEqual(self.current(waiter)['status'], 'active')
         self.assertEqual(self.state(a)['status'], 'pending')
 
     def test_pending_bundle_never_acquires_a_free_subset_while_waiting(self):
@@ -660,7 +660,7 @@ class ResourceTests(unittest.TestCase):
         self.assertEqual(AgentStore(self.path).list_tasks(), store.list_tasks())
         self.assertEqual(store.load_agents()[0]['session_id'], key)
         with store._connection() as db:
-            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 13)
+            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 14)
             self.assertEqual(db.execute('PRAGMA foreign_key_check').fetchall(), [])
             self.assertEqual(db.execute('SELECT COUNT(*) FROM resource_claims').fetchone()[0], 0)
 

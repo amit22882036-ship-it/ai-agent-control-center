@@ -1,7 +1,7 @@
 """Managed resource coordination. Mutations require the caller's SQL transaction.
 
-This is not an OS lock/probe. Existing active owners win; pending Task bundles
-are considered in stable claim creation order, without a fairness guarantee.
+This is not an OS lock/probe. Existing owners are retained; missing Task bundles
+acquire atomically in durable, compatibility-aware acquisition order.
 """
 import os
 from pathlib import PureWindowsPath
@@ -9,6 +9,7 @@ import re
 from uuid import uuid4
 
 from .project_domain import canonical_path, contains
+from . import resource_coordination as coordination
 
 NOW = "strftime('%Y-%m-%dT%H:%M:%fZ','now')"
 TYPES = ('file_path', 'port', 'database', 'docker_resource', 'generic')
@@ -114,8 +115,10 @@ def normalize(db, task, resource_type, resource_key, mode=None, lifetime='task',
 
 def claims(db):
     return [dict(r) for r in db.execute('''SELECT c.rowid AS claim_order,c.*,
+        w.wait_sequence,w.waiting_since,
         CASE WHEN c.scope='global' THEN 'machine' ELSE t.project_id END AS scope_key
-        FROM resource_claims c JOIN tasks t USING(task_id) ORDER BY c.rowid''')]
+        FROM resource_claims c JOIN tasks t USING(task_id)
+        LEFT JOIN resource_waits w ON w.claim_id=c.claim_id AND w.closed_at IS NULL ORDER BY c.rowid''')]
 
 
 def pending(db, task_id):
@@ -123,6 +126,8 @@ def pending(db, task_id):
 
 
 def end_reason(db, task_id):
+    if db.execute(f'SELECT 1 FROM task_blockers WHERE task_id=? AND active=1 AND {coordination.DEADLOCK}', (task_id,)).fetchone():
+        return 'resource_deadlock'
     reason = db.execute('SELECT stop_reason FROM tasks WHERE task_id=?', (task_id,)).fetchone()
     if reason and reason[0]:
         return reason[0]
@@ -144,6 +149,8 @@ def conflicts(a, b):
 
 
 def _state(db, claim, state):
+    if state != 'waiting':
+        coordination.close_wait(db, claim, state)
     if claim['status'] == state:
         return
     timestamp = {'active': 'acquired_at', 'suspended': 'suspended_at', 'released': 'released_at'}.get(state)
@@ -152,21 +159,20 @@ def _state(db, claim, state):
     claim['status'] = state
 
 
-def reconcile(db, tasks):
+def reconcile(db, tasks, triggering_claim_id=None):
     """Lifecycle release, atomic bundle acquisition, and source-specific blockers.
 
     Keep physical holders until runtime termination is durably recognized. Never
     grant a waiter merely because Pause/Cancel intent was written before a stop.
     """
     rows = claims(db)
-    if not rows:
-        return
     assignments = {r['assignment_id']: dict(r) for r in db.execute('SELECT * FROM task_assignments')}
     running = {r[0] for r in db.execute("SELECT a.task_id FROM task_assignments a JOIN agents g USING(agent_id) WHERE a.ended_at IS NULL AND g.status='running'")}
-    externally_blocked = {r[0] for r in db.execute(f"SELECT task_id FROM task_blockers WHERE active=1 AND hard=1 AND NOT {MANAGED_BLOCKER}")}
+    externally_blocked = {r[0] for r in db.execute(f"SELECT task_id FROM task_blockers WHERE active=1 AND hard=1 AND NOT {MANAGED_BLOCKER} AND NOT {coordination.DEADLOCK}")}
     suspended = set()
     for key, task in tasks.items():
-        if (task['control_intent'] != 'active' or key in externally_blocked or task['stop_required']
+        if (task['control_intent'] != 'active' or key in externally_blocked
+                or (task['stop_required'] and task['stop_reason'] not in ('resource_conflict', 'resource_deadlock'))
                 or (task['status'] == 'blocked' and task['block_resume_status'] in (None, 'blocked'))):
             suspended.add(key)
     for c in rows:
@@ -187,29 +193,40 @@ def reconcile(db, tasks):
     groups = {}
     for c in rows:
         if c['status'] in ('waiting', 'suspended') and c['task_id'] not in suspended:
+            _state(db, c, 'waiting')
+            coordination.enqueue(db, c)
             groups.setdefault(c['task_id'], []).append(c)
-    for bundle in groups.values():
-        # Grant all currently missing claims for this Task or none. This also
-        # prevents Resume from creating hold-and-wait across suspended claims.
-        if not any(conflicts(c, owner) for c in bundle for owner in owners):
+    for bundle in sorted(groups.values(), key=lambda b: min(c['wait_sequence'] for c in b)):
+        # Every member must pass ownership AND older incompatible waiters.
+        # Same-Task claims never block each other. Retain already-held claims.
+        barriers = [o for o in rows if o['status'] == 'waiting' and o['wait_sequence'] is not None]
+        if (not any(conflicts(c, owner) for c in bundle for owner in owners)
+                and not any(o['wait_sequence'] < c['wait_sequence'] and conflicts(c, o)
+                            for c in bundle for o in barriers)):
             for c in bundle:
                 _state(db, c, 'active')
             owners.extend(bundle)
-        else:
-            for c in bundle:
-                _state(db, c, 'waiting')
-    desired = {(c['claim_id'], owner['claim_id']): (c, owner) for c in rows
-               if c['status'] in ('waiting', 'suspended') for owner in owners if conflicts(c, owner)}
+    graph = coordination.edges(rows, conflicts)
+    by_id = {c['claim_id']: c for c in rows}
+    desired = {(e['waiting_claim_id'], e['blocking_claim_id']):
+               (by_id[e['waiting_claim_id']], by_id[e['blocking_claim_id']], e['edge_kind']) for e in graph}
+    # Suspended claims retain overlap explanation, but reserve no queue place
+    # and are not graph participants.
+    desired.update({(c['claim_id'], owner['claim_id']): (c, owner, 'active_owner') for c in rows
+               if c['status'] == 'suspended' for owner in owners if conflicts(c, owner)})
     existing = {(r['waiting_claim_id'], r['owning_claim_id']): r['id'] for r in db.execute(f"SELECT * FROM task_blockers WHERE {MANAGED_BLOCKER} AND active=1")}
     for pair, identifier in existing.items():
         if pair not in desired:
             db.execute(f'UPDATE task_blockers SET active=0,resolved_at={NOW} WHERE id=?', (identifier,))
-    for pair, (c, owner) in desired.items():
+    for pair, (c, owner, kind) in desired.items():
         if pair not in existing:
             db.execute('''INSERT INTO task_blockers(id,task_id,blocker_type,source_task_id,reason_code,
-                source_type,source_id,waiting_claim_id,owning_claim_id)
-                VALUES (?,?,'resource',?,'resource_conflict','resource_claim',?,?,?)''',
-                (str(uuid4()), c['task_id'], owner['task_id'], owner['claim_id'], *pair))
+                source_type,source_id,waiting_claim_id,owning_claim_id,edge_kind)
+                VALUES (?,?,'resource',?,'resource_conflict','resource_claim',?,?,?,?)''',
+                (str(uuid4()), c['task_id'], owner['task_id'], owner['claim_id'], *pair, kind))
+        else:
+            db.execute('UPDATE task_blockers SET edge_kind=? WHERE id=?', (kind, existing[pair]))
+    coordination.reconcile(db, graph, triggering_claim_id)
 
 
 def create(db, task, **options):
@@ -228,11 +245,6 @@ def create(db, task, **options):
     for c in rows:
         if c['status'] != 'released' and all(c[k] == v for k, v in candidate.items()):
             return c['claim_id']
-    held = [c for c in rows if c['task_id'] == task['task_id'] and c['status'] == 'active' and c['mode'] != 'advisory']
-    unavailable = any(c['status'] == 'active' and conflicts(candidate, c) for c in rows)
-    pending = any(c['task_id'] == task['task_id'] and c['status'] in ('waiting', 'suspended') and c['mode'] != 'advisory' for c in rows)
-    if value['mode'] != 'advisory' and ((held and unavailable) or (pending and held)):
-        raise ValueError('multi_resource_wait_requires_coordination')
     identifier = str(uuid4())
     db.execute('''INSERT INTO resource_claims(claim_id,task_id,assignment_id,resource_type,resource_key,scope,mode,lifetime,recursive,status)
         VALUES (?,?,?,?,?,?,?,?,?,'waiting')''',
@@ -250,6 +262,8 @@ def release(db, task_id, claim_id):
 
 def inspect(db, task_id):
     rows = claims(db)
+    graph = coordination.edges(rows, conflicts)
+    incidents = coordination.inspect(db, task_id=task_id)
     result = []
     for c in rows:
         if c['task_id'] != task_id:
@@ -260,5 +274,13 @@ def inspect(db, task_id):
         item['potential_overlap'] = bool(others)
         item['overlapping_claims'] = [{k: o[k] for k in ('claim_id', 'task_id', 'mode', 'status')} for o in others]
         item['conflicting_claim_ids'] = [o['claim_id'] for o in others if o['status'] == 'active' and conflicts(c, o)]
+        blocked = [e for e in graph if e['waiting_claim_id'] == c['claim_id']]
+        item['blocked_by'] = blocked
+        item['blocked_by_claim_ids'] = sorted({e['blocking_claim_id'] for e in blocked})
+        item['blocked_by_task_ids'] = sorted({e['blocking_task_id'] for e in blocked})
+        item['queue_position'] = (1 + sum(o['status'] == 'waiting' and o['wait_sequence'] is not None
+                                          and o['wait_sequence'] < c['wait_sequence'] and overlaps(c, o)
+                                          for o in rows)) if c['wait_sequence'] is not None else None
+        item['deadlock_ids'] = [d['deadlock_id'] for d in incidents if d['status'] == 'open']
         result.append(item)
     return result

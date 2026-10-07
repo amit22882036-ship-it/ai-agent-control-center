@@ -517,6 +517,16 @@ def create_resource_claim_route(task_id: str, request: ResourceClaimRequest):
     return _task_action(lambda: manager.create_resource_claim(task_id, **request.model_dump()))
 
 
+@app.get('/tasks/{task_id}/deadlocks')
+def task_deadlocks_route(task_id: str):
+    return {'deadlocks': _task_action(lambda: manager._task_store().resource_deadlocks(task_id=task_id))}
+
+
+@app.get('/resource-deadlocks/{deadlock_id}')
+def resource_deadlock_route(deadlock_id: str):
+    return _task_action(lambda: manager._task_store().resource_deadlocks(deadlock_id=deadlock_id))
+
+
 @app.get('/tasks/{task_id}/resource-claims')
 def resource_claims_route(task_id: str):
     return {'claims': _task_action(lambda: manager._task_store().resource_claims(task_id))}

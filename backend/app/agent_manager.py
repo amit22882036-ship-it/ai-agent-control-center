@@ -107,6 +107,7 @@ def _finalize_process(agent_id: str, process: subprocess.Popen | None, allow_aut
             agent_statuses[agent_id] = 'stopped'
             notifications.cancel(agent_id)
             _save_agent(agent_id)
+            _settle_coordination()
             return
         allow_auto = allow_auto and not _shutting_down
         question = agent_waiting_questions[agent_id]
@@ -152,6 +153,7 @@ def _finalize_process(agent_id: str, process: subprocess.Popen | None, allow_aut
         status = "waiting" if question else "finished"
         agent_statuses[agent_id] = status
         _save_agent(agent_id)
+        _settle_coordination()
         try:
             notifications.transition(agent_id, status, agent_tasks[agent_id])
         except Exception:
@@ -1072,10 +1074,24 @@ def integrate_task(task_id):
     return integrate(store, task_id, assert_quiet)
 
 
+def _settle_coordination():
+    # Called after durable lifecycle mutation, never from the output reader or
+    # inside SQL. The state lock protects runtime identity while draining.
+    if _store is not None:
+        pending = _store.unsettled_tasks()
+        if pending:
+            _settle_tasks(pending)
+
+
 def _settle_tasks(task_ids):
     """Phase 2: durable gates already exist; never wait on a process in SQL."""
     failures, first_error = [], None
-    for task_id in sorted(set(task_ids)):
+    pending = set(task_ids) | set(_store.unsettled_tasks())
+    visited = set()
+    while pending:
+        task_id = min(pending)
+        pending.remove(task_id)
+        visited.add(task_id)
         try:
             task = _store.get_task(task_id)
             assignment = _store.get_active_assignment_for_task(task_id)
@@ -1116,6 +1132,8 @@ def _settle_tasks(task_ids):
             failures.append({'task_id': task_id, 'reason': 'worker_reconciliation_required'})
             first_error = first_error or (RuntimeError('Worker termination did not complete')
                                           if isinstance(exc, subprocess.SubprocessError) else exc)
+        # Ending a worker can release claims and change other participants.
+        pending.update(set(_store.unsettled_tasks()) - visited)
     _store.finish_control_operations(failures)
     if not failures:
         _emit_agent_change(None)
@@ -1128,6 +1146,7 @@ def control_task(task_id, intent):
     store = _task_store()
     if intent == 'active':
         store.request_work_control(task_id, intent)
+        _settle_coordination()
         store.finish_control_operations()
         _emit_agent_change(None)
         return store.get_task(task_id)

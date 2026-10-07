@@ -6,7 +6,7 @@ from pathlib import Path
 import sqlite3
 from threading import RLock
 from uuid import uuid4
-from . import work_control, dependencies, resources
+from . import work_control, dependencies, resources, resource_coordination
 from .task_domain import task_title, validate_task_status, validate_end_reason
 from .agent_names import default_display_name, validate_display_color
 from .output_history import OUTPUT_PAGE_SIZE, OUTPUT_MAX_LIMIT
@@ -21,9 +21,9 @@ class AgentStore:
         self._lock = RLock()
         with self._connection() as db:
             version = db.execute('PRAGMA user_version').fetchone()[0]
-            if version not in (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13):
+            if version not in (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14):
                 raise RuntimeError(f'Unsupported control-center database schema version: {version}')
-            if version < 13:
+            if version < 14:
                 db.execute('PRAGMA foreign_keys = OFF')
             if version == 0:
                 if db.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchone():
@@ -157,9 +157,21 @@ class AgentStore:
                     if db.execute('PRAGMA foreign_key_check').fetchone():
                         raise sqlite3.IntegrityError('Invalid resource migration references')
                     db.execute('PRAGMA user_version = 13')
+                    version = 13
+                if version == 13:
+                    if not db.in_transaction:
+                        db.execute('BEGIN')
+                    resource_coordination.migrate(db)
+                    if db.execute('PRAGMA foreign_key_check').fetchone():
+                        raise sqlite3.IntegrityError('Invalid coordination migration references')
+                    db.execute('PRAGMA user_version = 14')
                 db.execute('SELECT claim_id,assignment_id FROM resource_claims LIMIT 0')
                 db.execute('SELECT stop_reason FROM tasks LIMIT 0')
                 db.execute('SELECT source_type,source_id,waiting_claim_id,owning_claim_id FROM task_blockers LIMIT 0')
+                db.execute('SELECT wait_sequence,claim_id,closed_at FROM resource_waits LIMIT 0')
+                db.execute('SELECT deadlock_id,signature,edges FROM resource_deadlocks LIMIT 0')
+                db.execute('SELECT deadlock_id,edge_kind FROM task_blockers LIMIT 0')
+                db.execute('SELECT deadlock_id FROM task_replan_reasons LIMIT 0')
             except sqlite3.DatabaseError as exc:
                 raise RuntimeError('Incompatible control-center database schema') from exc
 
@@ -624,7 +636,7 @@ class AgentStore:
             row = db.execute('SELECT * FROM task_assignments WHERE assignment_id=?', (assignment_id,)).fetchone()
             if updated.rowcount:
                 target = task['control_intent'] if task['control_intent'] != 'active' else (reason if reason in ('completed', 'canceled', 'paused', 'blocked') else 'pending')
-                if reason == 'resource_conflict':
+                if reason in ('resource_conflict', 'resource_deadlock'):
                     target = 'blocked'
                 if task['status'] == 'blocked' and task['control_intent'] == 'active' and reason not in ('canceled', 'paused', 'completed'):
                     target = 'blocked'
@@ -702,7 +714,7 @@ class AgentStore:
             db.execute('BEGIN IMMEDIATE')
             task = dependencies.task(db, task_id)
             identifier = resources.create(db, task, **options)
-            dependencies.reconcile(db)
+            dependencies.reconcile(db, triggering_claim_id=identifier)
         return identifier
 
     def release_resource_claim(self, task_id, claim_id):
@@ -711,6 +723,22 @@ class AgentStore:
             dependencies.task(db, task_id)
             resources.release(db, task_id, claim_id)
             dependencies.reconcile(db)
+
+    def resource_deadlocks(self, *, task_id=None, deadlock_id=None):
+        with self._connection() as db:
+            db.execute('BEGIN')
+            if task_id is not None:
+                dependencies.task(db, task_id)
+            result = resource_coordination.inspect(db, task_id=task_id, deadlock_id=deadlock_id)
+            if deadlock_id is not None:
+                if not result:
+                    raise LookupError('Resource deadlock not found')
+                return result[0]
+            return result
+
+    def unsettled_tasks(self):
+        with self._connection() as db:
+            return [r[0] for r in db.execute('SELECT task_id FROM tasks WHERE stop_required=1')]
 
     def resource_claims(self, task_id):
         with self._connection() as db:

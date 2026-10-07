@@ -89,7 +89,7 @@ def set_reasons(db, table, kind_column, kind, desired):
         db.execute(f'INSERT INTO {table}(id,task_id,{kind_column},source_task_id,reason_code) VALUES (?,?,?,?,?)', (str(uuid4()), key[0], kind, key[1], key[2]))
 
 
-def reconcile(db):
+def reconcile(db, triggering_claim_id=None):
     """Materialize reasons and safe status restoration in the lifecycle transaction."""
     tasks = {r['task_id']: dict(r) for r in db.execute('SELECT * FROM tasks')}
     reasons = set()
@@ -114,7 +114,7 @@ def reconcile(db):
                 hierarchical.add((current, source['task_id'], 'child_canceled'))
             current = ancestor['parent_task_id']
     set_reasons(db, 'task_replan_reasons', 'reason_type', 'hierarchy', hierarchical)
-    resources.reconcile(db, tasks)
+    resources.reconcile(db, tasks, triggering_claim_id)
     for record in tasks.values():
         key = record['task_id']
         if record['status'] in TERMINAL:
@@ -129,7 +129,7 @@ def reconcile(db):
             restore = previous if previous in ('waiting', 'blocked') else 'pending'
             db.execute('UPDATE tasks SET block_resume_status=? WHERE task_id=?', (restore, key))
         if blocked and running:
-            db.execute('UPDATE tasks SET stop_required=1,stop_reason=COALESCE(stop_reason,?) WHERE task_id=?', (resources.end_reason(db, key), key))
+            db.execute('UPDATE tasks SET stop_required=1,stop_reason=? WHERE task_id=?', (resources.end_reason(db, key), key))
         # User intent outranks dependency status. Keep the restoration layer until
         # Resume so a now-resolved dependency cannot strand paused work as blocked.
         if record['control_intent'] != 'active' or running:
