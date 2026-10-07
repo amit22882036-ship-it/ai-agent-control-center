@@ -6,7 +6,7 @@ from pathlib import Path
 import sqlite3
 from threading import RLock
 from uuid import uuid4
-from . import work_control, dependencies
+from . import work_control, dependencies, resources
 from .task_domain import task_title, validate_task_status, validate_end_reason
 from .agent_names import default_display_name, validate_display_color
 from .output_history import OUTPUT_PAGE_SIZE, OUTPUT_MAX_LIMIT
@@ -21,9 +21,9 @@ class AgentStore:
         self._lock = RLock()
         with self._connection() as db:
             version = db.execute('PRAGMA user_version').fetchone()[0]
-            if version not in (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12):
+            if version not in (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13):
                 raise RuntimeError(f'Unsupported control-center database schema version: {version}')
-            if version < 12:
+            if version < 13:
                 db.execute('PRAGMA foreign_keys = OFF')
             if version == 0:
                 if db.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchone():
@@ -147,8 +147,19 @@ class AgentStore:
                     if db.execute('PRAGMA foreign_key_check').fetchone():
                         raise sqlite3.IntegrityError('Invalid dependency migration references')
                     db.execute('PRAGMA user_version = 12')
+                    version = 12
                 db.execute('SELECT block_resume_status,stop_required,legacy_pause FROM tasks LIMIT 0')
                 db.execute('SELECT task_id,depends_on_task_id FROM task_dependencies LIMIT 0')
+                if version == 12:
+                    if not db.in_transaction:
+                        db.execute('BEGIN')
+                    resources.migrate(db)
+                    if db.execute('PRAGMA foreign_key_check').fetchone():
+                        raise sqlite3.IntegrityError('Invalid resource migration references')
+                    db.execute('PRAGMA user_version = 13')
+                db.execute('SELECT claim_id,assignment_id FROM resource_claims LIMIT 0')
+                db.execute('SELECT stop_reason FROM tasks LIMIT 0')
+                db.execute('SELECT source_type,source_id,waiting_claim_id,owning_claim_id FROM task_blockers LIMIT 0')
             except sqlite3.DatabaseError as exc:
                 raise RuntimeError('Incompatible control-center database schema') from exc
 
@@ -607,16 +618,18 @@ class AgentStore:
             if task and task['control_intent'] != 'active':
                 reason = task['control_intent']
             elif task and (task['stop_required'] or dependencies.hard_blocked(db, task['task_id'])):
-                reason = 'blocked'
+                reason = resources.end_reason(db, task['task_id'])
             updated = db.execute("""UPDATE task_assignments SET ended_at=strftime('%Y-%m-%dT%H:%M:%fZ','now'), ended_reason=?
                 WHERE assignment_id=? AND ended_at IS NULL""", (reason, assignment_id))
             row = db.execute('SELECT * FROM task_assignments WHERE assignment_id=?', (assignment_id,)).fetchone()
             if updated.rowcount:
                 target = task['control_intent'] if task['control_intent'] != 'active' else (reason if reason in ('completed', 'canceled', 'paused', 'blocked') else 'pending')
+                if reason == 'resource_conflict':
+                    target = 'blocked'
                 if task['status'] == 'blocked' and task['control_intent'] == 'active' and reason not in ('canceled', 'paused', 'completed'):
                     target = 'blocked'
                 db.execute("UPDATE tasks SET status=?, updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE task_id=?", (target, row['task_id']))
-                db.execute("UPDATE tasks SET stop_required=0,block_resume_status=CASE WHEN block_resume_status='waiting' THEN 'pending' ELSE block_resume_status END WHERE task_id=?", (row['task_id'],))
+                db.execute("UPDATE tasks SET stop_required=0,stop_reason=NULL,block_resume_status=CASE WHEN block_resume_status='waiting' THEN 'pending' ELSE block_resume_status END WHERE task_id=?", (row['task_id'],))
                 if target in ('paused', 'canceled'):
                     db.execute('UPDATE tasks SET control_intent=?,resume_status=? WHERE task_id=?',
                                (target, 'pending' if target == 'paused' else None, row['task_id']))
@@ -683,6 +696,27 @@ class AgentStore:
             db.execute('BEGIN IMMEDIATE')
             dependencies.change_edge(db, task_id, source_id, remove)
         return self.get_task(task_id)
+
+    def create_resource_claim(self, task_id, **options):
+        with self._connection() as db:
+            db.execute('BEGIN IMMEDIATE')
+            task = dependencies.task(db, task_id)
+            identifier = resources.create(db, task, **options)
+            dependencies.reconcile(db)
+        return identifier
+
+    def release_resource_claim(self, task_id, claim_id):
+        with self._connection() as db:
+            db.execute('BEGIN IMMEDIATE')
+            dependencies.task(db, task_id)
+            resources.release(db, task_id, claim_id)
+            dependencies.reconcile(db)
+
+    def resource_claims(self, task_id):
+        with self._connection() as db:
+            db.execute('BEGIN')
+            dependencies.task(db, task_id)
+            return resources.inspect(db, task_id)
 
     def list_dependencies(self, task_id, reverse=False):
         with self._connection() as db:

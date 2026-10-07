@@ -1153,3 +1153,21 @@ def change_dependency(task_id, source_id, remove=False):
         store.change_dependency(task_id, source_id, remove)
         _settle_tasks([task_id])
     return store.get_task(task_id)
+
+
+@_synchronized
+def create_resource_claim(task_id, **options):
+    store = _task_store()
+    with task_lock(store, task_id, blocking=False):
+        identifier = store.create_resource_claim(task_id, **options)
+        _settle_tasks([task_id])
+    return next(c for c in store.resource_claims(task_id) if c['claim_id'] == identifier)
+
+
+@_synchronized
+def release_resource_claim(task_id, claim_id):
+    store = _task_store()
+    with task_lock(store, task_id, blocking=False):
+        store.release_resource_claim(task_id, claim_id)
+        _settle_tasks([task_id])
+    return next(c for c in store.resource_claims(task_id) if c['claim_id'] == claim_id)

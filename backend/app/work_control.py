@@ -1,14 +1,15 @@
 """Durable work intent. All DB helpers run inside their caller's transaction."""
 import re
 import sqlite3
-from . import dependencies
+from . import dependencies, resources
 
 
 def require_active(task, *, pending=False, db=None):
     if task is None:
         raise LookupError('Task not found')
     blocked = dependencies.hard_blocked(db, task['task_id']) if db is not None else any(b['hard'] for b in task.get('active_blockers', ()))
-    if task['stop_required'] or blocked:
+    resource_pending = resources.pending(db, task['task_id']) if db is not None else task.get('resource_claims_pending', False)
+    if task['stop_required'] or blocked or resource_pending:
         raise ValueError('Task has execution blockers or an unsettled worker')
     if task['control_intent'] != 'active' or task['status'] in ('paused', 'blocked', 'canceled', 'completed'):
         raise ValueError('Task work control prevents continuation')
@@ -48,7 +49,7 @@ def sync(db, assignment, runtime_status):
     blocked = dependencies.hard_blocked(db, task['task_id'])
     if intent == 'active' and (blocked or task['stop_required']):
         target = 'in_progress' if runtime_status == 'running' else 'blocked'
-        reason = 'blocked'
+        reason = resources.end_reason(db, task['task_id'])
         end = runtime_status in ('finished', 'stopped')
         if end:
             db.execute("UPDATE agents SET status='stopped' WHERE agent_id=?", (assignment['agent_id'],))
@@ -71,7 +72,7 @@ def sync(db, assignment, runtime_status):
                 db.execute("UPDATE tasks SET resume_status='pending' WHERE task_id=?", (task['task_id'],))
     db.execute("UPDATE tasks SET status=?,updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE task_id=? AND status<>?", (target, task['task_id'], target))
     if end:
-        db.execute('UPDATE tasks SET stop_required=0 WHERE task_id=?', (task['task_id'],))
+        db.execute('UPDATE tasks SET stop_required=0,stop_reason=NULL WHERE task_id=?', (task['task_id'],))
         if task['block_resume_status'] == 'waiting':
             db.execute("UPDATE tasks SET block_resume_status='pending' WHERE task_id=?", (task['task_id'],))
         db.execute("UPDATE task_assignments SET ended_at=strftime('%Y-%m-%dT%H:%M:%fZ','now'),ended_reason=? WHERE assignment_id=? AND ended_at IS NULL", (reason, assignment['assignment_id']))

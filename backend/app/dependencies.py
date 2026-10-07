@@ -6,6 +6,7 @@ for mutations; preview uses the same planner on a read transaction.
 import json
 import re
 from uuid import uuid4
+from . import resources
 
 NOW = "strftime('%Y-%m-%dT%H:%M:%fZ','now')"
 TERMINAL = ('completed', 'canceled')
@@ -74,6 +75,7 @@ def describe(db, row):
     result['active_blockers'] = [dict(r) for r in db.execute('SELECT * FROM task_blockers WHERE task_id=? AND active=1 ORDER BY rowid', (row['task_id'],))]
     result['replanning_reasons'] = [dict(r) for r in db.execute('SELECT * FROM task_replan_reasons WHERE task_id=? AND active=1 ORDER BY rowid', (row['task_id'],))]
     result['replanning_required'] = bool(result['replanning_reasons'])
+    result['resource_claims_pending'] = resources.pending(db, row['task_id'])
     return result
 
 
@@ -112,6 +114,7 @@ def reconcile(db):
                 hierarchical.add((current, source['task_id'], 'child_canceled'))
             current = ancestor['parent_task_id']
     set_reasons(db, 'task_replan_reasons', 'reason_type', 'hierarchy', hierarchical)
+    resources.reconcile(db, tasks)
     for record in tasks.values():
         key = record['task_id']
         if record['status'] in TERMINAL:
@@ -126,7 +129,7 @@ def reconcile(db):
             restore = previous if previous in ('waiting', 'blocked') else 'pending'
             db.execute('UPDATE tasks SET block_resume_status=? WHERE task_id=?', (restore, key))
         if blocked and running:
-            db.execute('UPDATE tasks SET stop_required=1 WHERE task_id=?', (key,))
+            db.execute('UPDATE tasks SET stop_required=1,stop_reason=COALESCE(stop_reason,?) WHERE task_id=?', (resources.end_reason(db, key), key))
         # User intent outranks dependency status. Keep the restoration layer until
         # Resume so a now-resolved dependency cannot strand paused work as blocked.
         if record['control_intent'] != 'active' or running:

@@ -44,7 +44,43 @@ Pause/Cancel now apply to the target and all unfinished descendants, preserving 
 
 Multi-worker application is phased: commit intent/provenance/blockers, stop and drain workers outside SQL transactions, then persist completion or `recovery_required`. A failed stop retains truthful running state and execution gates; other workers still settle. The API returns an unavailable error on runtime/storage failure; inspect Tasks and operation records and retry the same action. A dependency stop failure exposes `stop_required` and can be retried by repeating the edge operation. Recovery uses durable intent and the existing no-reattachment policy; it preserves graph/history and never spawns workers. It does not claim to terminate or reattach an unknown OS process surviving an abrupt backend crash.
 
-Workspace isolation, freshness, integration conflicts, canonical/index protection and session-context checks remain separate and unchanged. There is no frontend dependency editor, autonomous replanning, or resource orchestration in this milestone.
+Workspace isolation, freshness, integration conflicts, canonical/index protection and session-context checks remain separate and unchanged. There is no frontend dependency editor or autonomous replanning.
+
+## Managed resource claims (Stage 2G.1)
+
+Schema v13 explicitly migrates v12, retaining all prior rows, assignment ordering, dependency/blocker history and pause ownership. It adds `resource_claims`, generic blocker source/claim references, and a durable `stop_reason`. No claims are fabricated. Unknown future schemas are rejected, and migration failure rolls back atomically.
+
+Claims coordinate managed Work; they are **not OS-wide locks**. External processes may still bind ports, access databases or edit files. There is no OS probing, LLM duplicate-work detection, resource dependency inference, or frontend resource manager.
+
+Resource types and defaults:
+
+| Type | Scope | Default mode | Identity |
+| --- | --- | --- | --- |
+| `file_path` | Project only | `advisory` | Canonical Project-relative logical path, e.g. `backend/app/main.py` |
+| `port` | Global/machine only | `exclusive` | `tcp:8000` or `udp:8000`; bare numbers default to TCP |
+| `docker_resource` | Global/machine only | `exclusive` | `container:api`, `network:dev`, or `volume:data` |
+| `database` | Explicit `project` or `global` | `exclusive` | Credential-free identity, e.g. `postgres:localhost:5432/appdb` or an absolute `sqlite:` path |
+| `generic` | Explicit `project` or `global` | `exclusive` | `namespace:resource-key` |
+
+File identities use Project path/case conventions (case-insensitive on Windows), not unique Task Workspace paths. Absolute file keys, traversal, Windows alternate streams/device names and resolved paths escaping the Project are rejected. Optional `recursive: true` includes path descendants with component-boundary matching. Equal relative paths in different Projects are separate resources. Global resources match across Projects and unrelated Task trees. Keys must not contain secrets; detectable credential-bearing database identities/DSNs are rejected, not sanitized into storage.
+
+`advisory` never blocks; `shared` coexists with shared/advisory; `exclusive` conflicts with other Tasks' shared/exclusive ownership. Same-Task claims never self-conflict. Advisory file overlap is awareness only and never replaces Stage 2E integration/conflict checks.
+
+Backend APIs:
+
+- `POST /tasks/{task_id}/resource-claims` accepts `resource_type`, `resource_key`, optional `mode`, `scope`, `recursive`, and `lifetime` (`task` by default or `worker`). It returns the reconciled claim. Exact repeated live declarations return the existing claim UUID.
+- `GET /tasks/{task_id}/resource-claims` returns `{claims: [...]}`, including historical released claims, derived `scope_key`, `potential_overlap`, `overlapping_claims` (Task, claim, mode and status), and `conflicting_claim_ids` for active incompatible holders.
+- `DELETE /tasks/{task_id}/resource-claims/{claim_id}` explicitly releases a declaration idempotently and re-evaluates waiters in the same transaction. Claim ownership must match the route Task. Release changes managed coordination; it does not probe or manipulate the external resource.
+
+Each durable claim has a UUID, Task identity, optional active TaskAssignment identity, normalized resource identity, mode/lifetime/scope, and creation/acquisition/suspension/release timestamps. States are `active`, `waiting`, `suspended`, and historical `released`. Project scope is derived from the Task, avoiding a duplicate Project identity. Task-scoped declarations survive normal Stop/reassignment; worker-scoped declarations are released when their assignment ends. Redirect retains its existing assignment, while a new assignment must declare its own worker claims.
+
+Unavailable blocking requests create `resource_conflict` blockers with waiting-claim and owning-claim IDs, generic `source_type/source_id`, and owning Task context. Ordinary contention adds no replanning reason. Multiple resource and dependency blockers coexist and resolve independently. Task responses additionally expose `resource_claims_pending`; starts, child creation, Reply, Redirect, Decide, Similar and Always reject missing required claims even if a stale status/blocker projection would otherwise permit execution.
+
+For running Work, the wait and execution gate commit before stopping/draining the worker. Its assignment ends as `resource_conflict`, preserving that cause if the resource releases during the stop. A failed stop retains truthful runtime state and durable gates; retry the same idempotent claim request or recover on startup. Blocked running work restores only to pending. Blocked waiting work retains its question/session/assignment/workspace and restores to waiting when all blockers clear. No release, reacquisition or recovery automatically starts workers.
+
+Pause and non-resource blocking suspend scarce task-scoped claims, preserving declarations; advisory declarations may remain informational. Ownership is retained **only while a running worker's stop is unsettled**, so another Task cannot acquire a resource prematurely after failed termination. Resume/dependency resolution reacquires all missing blocking claims for a Task atomically before allowing execution; conflicting reacquisition leaves resource blockers. Complete/Cancel release claims, and assignment termination releases worker-scoped claims. All lifecycle release/arbitration/blocker changes commit before SSE publication. Recovery uses existing durable assignment/control authority, releases stale worker ownership, preserves paused declarations and history, and retains the existing no-process-reattachment limitation.
+
+Acquisition/conflict checks and release arbitration use serialized `BEGIN IMMEDIATE` transactions. Existing active holders have priority; eligible Task bundles are considered in stable claim creation order, with compatible shared waiters granted together. A free subset of a blocked bundle is not acquired. The temporary `multi_resource_wait_requires_coordination` guard rejects an unavailable blocking acquisition while the Task already holds a shared/exclusive claim. Advisory claims do not count, and multiple immediately grantable resources are allowed. This is deliberately **not a fairness/starvation guarantee or deadlock system**; those belong to Stage 2G.2. Resource suspension can likewise wait for explicit stop retry/recovery when OS termination fails; there is no autonomous recovery scheduler.
 
 Agent records, hierarchy, output, sessions, and autonomy settings are stored in local SQLite at `data/control_center.sqlite3`. Set `CONTROL_CENTER_DB_PATH` to use a different path. Use one backend worker for this local process manager. The database and sidecar files are ignored by Git.
 

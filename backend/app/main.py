@@ -501,3 +501,27 @@ def control_impact_route(task_id: str, request: ControlImpactRequest):
 @app.get('/tasks/{task_id}/control-operations')
 def control_operations_route(task_id: str):
     return {'operations': _task_action(lambda: manager._task_store().control_operations(task_id))}
+
+
+class ResourceClaimRequest(BaseModel):
+    resource_type: Literal['file_path', 'port', 'database', 'docker_resource', 'generic']
+    resource_key: str
+    mode: Literal['advisory', 'shared', 'exclusive'] | None = None
+    lifetime: Literal['task', 'worker'] = 'task'
+    scope: Literal['project', 'global'] | None = None
+    recursive: bool = False
+
+
+@app.post('/tasks/{task_id}/resource-claims')
+def create_resource_claim_route(task_id: str, request: ResourceClaimRequest):
+    return _task_action(lambda: manager.create_resource_claim(task_id, **request.model_dump()))
+
+
+@app.get('/tasks/{task_id}/resource-claims')
+def resource_claims_route(task_id: str):
+    return {'claims': _task_action(lambda: manager._task_store().resource_claims(task_id))}
+
+
+@app.delete('/tasks/{task_id}/resource-claims/{claim_id}')
+def release_resource_claim_route(task_id: str, claim_id: str):
+    return _task_action(lambda: manager.release_resource_claim(task_id, claim_id))
