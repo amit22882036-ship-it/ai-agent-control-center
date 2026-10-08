@@ -11,6 +11,7 @@ from uuid import uuid4
 from .project_domain import canonical_path, contains
 from . import resource_coordination as coordination
 from . import external_resources as external
+from . import runtime_resources, resource_probes
 
 NOW = "strftime('%Y-%m-%dT%H:%M:%fZ','now')"
 TYPES = ('file_path', 'port', 'database', 'docker_resource', 'generic')
@@ -201,7 +202,8 @@ def reconcile(db, tasks, triggering_claim_id=None, preflight_tasks=()):
     checked = {}
     for c in rows:
         if (c['mode'] != 'advisory' and c['status'] != 'released' and c['task_id'] in preflight_tasks
-                and not (c['status'] == 'active' and c['task_id'] in continuing)
+                and not (c['status'] == 'active' and c['task_id'] in continuing
+                         and not runtime_resources.invalidated(db, c['claim_id']))
                 and (c['status'] == 'active' or c['probe_status'] in ('unavailable', 'unknown'))):
             checked[c['claim_id']] = external.check(db, c)
     owners = [c for c in rows if c['status'] == 'active']
@@ -253,6 +255,7 @@ def reconcile(db, tasks, triggering_claim_id=None, preflight_tasks=()):
         else:
             db.execute('UPDATE task_blockers SET edge_kind=? WHERE id=?', (kind, existing[pair]))
     coordination.reconcile(db, graph, triggering_claim_id)
+    runtime_resources.sync(db)
 
 
 def create(db, task, **options):
@@ -297,6 +300,9 @@ def inspect(db, task_id):
         item = {k: v for k, v in c.items() if k != 'claim_order'}
         others = [o for o in rows if o['task_id'] != task_id and o['status'] != 'released'
                   and c['status'] != 'released' and overlaps(c, o)]
+        item['runtime_capabilities'] = resource_probes.capabilities(c['resource_type'])
+        item['runtime_ownership'] = runtime_resources.history(db, c['claim_id'])
+        item['current_ownership'] = next((r for r in reversed(item['runtime_ownership']) if r['ended_at'] is None), None)
         item['potential_overlap'] = bool(others)
         item['overlapping_claims'] = [{k: o[k] for k in ('claim_id', 'task_id', 'mode', 'status')} for o in others]
         item['conflicting_claim_ids'] = [o['claim_id'] for o in others if o['status'] == 'active' and conflicts(c, o)]

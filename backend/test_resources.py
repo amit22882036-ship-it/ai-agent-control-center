@@ -22,6 +22,9 @@ class ResourceTests(unittest.TestCase):
         probe = patch.object(resource_probes, 'probe_resource', return_value=resource_probes.Observation('available', 'test_available'))
         self.probe = probe.start()
         self.addCleanup(probe.stop)
+        reservation = patch.object(resource_probes, "reserve_port")
+        self.reservation = reservation.start()
+        self.addCleanup(reservation.stop)
     tearDown = test_dependencies.DependencyTests.tearDown
     create = test_dependencies.DependencyTests.create
     replacement = test_dependencies.DependencyTests.replacement
@@ -667,7 +670,7 @@ class ResourceTests(unittest.TestCase):
         self.assertEqual(AgentStore(self.path).list_tasks(), store.list_tasks())
         self.assertEqual(store.load_agents()[0]['session_id'], key)
         with store._connection() as db:
-            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 15)
+            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 16)
             self.assertEqual(db.execute('PRAGMA foreign_key_check').fetchall(), [])
             self.assertEqual(db.execute('SELECT COUNT(*) FROM resource_claims').fetchone()[0], 0)
 

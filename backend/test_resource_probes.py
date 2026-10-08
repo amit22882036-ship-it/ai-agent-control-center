@@ -450,7 +450,7 @@ class ProbeTests(unittest.TestCase):
             for t in tables:
                 self.assertEqual([tuple(r) for r in db.execute(f'SELECT rowid,{columns[t]} FROM {t} ORDER BY rowid')], before[t], t)
             self.assertTrue(all(tuple(r) == (None, None, None) for r in db.execute('SELECT probe_status,probe_checked_at,probe_reason FROM resource_claims')))
-            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 15)
+            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 16)
             self.assertEqual(db.execute('PRAGMA foreign_key_check').fetchall(), [])
             external_resources.migrate(db)
         self.assertEqual(AgentStore(self.path).load_agents()[0]['session_id'], key)
@@ -467,11 +467,11 @@ class ProbeTests(unittest.TestCase):
         with closing(sqlite3.connect(self.path)) as db, db:
             self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 14)
             self.assertNotIn('probe_status', [r[1] for r in db.execute('PRAGMA table_info(resource_claims)')])
-            db.execute('PRAGMA user_version=16')
+            db.execute('PRAGMA user_version=17')
         with self.assertRaises(RuntimeError):
             AgentStore(self.path)
         with closing(sqlite3.connect(self.path)) as db, db:
-            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 16)
+            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 17)
             db.execute('PRAGMA user_version=14')
         AgentStore(self.path)
 

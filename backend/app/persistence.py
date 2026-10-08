@@ -6,7 +6,7 @@ from pathlib import Path
 import sqlite3
 from threading import RLock
 from uuid import uuid4
-from . import work_control, dependencies, resources, resource_coordination, external_resources
+from . import work_control, dependencies, resources, resource_coordination, external_resources, runtime_resources
 from .task_domain import task_title, validate_task_status, validate_end_reason
 from .agent_names import default_display_name, validate_display_color
 from .output_history import OUTPUT_PAGE_SIZE, OUTPUT_MAX_LIMIT
@@ -21,9 +21,9 @@ class AgentStore:
         self._lock = RLock()
         with self._connection() as db:
             version = db.execute('PRAGMA user_version').fetchone()[0]
-            if version not in (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15):
+            if version not in (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16):
                 raise RuntimeError(f'Unsupported control-center database schema version: {version}')
-            if version < 15:
+            if version < 16:
                 db.execute('PRAGMA foreign_keys = OFF')
             if version == 0:
                 if db.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchone():
@@ -173,6 +173,13 @@ class AgentStore:
                     if db.execute('PRAGMA foreign_key_check').fetchone():
                         raise sqlite3.IntegrityError('Invalid external resource migration references')
                     db.execute('PRAGMA user_version = 15')
+                    version = 15
+                if version == 15:
+                    if not db.in_transaction:
+                        db.execute('BEGIN')
+                    runtime_resources.migrate(db)
+                    db.execute('PRAGMA user_version = 16')
+                db.execute('SELECT ownership_id,generation,state FROM resource_ownership LIMIT 0')
                 db.execute('SELECT claim_id,assignment_id,probe_status,probe_checked_at,probe_reason FROM resource_claims LIMIT 0')
                 db.execute('SELECT stop_reason FROM tasks LIMIT 0')
                 db.execute('SELECT source_type,source_id,waiting_claim_id,owning_claim_id FROM task_blockers LIMIT 0')
@@ -587,6 +594,7 @@ class AgentStore:
         work_control.sync(db, assignment, status)
         if dependencies.task(db, assignment['task_id']) != before:
             dependencies.reconcile(db)
+        runtime_resources.sync(db)
 
     def get_task(self, task_id):
         with self._connection() as db:
@@ -664,6 +672,7 @@ class AgentStore:
         """
         with self._connection() as db:
             db.execute('BEGIN IMMEDIATE')
+            runtime_resources.recover(db)
             for agent in db.execute("SELECT agent_id FROM agents WHERE status='running'").fetchall():
                 key = agent['agent_id']
                 db.execute("UPDATE agents SET status='stopped' WHERE agent_id=?", (key,))

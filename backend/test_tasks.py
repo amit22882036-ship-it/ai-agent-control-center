@@ -119,7 +119,7 @@ class TaskTests(unittest.TestCase):
             self.assertEqual(assignment['ended_at'] is None, record['status'] in ['running', 'waiting'])
         self.assertEqual(AgentStore(self.path).list_tasks(), store.list_tasks())
         with store._connection() as db:
-            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 15)
+            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 16)
 
     def test_startup_reconciles_running_and_retains_waiting_without_processes(self):
         # Use the real startup path but restore global runtime registries afterward.
@@ -167,11 +167,11 @@ class TaskTests(unittest.TestCase):
     def test_future_schema_is_untouched(self):
         task = self.store.create_task('keep')
         with closing(sqlite3.connect(self.path)) as db, db:
-            db.execute('PRAGMA user_version=16')
+            db.execute('PRAGMA user_version=17')
         with self.assertRaisesRegex(RuntimeError, 'Unsupported'):
             AgentStore(self.path)
         with closing(sqlite3.connect(self.path)) as db:
-            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 16)
+            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 17)
             self.assertEqual(db.execute('SELECT task_id FROM tasks').fetchone()[0], task['task_id'])
 
     def test_recovery_failure_rolls_back_task_and_assignment_together(self):

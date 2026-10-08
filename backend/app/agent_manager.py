@@ -1,3 +1,4 @@
+from . import runtime_resources
 from .work_control import require_active
 import os
 import logging
@@ -519,7 +520,7 @@ def _launch_prepared_agent(task, parent_id, task_id, parent_task, command, agent
                          f"Your assigned contribution:\n{task}\n\n"
                          "Work specifically on your assigned contribution in support of the parent work.")
     agent_id = str(uuid4())
-    process = _spawn_process(command, agent_type, cwd=cwd)
+    process = _spawn_with_resources(task_id, agent_id, command, agent_type, cwd)
     agent_statuses[agent_id] = "running"
     agent_parents[agent_id] = parent_id
     agent_outputs[agent_id] = OutputCache()
@@ -566,6 +567,17 @@ def _launch_prepared_agent(task, parent_id, task_id, parent_task, command, agent
             stop_agent(agent_id)
             raise
     return agent_id
+
+
+def _spawn_with_resources(task_id, agent_id, command, agent_type, cwd):
+    try:
+        with runtime_resources.launch(_store, task_id, agent_id):
+            return _spawn_process(command, agent_type, cwd=cwd)
+    except runtime_resources.ResourceUnavailable:
+        # The launch was prevented, but its durable blocker still needs an SSE
+        # invalidation. Never publish it from inside the resource transaction.
+        _emit_agent_change(None)
+        raise
 
 
 def _task_store():
@@ -932,7 +944,7 @@ def _resume_agent(agent_id: str, command: str, text: str, marker: str,
     if state:
         state['integration_order'] = _store.integration_cursor(task_id)
     invalidation = session_context(_store, agent_id, state) if state else ''
-    replacement = _spawn_process(command, "codex", cwd=cwd)
+    replacement = _spawn_with_resources(task_id, agent_id, command, "codex", cwd)
     history = [marker, text if history_text is None else history_text]
     with _data_lock:
         if always_decision:

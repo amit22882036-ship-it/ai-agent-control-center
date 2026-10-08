@@ -36,6 +36,10 @@ def check(db, claim):
         observation = resource_probes.probe_resource(claim['resource_type'], claim['resource_key'])
     except Exception:
         observation = resource_probes.Observation('unknown', 'probe_failed')
+    return record(db, claim, observation)
+
+
+def record(db, claim, observation):
     db.execute(f'UPDATE resource_claims SET probe_status=?,probe_reason=?,probe_checked_at={NOW} WHERE claim_id=?',
                (observation.status, observation.reason, claim['claim_id']))
     if observation.status in ('available', 'not_supported'):
