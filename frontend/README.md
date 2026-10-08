@@ -1,16 +1,7 @@
-# React + Vite
+# AI Agent Control Center frontend
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+The React dashboard for AI Agent Control Center. It uses Vite, JavaScript, and CSS, with Node's built-in test runner and ESLint.
 
-Currently, two official plugins are available:
+See the [project README](../README.md) for Windows setup, both local server commands, development checks, implemented capabilities, and security limitations. The frontend expects the backend at `http://127.0.0.1:8000` and runs on port 5173 in the documented setup.
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
-
-## React Compiler
-
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the ESLint configuration
-
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+Detailed backend behavior lives in the [technical documentation](../README.md#technical-documentation). The [repository-wide Codex instructions](../AGENTS.md) apply here too.

@@ -1,0 +1,59 @@
+# Projects, workspaces, and integration
+
+These backend capabilities separate a Project's canonical source from each Task's execution files. The dashboard starts root work in the default repository Project; Project registration and explicit integration are API-only. Both Mock and Codex starts provision Task workspaces. Workspace isolation protects source organization, but is not a complete security boundary: linked worktrees share Git history, and external resources require separate coordination.
+
+This reference preserves the Stage 2 design and migration details. Stage labels explain how the implementation evolved; later sections refine earlier behavior. The current database schema is v17.
+
+[Project overview and setup](../README.md) | [Task lifecycle](task-lifecycle.md) | [Workspaces](workspaces.md) | [Resource coordination](resource-coordination.md)
+
+## Project identity (Stage 2D)
+
+A **Project** identifies a logical codebase. Its **Canonical Workspace** is its canonical absolute root directory. Ownership is `Agent -> TaskAssignment -> Task -> Project`; Agents do not persist a second Project identity. Project identity does not protect shared databases, ports, caches, or external services.
+
+`POST /projects` accepts `name` and `root_path`; `GET /projects` and `GET /projects/{project_id}` return Project metadata. New registration requires an existing directory. Canonical paths resolve relative components and filesystem aliases, with Windows case normalization for comparison. Duplicate and overlapping roots are rejected. The comparison key is internal. There are no Project mutation/deletion endpoints or Project UI.
+
+`POST /tasks` accepts an optional `project_id`; otherwise it uses the repository's canonical context. Existing `POST /agents/start` requests remain unchanged. Both providers resolve the default canonical context before provisioning isolated execution. Child Tasks inherit their parent's Project.
+
+Schema v7 adds Projects and nullable `tasks.project_id`. The v6 schema contains no persisted execution-directory evidence, so migration leaves historical Tasks unresolved without guessing from text, hierarchy, or today's cwd. Such Tasks cannot start or resume a worker or child. All new Tasks receive a Project. Project ensure and Task creation are transactional; failed worker launches leave a valid pending Task without an active assignment, following the existing lifecycle compensation rules.
+
+## Durable Task Workspaces (Stage 2E.1)
+
+Schema v8 adds one `task_workspaces` record per Task, allocated lazily, without fabricating historical filesystem state during migration. The workspace belongs to the Task, never to an Agent. A replacement worker, Reply, Redirect, Decide, Similar, Always, or recovered waiting session reuses that persisted path. Missing, corrupt, wrong-repository, or unresolved workspaces fail safely; execution never falls back to the canonical directory.
+
+Set `CONTROL_CENTER_WORKSPACE_ROOT` to an external storage directory. The default is `%LOCALAPPDATA%/AI Agent Control Center/task-workspaces` on Windows (or `~/.local/share/AI Agent Control Center/task-workspaces` without LOCALAPPDATA). Paths are generated as `<root>/<project-id>/<task-id>` and must not overlap any canonical Project. Do not move or manually replace these directories.
+
+Provisioning requires a Git working-tree root with a usable HEAD. A temporary alternate index captures current source bytes, including staged/unstaged tracked changes and non-ignored untracked files. It creates an internal snapshot commit and a detached linked worktree, without changing the user's branch, HEAD, index, or canonical files. No branch is created. Children snapshot their parent's current Task Workspace, recursively. Independent roots and siblings have separate files. New work on an existing legacy root Task without a workspace snapshots today's canonical source (`legacy_project_snapshot`), not historical state. Child starts use the current parent workspace, provisioning a legacy parent first if necessary.
+
+Ignored files and common environment/secret/build/cache paths are excluded, including tracked `.env*`, private-key files, `node_modules`, `.venv`, and `dist`. This is filename-based filtering, not a secret scanner; linked worktrees still share the repository's Git object database and history. Symbolic links, submodules, and non-Git/unborn repositories are currently unsupported. Source snapshots do not provision runtime dependencies or copy environments. Snapshots read files sequentially; there is no coordinated freeze of a concurrently editing parent.
+
+`GET /tasks/{task_id}/workspace` returns metadata, `null` when not yet provisioned, or 404 for an unknown Task. It never provisions a workspace. There are no mutation/reset/delete/sync APIs or Workspace UI. Stop, completion, waiting, shutdown, and worker replacement retain workspace files. Provisioning and Agent execution alone do not integrate files back into canonical or parent files.
+
+Provisioning uses per-Task synchronization, exclusive filesystem reservation, and database uniqueness. If persistence fails, only a newly created, unrecorded worktree is compensated. An uncertain commit preserves a durably recorded workspace; an unavailable database leaves files untouched. A crash leaving an unrecorded path requires manual recovery instead of silent adoption or deletion. Spawn failure retains valid workspace state. No automatic retention cleanup is implemented. Managed resource coordination is described in [Resource coordination](resource-coordination.md).
+
+## Revision and staleness safety (Stage 2E.2)
+
+Workspace freshness uses Git content-tree identities, not HEAD or snapshot-commit timestamps. Roots compare against current canonical source; descendants compare only against their direct parent's current Task Workspace. Current source bytes include staged/unstaged tracked files and relevant untracked additions/removals, using the same exclusions as provisioning. Local Task edits alone are not staleness.
+
+`GET /tasks/{task_id}/workspace` now derives `freshness` (`fresh`, `stale`, or `reconciliation_required`), `base_source_snapshot`, `upstream_snapshot`, `local_snapshot`, `local_dirty`, and a bounded `changed_upstream_files` list plus remaining count. `base_snapshot` remains the durable internal commit. GET does not provision or update workspace files.
+
+Before worker start or same-session continuation, clean stale workspaces refresh in place. Dirty stale workspaces reject continuation with HTTP 409 and retain their files, session, Task status, and assignment history. Redirect checks for divergence before stopping its current process, then rechecks after stopping. If a new race/error occurs after termination, the stopped process is reported truthfully. There is no automatic reconciliation, integration, merge, or rebase.
+
+Refresh uses a per-Task lock, expected base/local/upstream revalidation, an exclusive Task index reservation, and Git's two-tree overwrite checks. An isolated temporary Git directory disables content filters and conversions while preserving captured bytes; no canonical checkout/index/ref is changed. Filesystem and SQLite are not a single transaction: failed persistence after filesystem refresh leaves the old baseline and conservatively requires inspection/reconciliation, never silently starts work. External editors do not participate in application locks; optimistic checks detect observed races, not future writes after a check. No watcher is installed.
+
+Schema v9 adds `agent_source_context`, recording the source baseline acknowledged by each session. Migration from v8 backfills available assignment/workspace baselines without touching Git. After refresh, resumed sessions receive an internal stdin instruction to re-read affected files (up to 50 escaped relative path labels, 240 characters each, plus remaining count). New sessions do not need this warning. Context acknowledgment advances only after prompt delivery succeeds; failed acknowledgment safely repeats the warning on the next continuation. Missing historical context prompts a conservative re-read. The existing symlink/submodule restrictions and workspace retention remain in effect.
+
+## Controlled integration (Stage 2E.3)
+
+`POST /tasks/{task_id}/integrate` accepts no destination controls (an empty body or `{}` is sufficient). The server derives the destination from durable hierarchy: children integrate into their direct parent Task Workspace; roots integrate into their Project canonical workspace. `GET /tasks/{task_id}/integrations` lists source history and `GET /integrations/{integration_id}` inspects a result. Conflicts and obsolete candidates return HTTP 409 with structured history; unsafe prerequisites return sanitized errors. There is no integration UI or automatic Agent action.
+
+Integration compares base **B**, source **L**, and destination **U** content trees. Candidates are prepared outside canonical/workspaces, using per-path three-way comparison and Git's textual three-way merge for files changed on both sides. Delete/modify, incompatible additions, binary conflicts, mode conflicts, and ambiguous directory/file cases are refused. Renames are represented as delete/add, without heuristic rename inference. A source equal to its base records a no-op. Source work and its original workspace baseline are never reset or deleted.
+
+Schema v10 adds integration history, durable active-source/destination protection, snapshots, conflict/change summaries, and a pre-image/result apply journal. Migration from v9 creates no historical integrations. Internal `refs/control-center/integrations/...` retain provenance/recovery objects across Git garbage collection; they are not branches. `validation_status` remains `not_run`: a clean textual result is not semantic validation.
+
+Per-destination/task locks coordinate integrations with worker start/resume. Source and parent destinations must have no live managed writer; integration never stops a worker. Both source and destination snapshots are rechecked immediately before apply. Replacement bytes are fully staged externally and an `applying` journal is committed before file writes. Apply changes only destination working files: it never stages, commits, stashes, changes HEAD, or switches branches. User staging remains byte-for-byte intact, including when canonical is already dirty. Ignored/excluded path collisions are refused.
+
+Each write checks its expected pre-image and uses atomic file replacement. On failure, already-applied paths are restored only if they still match this integration's output; newer external edits are preserved. Multi-file apply is not an atomic filesystem transaction, and external editors do not participate in application locks. An ambiguous failure retains a durable `recovery_required` claim, blocking further integration/unsafe continuation until future recovery tooling handles it.
+
+At backend startup, interrupted preparation is marked failed. Interrupted apply matching the complete before snapshot is failed safely; matching the result, source, and journal can be finalized as applied. Anything else requires recovery. Recovery does not write files. Exact already-applied source snapshots are idempotent against the same logical destination, even after reopening storage.
+
+Parent session context uses the existing durable source-context acknowledgment plus an integration-history cursor. All child-integration paths since the last successful prompt delivery are combined into a bounded re-read instruction; failed delivery retains the warning. Integrations do not modify Task lifecycle or descriptions, resume Agents, or perform AI review/tests/deployment. Sibling staleness follows naturally from the parent's changed content. Source continuation may still require reconciliation because integration deliberately does not refresh/rebase the retained source workspace.

@@ -1,284 +1,132 @@
 # AI Agent Control Center
 
-A local dashboard for starting, stopping, and monitoring multiple agents. The React + Vite frontend connects to a FastAPI backend running with Uvicorn, which manages agent subprocesses and captures their output.
+A local workspace for supervising AI coding agents: see what is running, follow output, answer questions, and intervene without juggling separate terminal sessions.
 
-## Features
+**Active work in progress.** Stage 2 development is building durable task ownership, isolated workspaces, and coordination beneath the dashboard. The long-term goal is to help people manage related work across multiple agents; autonomous planning and multi-provider orchestration are not implemented yet.
 
-- **Mock agents:** simulate a short workflow with progress messages. They do not execute the supplied task or change files.
-- **Codex agents:** run tasks through the installed Codex CLI inside a durable, isolated Task Workspace.
-- **Codex sandbox modes:** `read-only` is the default; `workspace-write` allows Codex to modify files in its Task Workspace. Choose the mode before starting a Codex agent.
-- **Start and stop:** enter a task and select an agent type to start a run. Select an agent to view its details and stop it while it is running.
-- **Status monitoring and live output:** SSE change notifications refresh agent cards and selected-agent details from the REST API. If the stream is unavailable, the dashboard falls back to refreshing every two seconds and reconnects automatically. Status and captured output remain available through the existing REST endpoints.
+> **Local use only:** the backend currently has no authentication. Do not expose it to untrusted networks or operate it as a production-ready hosted service. Task prompts, agent output, and workspace metadata can contain private information.
 
-## Work lifecycle foundation (Stage 2F.1)
+## What works today
 
-Task work states are `pending`, `in_progress`, `waiting`, `blocked`, `paused`, `completed`, and `canceled`. Schema v11 transactionally migrates v10, preserving history and adding `control_intent` (`active`, `paused`, `canceled`) and nullable `resume_status`. Historical canceled work receives canceled intent; other existing work defaults to active. Task responses expose these fields. Blocked is system-managed; there is no public arbitrary block/status-setting endpoint.
+### In the dashboard
 
-Backend-only `POST /tasks/{task_id}/pause`, `/resume`, and `/cancel` accept no required body. Stage 2F.2 replaces the initial descendant guard with the subtree controls described below. Completed work rejects all three actions, canceled work rejects Pause/Resume, and repeated Pause/Cancel are safe. Resume requires a safely paused Task and never spawns a worker.
+- Start Mock or Codex agents; choose `read-only` (default) or `workspace-write` for Codex. Mock agents simulate progress and do not execute the supplied task.
+- Follow live status through Server-Sent Events (SSE), with polling fallback, and browse paginated output history.
+- Stop an agent or an existing agent subtree, reply to waiting Codex agents, redirect a running session, or explicitly delegate decisions.
+- Navigate existing parent/child relationships; search and filter by status and color; edit agent names and inspect name history.
+- Use an attention panel, light/dark/system themes, a resizable inspector, and opt-in browser/Windows notifications.
+- Retain agent metadata and output in SQLite across backend restarts. Recovery does not automatically restart workers.
 
-Pause/Cancel commit intent before attempting to stop a worker. Worker starts, child creation, Reply, Redirect, Decide, Similar, and Always cannot bypass non-active intent or blocked/terminal work. A running worker is stopped using existing process-tree handling, final output is drained and persisted, and its assignment ends with `paused` or `canceled`. Stop/drain/persistence failure returns an unavailable response; GET exposes the retained intent and unfinished runtime state for retry/recovery. Completion wins only if committed before control intent; otherwise the intent governs finalization.
+### Backend foundations
 
-Pause preserves a dormant waiting assignment, question, and session, including across restart. Resume restores `waiting`, `blocked`, or `pending` as appropriate and clears pause intent. Cancel ends any waiting association without deleting output, sessions, workspaces, or integration history. Generic Stop Agent and Stop Branch retain worker semantics (normally Task pending); an existing pause/cancel intent takes precedence. If generic Stop explicitly ends a paused waiting association, Resume restores pending work rather than an orphan waiting state.
+| Capability | Current scope |
+| --- | --- |
+| Durable Tasks and assignments | Work identity survives worker replacement; explicit child creation is available through the API. |
+| Projects and Task workspaces | Canonical Project roots, per-Task Git worktrees, freshness checks, and explicit conflict-aware integration. |
+| Lifecycle and dependencies | Pause/resume/cancel, subtree impact, dependency validation, and durable blockers. |
+| Resource coordination | Managed claims, fair queues, deadlock detection, port preflight, and bounded controller reservations. |
+| Logical work intents | Explicit responsibility scopes, overlap inspection, and hierarchical delegation. |
 
-These controls do not refresh/reset/integrate workspaces or change canonical files. Recovery retains paused/canceled/blocked work and finalizes interrupted control intent using the existing no-process-reattachment model. No frontend Work controls or orchestration are included yet.
+These foundations have API endpoints but no dedicated Project, Task-lifecycle, integration, resource, or work-intent editors in the current UI. The dashboard uses workspaces when launching agents; it does not yet provide an orchestration interface.
 
-## Dependencies and control impact (Stage 2F.2)
+## Architecture
 
-Schema v12 transactionally migrates v11. It preserves existing Tasks, assignments (including row order), Projects, workspaces, sessions, source context and integrations. It adds dependency edges, generic source-specific blockers and replanning reasons with resolved history, plus control operations and pause ownership. Existing independent pauses retain their ownership; migration fabricates no edges, blockers or replanning reasons. Newer unknown schemas are rejected.
+```mermaid
+flowchart LR
+    UI[React dashboard] -->|REST commands and reads| API[FastAPI backend]
+    API -->|SSE change notifications| UI
+    API --> Manager[Agent and task coordination]
+    Manager --> DB[(SQLite history and state)]
+    Manager --> Workspaces[Git Task workspaces]
+    Manager --> Workers[Mock / Codex subprocesses]
+    Workers -->|Captured output| Manager
+```
 
-`B depends_on A` means B cannot proceed until A is **completed**. Edges are explicit, unique, within one resolved Project, and distinct from hierarchy. Self-links and arbitrary-depth cycles are rejected inside the same `BEGIN IMMEDIATE` transaction that inserts the edge, including concurrent inverse-link requests. Terminal dependent Tasks reject new edges.
+The frontend uses **React 19, JavaScript, Vite 8, and CSS**. The backend uses **Python, FastAPI, Uvicorn, SQLite, and standard-library process/thread management**. Git provides source snapshots and linked worktrees. Agents, Tasks, and Projects have separate identities; an assignment connects a worker to durable work.
 
-Backend APIs:
+Run one backend process/worker: process registries, locks, and live-event state are process-local. See the [technical documentation](#technical-documentation) for persistence, recovery, and coordination invariants.
 
-- `POST /tasks/{task_id}/dependencies` with `{"depends_on_task_id":"<uuid>"}` adds an edge and safely reconciles the dependent.
-- `GET /tasks/{task_id}/dependencies` returns `{dependencies: [...]}`; `GET /tasks/{task_id}/dependents` returns reverse edges as `{dependents: [...]}`.
-- `DELETE /tasks/{task_id}/dependencies/{depends_on_task_id}` idempotently removes an edge and resolves only its attributable reasons.
-- `POST /tasks/{task_id}/control-impact` with `{"action":"pause"}` or `{"action":"cancel"}` previews affected subtree Tasks, same-project external dependents, running workers, untouched terminal descendants, blocking and replanning consequences. It does not mutate anything. Application recomputes the same plan transactionally.
-- `GET /tasks/{task_id}/control-operations` exposes operation identity, impact, status, release state and per-Task recovery failures.
+## Run locally on Windows
 
-Task responses expose `active_blockers`, `replanning_reasons`, derived `replanning_required`, `block_resume_status` and a durable `stop_required` gate alongside work intent. Unsatisfied edges produce `dependency_incomplete`, `dependency_paused` or `dependency_canceled`; canceled prerequisites also produce a separate replanning reason. All active hard blockers must clear before restoration. Dependency removal does not clear unrelated resource blockers or hierarchical replanning reasons. No public generic-blocker editor or replacement-edge API is introduced; remove/add are separate explicit actions.
+### Prerequisites
 
-Pending work restores to pending; blocked waiting work retains its assignment/question/session and restores to waiting. Running work is gated durably before its worker is stopped and output drained, ends its assignment as `blocked`, and restores only to pending. An already-completed prerequisite does not disturb the worker. Completion reconciles dependents in the lifecycle transaction before publication, without polling or automatic worker creation. Pause/Cancel intent takes precedence, and Resume re-evaluates current blockers rather than restoring an obsolete blocked state. Starts, child creation and all same-session continuation actions check hard blockers and unsettled-stop authority.
+- Git on `PATH`. Use a Git clone with an existing commit, not a downloaded ZIP: starting either agent type requires a valid Git repository for Task workspaces.
+- Python 3.11 or newer, available as `python`.
+- Node.js 24+ with npm, or Node.js 22.13+ within the 22.x line.
+- For real Codex agents: an installed, configured, authenticated Codex CLI at `%APPDATA%\npm\codex.cmd`. The backend currently launches Codex through this Windows npm launcher. Mock mode needs no Codex account.
 
-Pause/Cancel now apply to the target and all unfinished descendants, preserving completed/canceled descendants. Pause ownership is recorded per operation: resuming a parent releases only that cascade, preserving independent and overlapping child pauses. An ancestor-owned child pause cannot be released through the child without its own operation. External dependents become blocked, not paused/canceled. Pause alone does not request replanning. Cancellation adds source-specific `child_canceled` awareness through nonterminal ancestors without inventing hierarchy dependencies; direct dependents additionally receive cancellation blockers/replanning reasons.
+### Install
 
-Multi-worker application is phased: commit intent/provenance/blockers, stop and drain workers outside SQL transactions, then persist completion or `recovery_required`. A failed stop retains truthful running state and execution gates; other workers still settle. The API returns an unavailable error on runtime/storage failure; inspect Tasks and operation records and retry the same action. A dependency stop failure exposes `stop_required` and can be retried by repeating the edge operation. Recovery uses durable intent and the existing no-reattachment policy; it preserves graph/history and never spawns workers. It does not claim to terminate or reattach an unknown OS process surviving an abrupt backend crash.
-
-Workspace isolation, freshness, integration conflicts, canonical/index protection and session-context checks remain separate and unchanged. There is no frontend dependency editor or autonomous replanning.
-
-## Managed resource claims (Stage 2G.1)
-
-Schema v13 explicitly migrates v12, retaining all prior rows, assignment ordering, dependency/blocker history and pause ownership. It adds `resource_claims`, generic blocker source/claim references, and a durable `stop_reason`. No claims are fabricated. Unknown future schemas are rejected, and migration failure rolls back atomically.
-
-Claims coordinate managed Work; they are **not OS-wide locks**. External processes may still bind ports, access databases or edit files. Stage 2G.3 adds TCP/UDP availability preflight below; there is no external probing for other resource types, LLM duplicate-work detection, resource dependency inference, or frontend resource manager.
-
-Resource types and defaults:
-
-| Type | Scope | Default mode | Identity |
-| --- | --- | --- | --- |
-| `file_path` | Project only | `advisory` | Canonical Project-relative logical path, e.g. `backend/app/main.py` |
-| `port` | Global/machine only | `exclusive` | `tcp:8000` or `udp:8000`; bare numbers default to TCP |
-| `docker_resource` | Global/machine only | `exclusive` | `container:api`, `network:dev`, or `volume:data` |
-| `database` | Explicit `project` or `global` | `exclusive` | Credential-free identity, e.g. `postgres:localhost:5432/appdb` or an absolute `sqlite:` path |
-| `generic` | Explicit `project` or `global` | `exclusive` | `namespace:resource-key` |
-
-File identities use Project path/case conventions (case-insensitive on Windows), not unique Task Workspace paths. Absolute file keys, traversal, Windows alternate streams/device names and resolved paths escaping the Project are rejected. Optional `recursive: true` includes path descendants with component-boundary matching. Equal relative paths in different Projects are separate resources. Global resources match across Projects and unrelated Task trees. Keys must not contain secrets; detectable credential-bearing database identities/DSNs are rejected, not sanitized into storage.
-
-`advisory` never blocks; `shared` coexists with shared/advisory; `exclusive` conflicts with other Tasks' shared/exclusive ownership. Same-Task claims never self-conflict. Advisory file overlap is awareness only and never replaces Stage 2E integration/conflict checks.
-
-Backend APIs:
-
-- `POST /tasks/{task_id}/resource-claims` accepts `resource_type`, `resource_key`, optional `mode`, `scope`, `recursive`, and `lifetime` (`task` by default or `worker`). It returns the reconciled claim. Exact repeated live declarations return the existing claim UUID.
-- `GET /tasks/{task_id}/resource-claims` returns `{claims: [...]}`, including historical released claims, derived `scope_key`, `potential_overlap`, `overlapping_claims` (Task, claim, mode and status), and `conflicting_claim_ids` for active incompatible holders.
-- `DELETE /tasks/{task_id}/resource-claims/{claim_id}` explicitly releases a declaration idempotently and re-evaluates waiters in the same transaction. Claim ownership must match the route Task. Release changes managed coordination; it does not probe or manipulate the external resource.
-
-Each durable claim has a UUID, Task identity, optional active TaskAssignment identity, normalized resource identity, mode/lifetime/scope, and creation/acquisition/suspension/release timestamps. States are `active`, `waiting`, `suspended`, and historical `released`. Project scope is derived from the Task, avoiding a duplicate Project identity. Task-scoped declarations survive normal Stop/reassignment; worker-scoped declarations are released when their assignment ends. Redirect retains its existing assignment, while a new assignment must declare its own worker claims.
-
-Unavailable blocking requests create `resource_conflict` blockers with waiting-claim and owning-claim IDs, generic `source_type/source_id`, and owning Task context. Ordinary contention adds no replanning reason. Multiple resource and dependency blockers coexist and resolve independently. Task responses additionally expose `resource_claims_pending`; starts, child creation, Reply, Redirect, Decide, Similar and Always reject missing required claims even if a stale status/blocker projection would otherwise permit execution.
-
-For running Work, the wait and execution gate commit before stopping/draining the worker. Its assignment ends as `resource_conflict`, preserving that cause if the resource releases during the stop. A failed stop retains truthful runtime state and durable gates; retry the same idempotent claim request or recover on startup. Blocked running work restores only to pending. Blocked waiting work retains its question/session/assignment/workspace and restores to waiting when all blockers clear. No release, reacquisition or recovery automatically starts workers.
-
-Pause and non-resource blocking suspend scarce task-scoped claims, preserving declarations; advisory declarations may remain informational. Ownership is retained **only while a running worker's stop is unsettled**, so another Task cannot acquire a resource prematurely after failed termination. Resume/dependency resolution reacquires all missing blocking claims for a Task atomically before allowing execution; conflicting reacquisition leaves resource blockers. Complete/Cancel release claims, and assignment termination releases worker-scoped claims. All lifecycle release/arbitration/blocker changes commit before SSE publication. Recovery uses existing durable assignment/control authority, releases stale worker ownership, preserves paused declarations and history, and retains the existing no-process-reattachment limitation.
-
-Acquisition/conflict checks and release arbitration use serialized `BEGIN IMMEDIATE` transactions. Existing active holders are not preempted. Stage 2G.2 replaces the temporary hold-and-wait rejection with the fair queues and deadlock containment below. Resource suspension can still require explicit stop retry/recovery when OS termination fails; there is no autonomous recovery scheduler.
-
-## Fair queues and deadlock safety (Stage 2G.2)
-
-Schema v14 explicitly migrates v13 transactionally. It preserves prior records and adds `resource_waits` acquisition episodes, `resource_deadlocks`, incident membership, blocker edge kinds and incident-specific blocker/replanning references. Assignments additionally support `resource_deadlock` as an end reason. Each episode has a monotonic SQLite AUTOINCREMENT `wait_sequence`, nullable `waiting_since`, and retained closing time/outcome. Existing v13 waiting blocking claims are backfilled in persisted claim creation order (row order); exact historical wait-entry order/time was not recorded, so `waiting_since` is NULL. Migration invents no old incidents or timestamps. Unknown future versions are rejected.
-
-Fairness is FIFO-compatible on each overlapping resource: a waiter cannot pass an older incompatible waiter. Earlier shared requests acquire together; an older exclusive request is a barrier to later shared arrivals. Thus `S1,S2,E1,S3` grants S1/S2, then E1, then S3 as owners release. `E1,S1,S2` grants E1 first; `S1,E1,E2` respects that order. Advisory claims do not participate. Exact repeated declarations retain their claim and episode; same-Task claims never self-block. Pause/suspension/release/terminal state closes the episode, so a later Resume/reacquisition joins with fresh order and cannot reserve its former position.
-
-Starvation freedom is conditional: owners must eventually release, Work must remain eligible, dependencies must permit progress, and no unresolved deadlock may persist. There is no business priority or aging heuristic. A Task may retain X while waiting for Y. All currently missing required claims form one acquisition bundle: every member must satisfy ownership and queue precedence before any is granted. This preserves all-or-none reacquisition, including after Pause/dependency suspension, without bypassing older waiters on any resource.
-
-The global wait-for graph uses logical Task IDs, across trees and Projects for global resources. Edges identify waiting/blocking claims, Tasks, normalized resource identity and scope, and distinguish `active_owner` from `queue_precedence`. Suspended declarations and advisory claims have no wait edges. The graph is derived from durable claim/episode state at lifecycle transactions; correctness does not depend on polling. Iterative DFS enumerates simple directed edge cycles. Each cycle begins at its least Task ID, making rotations identical while preserving distinct parallel-provenance and overlapping/subset/superset cycles.
-
-Incidents retain a stable UUID, signature, detection/resolution times, optional triggering claim, member Tasks, and ordered provenance edges. The same open cycle is not repeatedly recorded. Each participant receives an incident-specific `resource_deadlock` blocker and replanning reason alongside its ordinary `resource_conflict` reasons. Resolving one incident cannot clear another or unrelated dependency/generic reasons.
-
-Containment commits those gates before stopping/draining affected running workers. Successful termination ends assignments with the coordination reason, retaining Workspace, Task identity, logs and session metadata. Dormant waiting-for-user assignments/questions remain resumable once all blockers clear. Failed termination retains truthful runtime state and managed ownership (physical Worker ownership remains unverified), including worker-scoped claims until the assignment actually ends. Current-process identity checks prevent stale finalizers from changing newer claims or incidents. Durable state precedes SSE invalidation.
-
-**No victim is selected and no Task is automatically canceled.** Existing task-scoped ownership can intentionally remain frozen during an open deadlock. Worker-scoped claims close when their actual assignment ends. A real state change—explicit claim release, Pause suspension, Cancel, Complete or a dependency/lifecycle change—must break the cycle; there is no blind clear-deadlock endpoint. Reconciliation resolves only absent cycles, then evaluates all remaining blockers and user intent before restoring pending/waiting/paused state. No worker is automatically spawned. Start and all continuation/delegation paths retain the resource, dependency, control-intent and Workspace safety gates.
-
-Additional inspection:
-
-- `GET /tasks/{task_id}/deadlocks` returns `{deadlocks: [...]}` including open and resolved incident history.
-- `GET /resource-deadlocks/{deadlock_id}` returns one incident with Task IDs, claim IDs and ordered edges (404 if absent).
-- Claim inspection adds current `wait_sequence`, `waiting_since`, `queue_position` (among overlapping current waits), `blocked_by` provenance, `blocked_by_claim_ids`, `blocked_by_task_ids`, and open Task-level `deadlock_ids`. Suspended declarations retain overlap/conflict awareness but reserve no position.
-
-Restart retains queue ordering; new episodes follow the durable counter. Open incidents keep their identity when the cycle persists. Recovery closes stale worker-scoped claims and truthfully resolves cycles they break, without fabricating workers or transferring ownership. Grants, blocker reconciliation and incident changes commit or roll back together. This remains managed coordination, not an OS-wide lock. Enumerating every distinct simple cycle can be expensive in a very dense graph; there is no silent cycle cap. Autonomous replanning/victim selection, priorities, semantic duplication checks and normal frontend management remain out of scope.
-
-
-Agent records, hierarchy, output, sessions, and autonomy settings are stored in local SQLite at `data/control_center.sqlite3`. Set `CONTROL_CENTER_DB_PATH` to use a different path. Use one backend worker for this local process manager. The database and sidecar files are ignored by Git.
-
-Output is appended incrementally to SQLite with stable per-agent sequence numbers; the existing normalized schema is retained. Only the latest 1,000 entries per agent are cached on startup. The dashboard loads a 300-entry tail, then requests incremental changes. **Load older output** retrieves earlier history on demand. The browser retains at most 2,000 entries; loading beyond that window switches to browsing older output until **Return to latest output** is selected. Complete history remains in SQLite. Failed database writes are logged and retained in a retry backlog (which can grow during an outage); subsequent activity, reads, or shutdown retry them. Uncommitted data cannot survive a crash during a storage outage.
-
-On normal shutdown, running agents are stopped; waiting agents stay waiting. After a crash, records last saved as running become stopped with a restart marker. No old PID is reattached or killed. Recovered waiting Codex agents can Reply or delegate through their saved session. Loading never starts agents or replays historical notifications. Autonomy settings survive, but temporary attempt flags reset. `finished` means the process exited; it does not distinguish success from failure.
-
-## External port preflight (Stage 2G.3)
-
-Managed ownership and external availability are separate prerequisites. The coordinator now calls the `resource_probes` dispatch abstraction for otherwise-grantable blocking claims. Only `port` has a real OS probe: TCP and UDP wildcard binds check IPv4 and IPv6 (when supported), using separate IPv6-only sockets and Windows exclusive-address-use protection. The sockets close before returning, including on failure. No process is killed, no admin privileges are requested, and no socket is retained or transferred as a reservation. Other resource types return `not_supported` and retain managed-only semantics; advisory declarations do not trigger external checks.
-
-A port observation is `available`, `unavailable` (in use or reserved), or `unknown` (unexpected probe failure). Both unavailable and unknown fail closed through claim-specific `external_resource_unavailable` blockers. This alone does not request replanning. Failed acquisition keeps its durable queue episode and fairness barrier; all missing bundle members must pass before any is granted. Retained active Task claims keep managed ownership even if a fresh execution preflight fails. Dependency/resource/deadlock blockers remain independent. A successful later check clears only the matching external blocker; releasing the claim removes its blocker. Suspension retains the last failure until an explicit check clears it or the declaration is released.
-
-New Task assignments receive fresh preflight during preparation and immediately before spawn after Workspace checks. Paused claims are freshly checked when they reacquire on Resume. Newly required claims on running Tasks are checked before becoming usable; unavailable/unknown results and execution gates commit before the existing stop/drain machinery runs. Successful termination uses the `external_resource_unavailable` assignment reason; failed termination retains truthful worker state and existing ownership. There is no separate stop implementation.
-
-**Self-ownership exception:** an active claim belonging to the current unended assignment is not bind-probed again. That assignment includes a retained waiting-for-user session. Its worker or child process may legitimately own the port. Reply/Decide/Similar/Always/Redirect preserve this authority while keeping all other execution and Workspace gates. Once the assignment ends, a replacement has no such exemption: surviving Task-scoped claims are freshly checked. Worker-scoped claims still end with their assignment. A newly required or suspended/waiting resource does not receive the active-owner exemption. A second declaration of a port already held by that same assignment reuses its active ownership without inventing a new probe observation.
-
-Waiting questions, sessions, assignment continuity and Workspaces are preserved while externally blocked, and waiting state is restored when the remaining gates permit it. Availability does not override Pause, Cancel or completion. No availability change automatically starts a worker. There is no background retry/polling loop; a later explicit start/continuation, reacquisition, or resource coordination mutation performs the next relevant check. GET inspection only reads recorded observations. Restart retains history and performs ordinary lifecycle/queue recovery without spawning workers; historical availability never substitutes for a new-assignment preflight.
-
-Schema **v14 → v15** adds nullable `probe_status`, `probe_checked_at`, and `probe_reason` columns to resource claims, a claim-specific external-blocker uniqueness index, and the new assignment end reason. It adds no tables. Migration is transactional, preserves existing data/order/provenance, and leaves historical observations NULL rather than inventing success. Existing claim inspection APIs expose these three fields; there are no new routes or frontend controls. Diagnostics are fixed sanitized codes, not raw OS errors.
-
-**Limitation:** availability is an observation, not ownership or an OS-wide lock. Another process can acquire the port after probing and before the worker uses it. This probe-to-use race is intentionally unresolved. Same-assignment ownership is trusted to prevent self-conflict, not proven by inspecting external processes. Docker, database, file and generic external inspection, autonomous retries/scheduling, and port stealing remain out of scope.
-
-## Runtime resource evidence (Stage 2G.4)
-
-A declaration, managed coordination grant, external probe observation, and runtime ownership record are different things. `resource_ownership` records execution evidence without turning a claim into an OS lock. The existing coordinator remains the sole grant/fairness/deadlock authority; the runtime service cannot grant a waiting claim or introduce a separate wait graph. Global ports remain machine-wide across Projects and Task branches.
-
-Adapters expose `probe`, `controller_reservable`, `worker_handoff`, and `ownership_verifiable` capabilities. Ports support the first two, but **not** arbitrary Worker handoff or Worker ownership verification. Other types explicitly report managed-only/unsupported physical capabilities. No Docker/database/file ownership discovery is performed.
-
-Immediately before spawn, the runtime service prepares the entire already-granted required bundle inside a serialized SQL transaction. New port use binds real TCP/UDP IPv4/IPv6 sockets with the same exclusive bind policy as preflight. Those sockets remain open through the reservation commit. Failure of a later member closes all sockets from this attempt, ends its prepared records, persists the claim-specific external blocker, and prevents spawn. Existing valid same-assignment use is retained. Reservation persistence failure also closes the sockets. No partial prepared bundle is handed to a Worker.
-
-States are explicit:
-
-- `reserved_by_controller`: this launch attempt has actually bound the socket; it is not owned by the Worker.
-- `handoff_pending`: the controller guarantee is being relinquished for an arbitrary Worker. This transition commits before sockets close and before spawn. `reserved_at` and `handoff_at` retain that history.
-- `runtime_unverified`: the assignment is executing with a port claim; Worker OS ownership is **not** proven. An occupied port is never used as ownership evidence.
-- `coordination_only`: an executing assignment has a managed claim with no physical adapter guarantee.
-- `suspended`, `released`: this record's authority has ended due to claim/lifecycle changes or failed launch; this is not proof that an arbitrary external port is free.
-- `ownership_lost`: startup invalidated prior runtime evidence; no physical reservation or Worker is reattached by assumption.
-
-There is still a **release-to-Worker-bind race**. Sockets are never inherited/passed to Codex or Mock and no `runtime_verified` state is claimed. Reservations are bounded to launch preparation, not retained while idle, Waiting, or executing. Existing same-assignment active use stays explicitly unverified through Reply/Decide/Similar/Always/Redirect rather than probing against the Worker's own possible socket. If Pause or recovery invalidated that evidence, continuation checks availability and prepares a fresh generation before execution.
-
-Stop, Pause, Cancel and completion use existing process stop/drain and durable assignment transitions. Failed termination retains live records and managed gates. Successfully ended assignments end their records; Task-scoped declarations and Workspaces may survive, but a replacement gets new runtime UUIDs/generations and fresh port checks. Waiting retains question/session/assignment context. Recovery marks every live runtime record lost, preserves history and logical claims, and never reserves or auto-starts a Worker. An upgraded active assignment with no runtime history receives an already-ended unknown recovery observation, never a fabricated ownership grant; its next continuation must revalidate too. Reacquisition requires a later explicit execution boundary. Per-attempt UUID compensation and assignment attribution prevent a stale finalizer from releasing a replacement generation.
-
-Schema **v15 → v16** adds one `resource_ownership` table with claim/Task/assignment attribution, intended Agent UUID, per-claim generation, normalized resource identity, adapter/capability, state, timestamps, latest observation and reason. Migration fabricates no history and preserves existing rows/order. A unique partial index permits only one live record per claim. Existing resource inspection adds `runtime_capabilities`, `current_ownership`, and ordered `runtime_ownership` history. A reservation is advertised live only while this controller actually retains its socket lease. If an uncertain commit leaves a reservation row after its sockets close, read-only inspection reports effective `ownership_lost`, retains `recorded_state`, and sets `recovery_required`; it never infers a live socket from SQL alone. Such an interrupted attempt fails closed until startup recovery. The complete claim bundle is checked again before handoff, and reservation-failure blockers publish SSE invalidation only after commit. GETs remain read-only; no mutation endpoint, force unlock, background watcher, scheduler, external process killing, or frontend changes are introduced.
-
-## Durable logical work intents (Stage 2G.5)
-
-Work intents describe a Task's structured responsibility within its Project, independently of concrete resource claims. They are not inferred from titles, descriptions, files or model output. No NLP, embeddings or AI calls are involved. Existing Tasks acquire no intents automatically, and there are no new frontend controls.
-
-Backend APIs:
-
-- `POST /tasks/{task_id}/work-intents` accepts `namespace`, `key`, optional `mode` (`advisory` by default, or `single_owner`), and optional `delegated_from_intent_id`.
-- `GET /tasks/{task_id}/work-intents` returns `intents`, including suspended and released history.
-- `DELETE /tasks/{task_id}/work-intents/{intent_id}` durably releases the intent; it does not delete history.
-- `GET /tasks/{task_id}/work-overlaps` returns `overlaps` with the other Task/intent, namespace/key/mode/status, relationship, classification and currently blocked Task ID.
-
-For example: `{ "namespace": "component", "key": "auth/login", "mode": "advisory" }`. Namespaces and logical path segments are lowercase ASCII identifiers. Surrounding whitespace, segment whitespace and outer slashes are normalized. Interior empty segments, traversal-like segments, backslashes, encoded paths and control characters are rejected. Namespaces are bounded to 64 characters, segments to 64, normalized keys to 256, and raw keys to 512. These keys never access the filesystem. Inspection retains the original trimmed key alongside the normalized key.
-
-Overlap requires the same Project and namespace, then equality or slash-segment ancestry (`auth` contains `auth/login`, but not `authentication`). Different namespaces and Projects are separate. A Task never conflicts with itself. Inspection includes suspended overlaps without treating them as execution authority; released intents remain in intent history rather than current overlaps. Relationships are from the inspected intent's perspective.
-
-Advisory/advisory overlaps are awareness only: no blockers, replanning, dependencies, stops, or changes to other Tasks. If either side explicitly declares `single_owner`, later overlapping active declarations receive provenance-specific `work_intent_conflict` blockers through the existing execution gate. Durable activation order determines precedence, including barriers from earlier gated declarations; later work cannot jump ahead and then be preempted on promotion. `holds_authority` distinguishes unopposed active declarations from gated declarations. Pausing removes authority; resumption appends a fresh activation order without replacing the intent UUID or displacing an intervening owner. There is no automatic Worker start when a blocker clears.
-
-Declarations use serialized SQLite transactions and normalized live-identity uniqueness. A declaration that would conflict with a currently running Task is rejected atomically with HTTP 409: no intent, blocker, stop or publication is committed. Equivalent live creates and releases are idempotent. Multiple blockers retain both intent IDs; resolving one never clears dependency, concrete-resource or unrelated intent blockers. Awareness-only mutations do not run unrelated resource reconciliation. SSE invalidation follows durable mutation.
-
-Delegation is explicit: the source intent must belong to an ancestor Task in the same Project and namespace, and contain the delegated scope. Valid direct or chained delegation exempts only those ancestor/descendant intent pairs. Siblings and unrelated Tasks are not exempt. References preserve immutable historical delegation provenance even if the source intent is later released; any remaining active scope conflicts are still evaluated. Delegation creates no Agent, Task, dependency or permission expansion.
-
-Stop and Worker replacement preserve the Task's active intents and Workspace. Waiting and system/resource blocking preserve intents. Pause suspends them once termination is confirmed; an unresolved running Worker retains authority until safely stopped. Resume rechecks overlap before execution. Completion and Cancel release intents while preserving UUIDs, timestamps and release reasons; failed termination never prematurely gives a competing Worker authority. Existing centralized start, continuation, Redirect, child-start and persistence gates enforce the blockers. Stale process finalizers retain their existing identity guards.
-
-Schema **v16 → v17** adds `work_intents` and nullable intent-pair provenance on `task_blockers`, with indexes for idempotency and independent blockers. Migration is transactional and creates no historical intents. Startup preserves pending/waiting intent ownership and reconciles paused/terminal lifecycle without spawning Workers. GET inspection is read-only. Work-intent precedence remains separate from resource fairness/deadlock graphs; no resource deadlock is invented from logical overlap. Complex multi-scope conflicts require explicit release/control decisions; automatic resolution, intent deadlock solving, orchestration and semantic duplicate-work discovery remain future work.
-
-## Project identity (Stage 2D)
-
-A **Project** identifies a logical codebase. Its **Canonical Workspace** is its canonical absolute root directory. Ownership is `Agent -> TaskAssignment -> Task -> Project`; Agents do not persist a second Project identity. Project identity does not protect shared databases, ports, caches, or external services.
-
-`POST /projects` accepts `name` and `root_path`; `GET /projects` and `GET /projects/{project_id}` return Project metadata. New registration requires an existing directory. Canonical paths resolve relative components and filesystem aliases, with Windows case normalization for comparison. Duplicate and overlapping roots are rejected. The comparison key is internal. There are no Project mutation/deletion endpoints or Project UI.
-
-`POST /tasks` accepts an optional `project_id`; otherwise it uses the repository's canonical context. Existing `POST /agents/start` requests remain unchanged. Both providers resolve the default canonical context before provisioning isolated execution. Child Tasks inherit their parent's Project.
-
-Schema v7 adds Projects and nullable `tasks.project_id`. The v6 schema contains no persisted execution-directory evidence, so migration leaves historical Tasks unresolved without guessing from text, hierarchy, or today's cwd. Such Tasks cannot start or resume a worker or child. All new Tasks receive a Project. Project ensure and Task creation are transactional; failed worker launches leave a valid pending Task without an active assignment, following the existing lifecycle compensation rules.
-
-## Durable Task Workspaces (Stage 2E.1)
-
-Schema v8 adds one `task_workspaces` record per Task, allocated lazily, without fabricating historical filesystem state during migration. The workspace belongs to the Task, never to an Agent. A replacement worker, Reply, Redirect, Decide, Similar, Always, or recovered waiting session reuses that persisted path. Missing, corrupt, wrong-repository, or unresolved workspaces fail safely; execution never falls back to the canonical directory.
-
-Set `CONTROL_CENTER_WORKSPACE_ROOT` to an external storage directory. The default is `%LOCALAPPDATA%/AI Agent Control Center/task-workspaces` on Windows (or `~/.local/share/AI Agent Control Center/task-workspaces` without LOCALAPPDATA). Paths are generated as `<root>/<project-id>/<task-id>` and must not overlap any canonical Project. Do not move or manually replace these directories.
-
-Provisioning requires a Git working-tree root with a usable HEAD. A temporary alternate index captures current source bytes, including staged/unstaged tracked changes and non-ignored untracked files. It creates an internal snapshot commit and a detached linked worktree, without changing the user's branch, HEAD, index, or canonical files. No branch is created. Children snapshot their parent's current Task Workspace, recursively. Independent roots and siblings have separate files. New work on an existing legacy root Task without a workspace snapshots today's canonical source (`legacy_project_snapshot`), not historical state. Child starts use the current parent workspace, provisioning a legacy parent first if necessary.
-
-Ignored files and common environment/secret/build/cache paths are excluded, including tracked `.env*`, private-key files, `node_modules`, `.venv`, and `dist`. This is filename-based filtering, not a secret scanner; linked worktrees still share the repository's Git object database and history. Symbolic links, submodules, and non-Git/unborn repositories are currently unsupported. Source snapshots do not provision runtime dependencies or copy environments. Snapshots read files sequentially; there is no coordinated freeze of a concurrently editing parent.
-
-`GET /tasks/{task_id}/workspace` returns metadata, `null` when not yet provisioned, or 404 for an unknown Task. It never provisions a workspace. There are no mutation/reset/delete/sync APIs or Workspace UI. Stop, completion, waiting, shutdown, and worker replacement retain workspace files. Provisioning and Agent execution alone do not integrate files back into canonical or parent files.
-
-Provisioning uses per-Task synchronization, exclusive filesystem reservation, and database uniqueness. If persistence fails, only a newly created, unrecorded worktree is compensated. An uncertain commit preserves a durably recorded workspace; an unavailable database leaves files untouched. A crash leaving an unrecorded path requires manual recovery instead of silent adoption or deletion. Spawn failure retains valid workspace state. No automatic retention cleanup or resource coordination is implemented.
-
-## Revision and staleness safety (Stage 2E.2)
-
-Workspace freshness uses Git content-tree identities, not HEAD or snapshot-commit timestamps. Roots compare against current canonical source; descendants compare only against their direct parent's current Task Workspace. Current source bytes include staged/unstaged tracked files and relevant untracked additions/removals, using the same exclusions as provisioning. Local Task edits alone are not staleness.
-
-`GET /tasks/{task_id}/workspace` now derives `freshness` (`fresh`, `stale`, or `reconciliation_required`), `base_source_snapshot`, `upstream_snapshot`, `local_snapshot`, `local_dirty`, and a bounded `changed_upstream_files` list plus remaining count. `base_snapshot` remains the durable internal commit. GET does not provision or update workspace files.
-
-Before worker start or same-session continuation, clean stale workspaces refresh in place. Dirty stale workspaces reject continuation with HTTP 409 and retain their files, session, Task status, and assignment history. Redirect checks for divergence before stopping its current process, then rechecks after stopping. If a new race/error occurs after termination, the stopped process is reported truthfully. There is no automatic reconciliation, integration, merge, or rebase.
-
-Refresh uses a per-Task lock, expected base/local/upstream revalidation, an exclusive Task index reservation, and Git's two-tree overwrite checks. An isolated temporary Git directory disables content filters and conversions while preserving captured bytes; no canonical checkout/index/ref is changed. Filesystem and SQLite are not a single transaction: failed persistence after filesystem refresh leaves the old baseline and conservatively requires inspection/reconciliation, never silently starts work. External editors do not participate in application locks; optimistic checks detect observed races, not future writes after a check. No watcher is installed.
-
-Schema v9 adds `agent_source_context`, recording the source baseline acknowledged by each session. Migration from v8 backfills available assignment/workspace baselines without touching Git. After refresh, resumed sessions receive an internal stdin instruction to re-read affected files (up to 50 escaped relative path labels, 240 characters each, plus remaining count). New sessions do not need this warning. Context acknowledgment advances only after prompt delivery succeeds; failed acknowledgment safely repeats the warning on the next continuation. Missing historical context prompts a conservative re-read. The existing symlink/submodule restrictions and workspace retention remain in effect.
-
-## Controlled integration (Stage 2E.3)
-
-`POST /tasks/{task_id}/integrate` accepts no destination controls (an empty body or `{}` is sufficient). The server derives the destination from durable hierarchy: children integrate into their direct parent Task Workspace; roots integrate into their Project canonical workspace. `GET /tasks/{task_id}/integrations` lists source history and `GET /integrations/{integration_id}` inspects a result. Conflicts and obsolete candidates return HTTP 409 with structured history; unsafe prerequisites return sanitized errors. There is no integration UI or automatic Agent action.
-
-Integration compares base **B**, source **L**, and destination **U** content trees. Candidates are prepared outside canonical/workspaces, using per-path three-way comparison and Git's textual three-way merge for files changed on both sides. Delete/modify, incompatible additions, binary conflicts, mode conflicts, and ambiguous directory/file cases are refused. Renames are represented as delete/add, without heuristic rename inference. A source equal to its base records a no-op. Source work and its original workspace baseline are never reset or deleted.
-
-Schema v10 adds integration history, durable active-source/destination protection, snapshots, conflict/change summaries, and a pre-image/result apply journal. Migration from v9 creates no historical integrations. Internal `refs/control-center/integrations/...` retain provenance/recovery objects across Git garbage collection; they are not branches. `validation_status` remains `not_run`: a clean textual result is not semantic validation.
-
-Per-destination/task locks coordinate integrations with worker start/resume. Source and parent destinations must have no live managed writer; integration never stops a worker. Both source and destination snapshots are rechecked immediately before apply. Replacement bytes are fully staged externally and an `applying` journal is committed before file writes. Apply changes only destination working files: it never stages, commits, stashes, changes HEAD, or switches branches. User staging remains byte-for-byte intact, including when canonical is already dirty. Ignored/excluded path collisions are refused.
-
-Each write checks its expected pre-image and uses atomic file replacement. On failure, already-applied paths are restored only if they still match this integration's output; newer external edits are preserved. Multi-file apply is not an atomic filesystem transaction, and external editors do not participate in application locks. An ambiguous failure retains a durable `recovery_required` claim, blocking further integration/unsafe continuation until future recovery tooling handles it.
-
-At backend startup, interrupted preparation is marked failed. Interrupted apply matching the complete before snapshot is failed safely; matching the result, source, and journal can be finalized as applied. Anything else requires recovery. Recovery does not write files. Exact already-applied source snapshots are idempotent against the same logical destination, even after reopening storage.
-
-Parent session context uses the existing durable source-context acknowledgment plus an integration-history cursor. All child-integration paths since the last successful prompt delivery are combined into a bounded re-read instruction; failed delivery retains the warning. Integrations do not modify Task lifecycle or descriptions, resume Agents, or perform AI review/tests/deployment. Sibling staleness follows naturally from the parent's changed content. Source continuation may still require reconciliation because integration deliberately does not refresh/rebase the retained source workspace.
-
-## Requirements
-
-- Python 3.10 or newer.
-- Node.js 22.13+ within the 22.x release line, or Node.js 24+, with npm, for the frontend tooling.
-- For Codex agents, Windows with the npm-installed Codex CLI at `%APPDATA%\npm\codex.cmd`, configured and authenticated for use. The current backend supports Codex agents only through this Windows launcher. Mock agents do not require Codex.
-
-## Start the backend
-
-From the repository root, run in Windows PowerShell:
+In a **setup PowerShell window**, open the parent directory where you want the clone, then run:
 
 ```powershell
+git clone https://github.com/amit22882036-ship-it/ai-agent-control-center.git
+cd .\ai-agent-control-center
 python -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -r backend/requirements.txt
-cd backend
-..\.venv\Scripts\python.exe -m uvicorn app.main:app --reload
+cd .\frontend
+npm ci
 ```
 
-On macOS or Linux:
+For an existing clone, skip cloning and begin from its repository root. The commands use the virtual environment directly; activation is not required. Backend dependencies are currently unpinned, while `npm ci` uses the frontend lockfile.
 
-```sh
-python3 -m venv .venv
-.venv/bin/python -m pip install -r backend/requirements.txt
-cd backend
-../.venv/bin/python -m uvicorn app.main:app --reload
+### Start both components
+
+Open two separate PowerShell windows **in the parent directory containing your `ai-agent-control-center` clone**.
+
+**Backend PowerShell window:**
+
+```powershell
+cd .\ai-agent-control-center\backend
+..\.venv\Scripts\python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
 ```
 
-Open <http://127.0.0.1:8000/health> to check the backend. It returns:
+**Frontend PowerShell window:**
 
-```json
-{"status": "ok"}
+```powershell
+cd .\ai-agent-control-center\frontend
+npm run dev -- --host 127.0.0.1 --port 5173 --strictPort
 ```
 
-Interactive API documentation is available at <http://127.0.0.1:8000/docs>.
+Keep both windows running. Open the [dashboard](http://127.0.0.1:5173), check [backend health](http://127.0.0.1:8000/health), or inspect the [local API documentation](http://127.0.0.1:8000/docs). These links point to your machine, not a hosted demo. The frontend targets port 8000; CORS permits frontend origins `localhost:5173` and `127.0.0.1:5173`.
 
-## Start the frontend
+Choose **New agent**, select **Mock**, and enter a sample assignment to explore the UI. Mock runs simulate progress only. Codex runs use the authenticated CLI and the selected sandbox mode.
 
-Keep the backend running. In a second terminal, starting from the repository root:
+### Local state
 
-```sh
-cd frontend
-npm install
-npm run dev -- --port 5173 --strictPort
+SQLite state lives in ignored `data/control_center.sqlite3`; `CONTROL_CENTER_DB_PATH` can override its location. Task workspaces default to `%LOCALAPPDATA%/AI Agent Control Center/task-workspaces`; `CONTROL_CENTER_WORKSPACE_ROOT` can select an external directory that does not overlap a Project. Workspaces and history are retained after workers stop. Do not commit private runtime state or manually move active worktrees. See [workspace details](docs/workspaces.md).
+
+## Development checks
+
+In a **verification PowerShell window**, open the repository root, then run:
+
+```powershell
+cd .\backend
+..\.venv\Scripts\python.exe -B -m unittest discover -s . -p "test_*.py" -v
+cd ..\frontend
+node --test tests/*.test.mjs
+npm run lint
+npm run build
+npm audit
+cd ..
+git diff --check
+git status
 ```
 
-Open <http://localhost:5173>. The frontend calls the backend at `http://127.0.0.1:8000`; the backend allows frontend requests from `localhost:5173` and `127.0.0.1:5173`.
+Backend tests cover lifecycle, persistence, coordination, and workspace behavior with mocks and temporary repositories. Frontend tests use Node's built-in test runner. These commands do not establish that a live Codex workflow works end to end; relevant behavior changes also need deliberate interactive verification. A successful dependency audit is not a guarantee of application security.
 
-## Use the dashboard
+## Current limitations
 
-1. Select **Mock** or **Codex** under **Agent Type**.
-2. For Codex, choose **Read only** or **Workspace write** under **Sandbox**.
-3. Enter a task and click **Start Agent**. Repeat to run multiple agents.
-4. Click an agent's name to view its status and live output.
-5. Click **Stop** in the details panel to stop a running agent.
+- Windows is the supported real-agent launch target; Codex is the only implemented real provider. Other operating systems are not a verified end-to-end target.
+- There is no authentication, multi-user isolation, or production deployment configuration.
+- Coordination covers managed work, not every process on the machine. Port reservations are released before worker use; actual worker ownership is unverified and a race remains.
+- Git worktrees share repository history. Snapshots exclude common secret/build paths by filename, but are not secret scanners or complete isolation boundaries. Symlinks and submodules are unsupported for Task snapshots.
+- Worker status does not independently verify task correctness. Restart recovery restores durable records without reattaching unknown surviving OS processes.
+- Automatic task decomposition, scheduling, semantic duplicate-work detection, additional providers, and richer Task/Project UI remain future work. They are not current product capabilities.
+
+## Technical documentation
+
+- [Tasks, lifecycle, and dependencies](docs/task-lifecycle.md) — work identity, controls, blockers, and recovery.
+- [Projects, workspaces, and integration](docs/workspaces.md) — snapshots, staleness, conflict handling, and canonical-file protection.
+- [Resource coordination and work intents](docs/resource-coordination.md) — fairness, deadlocks, runtime evidence, and responsibility scopes.
+- [AGENTS.md](AGENTS.md) — repository-wide security, documentation, and development rules for Codex.
