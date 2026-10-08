@@ -6,7 +6,7 @@ for mutations; preview uses the same planner on a read transaction.
 import json
 import re
 from uuid import uuid4
-from . import resources
+from . import resources, work_intents
 
 NOW = "strftime('%Y-%m-%dT%H:%M:%fZ','now')"
 TERMINAL = ('completed', 'canceled')
@@ -114,6 +114,7 @@ def reconcile(db, triggering_claim_id=None, preflight_tasks=()):
                 hierarchical.add((current, source['task_id'], 'child_canceled'))
             current = ancestor['parent_task_id']
     set_reasons(db, 'task_replan_reasons', 'reason_type', 'hierarchy', hierarchical)
+    work_intents.reconcile(db, tasks)
     resources.reconcile(db, tasks, triggering_claim_id, preflight_tasks)
     for record in tasks.values():
         key = record['task_id']

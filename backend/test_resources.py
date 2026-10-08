@@ -670,7 +670,7 @@ class ResourceTests(unittest.TestCase):
         self.assertEqual(AgentStore(self.path).list_tasks(), store.list_tasks())
         self.assertEqual(store.load_agents()[0]['session_id'], key)
         with store._connection() as db:
-            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 16)
+            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 17)
             self.assertEqual(db.execute('PRAGMA foreign_key_check').fetchall(), [])
             self.assertEqual(db.execute('SELECT COUNT(*) FROM resource_claims').fetchone()[0], 0)
 

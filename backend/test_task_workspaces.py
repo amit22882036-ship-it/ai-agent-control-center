@@ -427,7 +427,7 @@ class TaskWorkspaceTests(unittest.TestCase):
             self.assertIsNone(restored.get_task_workspace(self.task_for(key)['task_id']))
             self.assertIsNone(AgentStore(self.path).get_task_workspace(self.task_for(key)['task_id']))
         with restored._connection() as db:
-            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 16)
+            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 17)
             self.assertEqual(db.execute('PRAGMA foreign_key_check').fetchall(), [])
 
 

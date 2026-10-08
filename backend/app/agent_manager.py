@@ -1211,3 +1211,25 @@ def release_resource_claim(task_id, claim_id):
         store.release_resource_claim(task_id, claim_id)
         _settle_tasks([task_id])
     return next(c for c in store.resource_claims(task_id) if c['claim_id'] == claim_id)
+
+
+@_synchronized
+def create_work_intent(task_id, **options):
+    store = _task_store()
+    with task_lock(store, task_id, blocking=False):
+        identifier, changed = store.create_work_intent(task_id, **options)
+        if changed:
+            _settle_coordination()
+        _emit_agent_change(None)
+    return next(i for i in store.work_intents(task_id) if i['intent_id'] == identifier)
+
+
+@_synchronized
+def release_work_intent(task_id, intent_id):
+    store = _task_store()
+    with task_lock(store, task_id, blocking=False):
+        changed = store.release_work_intent(task_id, intent_id)
+        if changed:
+            _settle_coordination()
+        _emit_agent_change(None)
+    return next(i for i in store.work_intents(task_id) if i['intent_id'] == intent_id)

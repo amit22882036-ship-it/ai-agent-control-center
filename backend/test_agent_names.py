@@ -49,7 +49,7 @@ class AgentNameTests(unittest.TestCase):
         self.assertEqual(migrated, before)
         self.assertEqual(AgentStore(self.path).load_agents(), before)
         with closing(sqlite3.connect(self.path)) as db, db:
-            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 16)
+            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 17)
         self.assertEqual(migrated[1]['parent_id'], parent)
         self.assertEqual(migrated[1]['agent_id'], child)
 

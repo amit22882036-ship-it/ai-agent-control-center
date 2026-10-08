@@ -6,7 +6,7 @@ from pathlib import Path
 import sqlite3
 from threading import RLock
 from uuid import uuid4
-from . import work_control, dependencies, resources, resource_coordination, external_resources, runtime_resources
+from . import work_control, dependencies, resources, resource_coordination, external_resources, runtime_resources, work_intents
 from .task_domain import task_title, validate_task_status, validate_end_reason
 from .agent_names import default_display_name, validate_display_color
 from .output_history import OUTPUT_PAGE_SIZE, OUTPUT_MAX_LIMIT
@@ -21,9 +21,9 @@ class AgentStore:
         self._lock = RLock()
         with self._connection() as db:
             version = db.execute('PRAGMA user_version').fetchone()[0]
-            if version not in (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16):
+            if version not in (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17):
                 raise RuntimeError(f'Unsupported control-center database schema version: {version}')
-            if version < 16:
+            if version < 17:
                 db.execute('PRAGMA foreign_keys = OFF')
             if version == 0:
                 if db.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchone():
@@ -179,6 +179,15 @@ class AgentStore:
                         db.execute('BEGIN')
                     runtime_resources.migrate(db)
                     db.execute('PRAGMA user_version = 16')
+                    version = 16
+                if version == 16:
+                    if not db.in_transaction:
+                        db.execute('BEGIN')
+                    work_intents.migrate(db)
+                    if db.execute('PRAGMA foreign_key_check').fetchone():
+                        raise sqlite3.IntegrityError('Invalid work intent migration references')
+                    db.execute('PRAGMA user_version = 17')
+                db.execute('SELECT intent_id,activation_order,holds_authority FROM work_intents LIMIT 0')
                 db.execute('SELECT ownership_id,generation,state FROM resource_ownership LIMIT 0')
                 db.execute('SELECT claim_id,assignment_id,probe_status,probe_checked_at,probe_reason FROM resource_claims LIMIT 0')
                 db.execute('SELECT stop_reason FROM tasks LIMIT 0')
@@ -725,6 +734,31 @@ class AgentStore:
             db.execute('BEGIN IMMEDIATE')
             dependencies.change_edge(db, task_id, source_id, remove)
         return self.get_task(task_id)
+
+    def create_work_intent(self, task_id, **options):
+        with self._connection() as db:
+            db.execute('BEGIN IMMEDIATE')
+            identifier = work_intents.create(db, dependencies.task(db, task_id), **options)
+            changed = work_intents.reconcile(db, {r['task_id']: dict(r) for r in db.execute('SELECT * FROM tasks')})
+            if changed:
+                dependencies.reconcile(db)
+        return identifier, changed
+
+    def release_work_intent(self, task_id, intent_id):
+        with self._connection() as db:
+            db.execute('BEGIN IMMEDIATE')
+            dependencies.task(db, task_id)
+            work_intents.release(db, task_id, intent_id)
+            changed = work_intents.reconcile(db, {r['task_id']: dict(r) for r in db.execute('SELECT * FROM tasks')})
+            if changed:
+                dependencies.reconcile(db)
+        return changed
+
+    def work_intents(self, task_id, *, overlaps=False):
+        with self._connection() as db:
+            db.execute('BEGIN')
+            dependencies.task(db, task_id)
+            return (work_intents.inspect_overlaps if overlaps else work_intents.inspect)(db, task_id)
 
     def create_resource_claim(self, task_id, **options):
         with self._connection() as db:

@@ -535,3 +535,30 @@ def resource_claims_route(task_id: str):
 @app.delete('/tasks/{task_id}/resource-claims/{claim_id}')
 def release_resource_claim_route(task_id: str, claim_id: str):
     return _task_action(lambda: manager.release_resource_claim(task_id, claim_id))
+
+
+class WorkIntentRequest(BaseModel):
+    namespace: str
+    key: str
+    mode: Literal['advisory', 'single_owner'] = 'advisory'
+    delegated_from_intent_id: str | None = None
+
+
+@app.post('/tasks/{task_id}/work-intents')
+def create_work_intent_route(task_id: str, request: WorkIntentRequest):
+    return _task_action(lambda: manager.create_work_intent(task_id, **request.model_dump()))
+
+
+@app.get('/tasks/{task_id}/work-intents')
+def work_intents_route(task_id: str):
+    return {'intents': _task_action(lambda: manager._task_store().work_intents(task_id))}
+
+
+@app.delete('/tasks/{task_id}/work-intents/{intent_id}')
+def release_work_intent_route(task_id: str, intent_id: str):
+    return _task_action(lambda: manager.release_work_intent(task_id, intent_id))
+
+
+@app.get('/tasks/{task_id}/work-overlaps')
+def work_overlaps_route(task_id: str):
+    return {'overlaps': _task_action(lambda: manager._task_store().work_intents(task_id, overlaps=True))}
