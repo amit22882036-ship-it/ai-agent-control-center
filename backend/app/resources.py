@@ -10,6 +10,7 @@ from uuid import uuid4
 
 from .project_domain import canonical_path, contains
 from . import resource_coordination as coordination
+from . import external_resources as external
 
 NOW = "strftime('%Y-%m-%dT%H:%M:%fZ','now')"
 TYPES = ('file_path', 'port', 'database', 'docker_resource', 'generic')
@@ -131,6 +132,8 @@ def end_reason(db, task_id):
     reason = db.execute('SELECT stop_reason FROM tasks WHERE task_id=?', (task_id,)).fetchone()
     if reason and reason[0]:
         return reason[0]
+    if db.execute(f'SELECT 1 FROM task_blockers WHERE task_id=? AND active=1 AND {external.BLOCKER}', (task_id,)).fetchone():
+        return 'external_resource_unavailable'
     return 'resource_conflict' if db.execute(f"SELECT 1 FROM task_blockers WHERE task_id=? AND active=1 AND {MANAGED_BLOCKER}", (task_id,)).fetchone() else 'blocked'
 
 
@@ -149,6 +152,8 @@ def conflicts(a, b):
 
 
 def _state(db, claim, state):
+    if state == 'released':
+        external.clear(db, claim)
     if state != 'waiting':
         coordination.close_wait(db, claim, state)
     if claim['status'] == state:
@@ -159,7 +164,7 @@ def _state(db, claim, state):
     claim['status'] = state
 
 
-def reconcile(db, tasks, triggering_claim_id=None):
+def reconcile(db, tasks, triggering_claim_id=None, preflight_tasks=()):
     """Lifecycle release, atomic bundle acquisition, and source-specific blockers.
 
     Keep physical holders until runtime termination is durably recognized. Never
@@ -168,11 +173,11 @@ def reconcile(db, tasks, triggering_claim_id=None):
     rows = claims(db)
     assignments = {r['assignment_id']: dict(r) for r in db.execute('SELECT * FROM task_assignments')}
     running = {r[0] for r in db.execute("SELECT a.task_id FROM task_assignments a JOIN agents g USING(agent_id) WHERE a.ended_at IS NULL AND g.status='running'")}
-    externally_blocked = {r[0] for r in db.execute(f"SELECT task_id FROM task_blockers WHERE active=1 AND hard=1 AND NOT {MANAGED_BLOCKER} AND NOT {coordination.DEADLOCK}")}
+    externally_blocked = {r[0] for r in db.execute(f"SELECT task_id FROM task_blockers WHERE active=1 AND hard=1 AND NOT {MANAGED_BLOCKER} AND NOT {coordination.DEADLOCK} AND NOT {external.BLOCKER}")}
     suspended = set()
     for key, task in tasks.items():
         if (task['control_intent'] != 'active' or key in externally_blocked
-                or (task['stop_required'] and task['stop_reason'] not in ('resource_conflict', 'resource_deadlock'))
+                or (task['stop_required'] and task['stop_reason'] not in ('resource_conflict', 'resource_deadlock', 'external_resource_unavailable'))
                 or (task['status'] == 'blocked' and task['block_resume_status'] in (None, 'blocked'))):
             suspended.add(key)
     for c in rows:
@@ -189,6 +194,16 @@ def reconcile(db, tasks, triggering_claim_id=None):
                 _state(db, c, 'suspended')
         elif c['mode'] == 'advisory':
             _state(db, c, 'active')
+    # Active claims of a continuing assignment may be bound by its own worker.
+    # A new assignment has no such authority and must freshly check retained
+    # Task-scoped claims. Never use a historical available result as proof.
+    continuing = {a['task_id'] for a in assignments.values() if a['ended_at'] is None}
+    checked = {}
+    for c in rows:
+        if (c['mode'] != 'advisory' and c['status'] != 'released' and c['task_id'] in preflight_tasks
+                and not (c['status'] == 'active' and c['task_id'] in continuing)
+                and (c['status'] == 'active' or c['probe_status'] in ('unavailable', 'unknown'))):
+            checked[c['claim_id']] = external.check(db, c)
     owners = [c for c in rows if c['status'] == 'active']
     groups = {}
     for c in rows:
@@ -203,6 +218,17 @@ def reconcile(db, tasks, triggering_claim_id=None):
         if (not any(conflicts(c, owner) for c in bundle for owner in owners)
                 and not any(o['wait_sequence'] < c['wait_sequence'] and conflicts(c, o)
                             for c in bundle for o in barriers)):
+            # Check every missing member; no partial grants if any probe fails.
+            for c in bundle:
+                if c['claim_id'] not in checked:
+                    already_owned = (c['resource_type'] == 'port' and c['task_id'] in continuing
+                                     and any(o['task_id'] == c['task_id'] and o['mode'] != 'advisory'
+                                             and overlaps(c, o) for o in owners))
+                    # A second declaration of a port already held by this live
+                    # assignment must not bind against the worker's own socket.
+                    checked[c['claim_id']] = already_owned or external.check(db, c)
+            if any(checked.get(c['claim_id']) is False for c in rows if c['task_id'] == bundle[0]['task_id']):
+                continue
             for c in bundle:
                 _state(db, c, 'active')
             owners.extend(bundle)

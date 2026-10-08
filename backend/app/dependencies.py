@@ -89,7 +89,7 @@ def set_reasons(db, table, kind_column, kind, desired):
         db.execute(f'INSERT INTO {table}(id,task_id,{kind_column},source_task_id,reason_code) VALUES (?,?,?,?,?)', (str(uuid4()), key[0], kind, key[1], key[2]))
 
 
-def reconcile(db, triggering_claim_id=None):
+def reconcile(db, triggering_claim_id=None, preflight_tasks=()):
     """Materialize reasons and safe status restoration in the lifecycle transaction."""
     tasks = {r['task_id']: dict(r) for r in db.execute('SELECT * FROM tasks')}
     reasons = set()
@@ -114,7 +114,7 @@ def reconcile(db, triggering_claim_id=None):
                 hierarchical.add((current, source['task_id'], 'child_canceled'))
             current = ancestor['parent_task_id']
     set_reasons(db, 'task_replan_reasons', 'reason_type', 'hierarchy', hierarchical)
-    resources.reconcile(db, tasks, triggering_claim_id)
+    resources.reconcile(db, tasks, triggering_claim_id, preflight_tasks)
     for record in tasks.values():
         key = record['task_id']
         if record['status'] in TERMINAL:

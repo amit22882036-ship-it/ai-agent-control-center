@@ -9,13 +9,19 @@ import unittest
 from unittest.mock import patch
 from uuid import uuid4
 
-from app import agent_manager as manager, resources, dependencies
+from app import agent_manager as manager, resources, dependencies, resource_probes
 from app.persistence import AgentStore
 import test_dependencies
 
 
 class ResourceTests(unittest.TestCase):
-    setUp = test_dependencies.DependencyTests.setUp
+    def setUp(self):
+        test_dependencies.DependencyTests.setUp(self)
+        # Managed-coordination unit fixtures use symbolic developer ports.
+        # Real ephemeral-socket behavior is covered by test_resource_probes.
+        probe = patch.object(resource_probes, 'probe_resource', return_value=resource_probes.Observation('available', 'test_available'))
+        self.probe = probe.start()
+        self.addCleanup(probe.stop)
     tearDown = test_dependencies.DependencyTests.tearDown
     create = test_dependencies.DependencyTests.create
     replacement = test_dependencies.DependencyTests.replacement
@@ -625,6 +631,7 @@ class ResourceTests(unittest.TestCase):
 
     def downgrade_v12(self):
         with closing(sqlite3.connect(self.path)) as db, db:
+            db.execute('DROP INDEX external_resource_blocker')
             db.execute('DROP INDEX resource_blocker_active')
             db.execute('DROP INDEX task_blockers_active')
             for column in ('source_type', 'source_id', 'waiting_claim_id', 'owning_claim_id'):
@@ -660,7 +667,7 @@ class ResourceTests(unittest.TestCase):
         self.assertEqual(AgentStore(self.path).list_tasks(), store.list_tasks())
         self.assertEqual(store.load_agents()[0]['session_id'], key)
         with store._connection() as db:
-            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 14)
+            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 15)
             self.assertEqual(db.execute('PRAGMA foreign_key_check').fetchall(), [])
             self.assertEqual(db.execute('SELECT COUNT(*) FROM resource_claims').fetchone()[0], 0)
 

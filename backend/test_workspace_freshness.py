@@ -325,7 +325,7 @@ class WorkspaceFreshnessTests(unittest.TestCase):
             store = AgentStore(self.path)
         self.assertEqual(store.get_agent_source_context(key), workspace['base_snapshot'])
         with store._connection() as db:
-            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 14)
+            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 15)
 
     def test_refresh_preserves_excluded_files_and_does_not_execute_filters(self):
         root = manager._project_root

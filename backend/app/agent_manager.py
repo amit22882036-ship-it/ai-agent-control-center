@@ -408,12 +408,22 @@ def _upstream_guard(task_id):
         yield
 
 
+def _execution_preflight(task_id, *, pending=False):
+    current = _store.get_task(task_id)
+    if current and any(c['mode'] != 'advisory' and c['status'] != 'released'
+                       for c in _store.resource_claims(task_id)):
+        current = _store.preflight_task(task_id)
+        _emit_agent_change(None)
+    require_active(current, pending=pending)
+    return current
+
+
 def _workspace_session(action):
     @wraps(action)
     def locked(agent_id, *args, **kwargs):
         task_id = _agent_task_id(agent_id)
         if task_id:
-            require_active(_store.get_task(task_id))
+            _execution_preflight(task_id)
         # Nonblocking under the process-state lock avoids lock-order inversions
         # with starts, which do slow Git work outside that broad lock.
         guard = task_lock(_store, task_id, blocking=False) if task_id else nullcontext()
@@ -467,7 +477,7 @@ def _prepare_agent_start(task: str, agent_type: AgentType, sandbox: CodexSandbox
                 if parent_task_id is None:
                     raise ValueError('Parent agent has no associated Task')
                 parent_task = _store.get_task(parent_task_id)
-                require_active(parent_task)
+                parent_task = _execution_preflight(parent_task_id)
                 _task_project_root(parent_task)  # Reject unresolved legacy ownership.
                 origin = 'parent_task_snapshot'
             task_record = _store.create_task(task, parent_task_id=parent_task['task_id'] if parent_task else None,
@@ -478,7 +488,7 @@ def _prepare_agent_start(task: str, agent_type: AgentType, sandbox: CodexSandbox
             task_record = _store.get_task(task_id)
             if task_record is None:
                 raise LookupError('Task not found')
-            require_active(task_record, pending=True)
+            task_record = _execution_preflight(task_id, pending=True)
             if task_record['status'] != 'pending' or _store.get_active_assignment_for_task(task_id):
                 raise ValueError('Only an unassigned pending Task can start an agent')
             parent_task = _store.get_task_parent(task_id)
@@ -500,8 +510,7 @@ def _launch_prepared_agent(task, parent_id, task_id, parent_task, command, agent
         raise RuntimeError('Backend is shutting down; agent start was not performed')
     if _store is not None:
         _store.check_task_integrations(task_id)
-        current = _store.get_task(task_id)
-        require_active(current, pending=True)
+        current = _execution_preflight(task_id, pending=True)
         if current is None or current['status'] != 'pending' or _store.get_active_assignment_for_task(task_id):
             raise ValueError('Only an unassigned pending Task can start an agent')
     provider_task = task
@@ -889,7 +898,7 @@ This instruction authorizes only this check, not permanent or unrestricted auton
 def _waiting_resume_command(agent_id: str) -> str | None:
     task_id = _agent_task_id(agent_id)
     if task_id:
-        require_active(_store.get_task(task_id))
+        _execution_preflight(task_id)
     if agent_id not in agents:
         return None
     if agent_types[agent_id] != "codex":

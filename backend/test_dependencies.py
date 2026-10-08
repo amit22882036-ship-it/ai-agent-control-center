@@ -517,7 +517,7 @@ class DependencyTests(unittest.TestCase):
         self.assertEqual(store.get_task(waiting['task_id'])['replanning_reasons'], [])
         self.assertEqual(store.list_tasks(), AgentStore(self.path).list_tasks())
         with store._connection() as db:
-            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 14)
+            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 15)
             self.assertEqual(db.execute('PRAGMA foreign_key_check').fetchall(), [])
             self.assertEqual(db.execute('SELECT rowid FROM task_assignments').fetchone()[0], 100)
         self.recover()

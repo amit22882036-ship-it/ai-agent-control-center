@@ -406,7 +406,7 @@ class IntegrationTests(unittest.TestCase):
         self.assertEqual(store.get_agent_source_context(key), context)
         self.assertEqual(AgentStore(self.path).get_task(task['task_id']), store.get_task(task['task_id']))
         with store._connection() as db:
-            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 14)
+            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 15)
             self.assertIsNotNone(db.execute("SELECT name FROM sqlite_master WHERE name='integration_destination_active'").fetchone())
 
     def test_apply_journal_is_committed_before_first_file_write(self):

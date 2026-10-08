@@ -426,6 +426,9 @@ class CoordinationTests(unittest.TestCase):
     def downgrade_v13(self):
         """Materialize the actual v13 shape, including the old assignment CHECK."""
         with closing(sqlite3.connect(self.path)) as db, db:
+            db.execute('DROP INDEX external_resource_blocker')
+            for column in ('probe_status', 'probe_checked_at', 'probe_reason'):
+                db.execute('ALTER TABLE resource_claims DROP COLUMN ' + column)
             for table, kind in (('task_blockers', 'blocker_type'), ('task_replan_reasons', 'reason_type')):
                 db.execute(f'DROP INDEX {table}_active')
                 db.execute(f'DROP INDEX {table}_deadlock')
@@ -438,7 +441,7 @@ class CoordinationTests(unittest.TestCase):
             sql = db.execute("SELECT sql FROM sqlite_master WHERE name='task_assignments'").fetchone()[0]
             indexes = [r[0] for r in db.execute("SELECT sql FROM sqlite_master WHERE type='index' AND tbl_name='task_assignments' AND sql IS NOT NULL")]
             sql = re.sub(r'CREATE TABLE "?task_assignments"?', 'CREATE TABLE assignments_v13', sql, count=1)
-            db.execute(sql.replace(",'resource_deadlock'", ''))
+            db.execute(sql.replace(",'resource_deadlock'", '').replace(",'external_resource_unavailable'", ''))
             columns = ','.join('"' + r[1] + '"' for r in db.execute('PRAGMA table_info(task_assignments)'))
             db.execute(f'INSERT INTO assignments_v13(rowid,{columns}) SELECT rowid,{columns} FROM task_assignments')
             db.execute('DROP TABLE task_assignments')
@@ -469,7 +472,7 @@ class CoordinationTests(unittest.TestCase):
             self.assertEqual([r['claim_id'] for r in waits], [one['claim_id'], two['claim_id']])
             self.assertTrue(all(r['waiting_since'] is None for r in waits))
             self.assertEqual(db.execute('SELECT COUNT(*) FROM resource_deadlocks').fetchone()[0], 0)
-            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 14)
+            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 15)
             self.assertEqual(db.execute('PRAGMA foreign_key_check').fetchall(), [])
             coordination.migrate(db)  # Explicit idempotency, including backfill.
             self.assertEqual(len(list(db.execute('SELECT * FROM resource_waits'))), 2)
@@ -491,7 +494,7 @@ class CoordinationTests(unittest.TestCase):
             self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 13)
             self.assertIsNone(db.execute("SELECT name FROM sqlite_master WHERE name='resource_waits'").fetchone())
             self.assertNotIn('deadlock_id', [r[1] for r in db.execute('PRAGMA table_info(task_blockers)')])
-            db.execute('PRAGMA user_version=15')
+            db.execute('PRAGMA user_version=16')
         with self.assertRaises(RuntimeError):
             AgentStore(self.path)
         # Restore valid fixture for teardown only, after asserting rejection.

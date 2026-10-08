@@ -6,7 +6,7 @@ from pathlib import Path
 import sqlite3
 from threading import RLock
 from uuid import uuid4
-from . import work_control, dependencies, resources, resource_coordination
+from . import work_control, dependencies, resources, resource_coordination, external_resources
 from .task_domain import task_title, validate_task_status, validate_end_reason
 from .agent_names import default_display_name, validate_display_color
 from .output_history import OUTPUT_PAGE_SIZE, OUTPUT_MAX_LIMIT
@@ -21,9 +21,9 @@ class AgentStore:
         self._lock = RLock()
         with self._connection() as db:
             version = db.execute('PRAGMA user_version').fetchone()[0]
-            if version not in (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14):
+            if version not in (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15):
                 raise RuntimeError(f'Unsupported control-center database schema version: {version}')
-            if version < 14:
+            if version < 15:
                 db.execute('PRAGMA foreign_keys = OFF')
             if version == 0:
                 if db.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchone():
@@ -165,7 +165,15 @@ class AgentStore:
                     if db.execute('PRAGMA foreign_key_check').fetchone():
                         raise sqlite3.IntegrityError('Invalid coordination migration references')
                     db.execute('PRAGMA user_version = 14')
-                db.execute('SELECT claim_id,assignment_id FROM resource_claims LIMIT 0')
+                    version = 14
+                if version == 14:
+                    if not db.in_transaction:
+                        db.execute('BEGIN')
+                    external_resources.migrate(db)
+                    if db.execute('PRAGMA foreign_key_check').fetchone():
+                        raise sqlite3.IntegrityError('Invalid external resource migration references')
+                    db.execute('PRAGMA user_version = 15')
+                db.execute('SELECT claim_id,assignment_id,probe_status,probe_checked_at,probe_reason FROM resource_claims LIMIT 0')
                 db.execute('SELECT stop_reason FROM tasks LIMIT 0')
                 db.execute('SELECT source_type,source_id,waiting_claim_id,owning_claim_id FROM task_blockers LIMIT 0')
                 db.execute('SELECT wait_sequence,claim_id,closed_at FROM resource_waits LIMIT 0')
@@ -636,7 +644,7 @@ class AgentStore:
             row = db.execute('SELECT * FROM task_assignments WHERE assignment_id=?', (assignment_id,)).fetchone()
             if updated.rowcount:
                 target = task['control_intent'] if task['control_intent'] != 'active' else (reason if reason in ('completed', 'canceled', 'paused', 'blocked') else 'pending')
-                if reason in ('resource_conflict', 'resource_deadlock'):
+                if reason in ('resource_conflict', 'resource_deadlock', 'external_resource_unavailable'):
                     target = 'blocked'
                 if task['status'] == 'blocked' and task['control_intent'] == 'active' and reason not in ('canceled', 'paused', 'completed'):
                     target = 'blocked'
@@ -723,6 +731,15 @@ class AgentStore:
             dependencies.task(db, task_id)
             resources.release(db, task_id, claim_id)
             dependencies.reconcile(db)
+
+    def preflight_task(self, task_id):
+        # Commit observations/gates even when the caller subsequently rejects
+        # execution. Reads never call this method.
+        with self._connection() as db:
+            db.execute('BEGIN IMMEDIATE')
+            dependencies.task(db, task_id)
+            dependencies.reconcile(db, preflight_tasks={task_id})
+        return self.get_task(task_id)
 
     def resource_deadlocks(self, *, task_id=None, deadlock_id=None):
         with self._connection() as db:
