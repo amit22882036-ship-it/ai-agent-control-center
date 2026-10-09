@@ -6,7 +6,7 @@ from pathlib import Path
 import sqlite3
 from threading import RLock
 from uuid import uuid4
-from . import work_control, dependencies, resources, resource_coordination, external_resources, runtime_resources, work_intents
+from . import work_control, dependencies, resources, resource_coordination, external_resources, runtime_resources, work_intents, delegations
 from .task_domain import task_title, validate_task_status, validate_end_reason
 from .agent_names import default_display_name, validate_display_color
 from .output_history import OUTPUT_PAGE_SIZE, OUTPUT_MAX_LIMIT
@@ -21,9 +21,9 @@ class AgentStore:
         self._lock = RLock()
         with self._connection() as db:
             version = db.execute('PRAGMA user_version').fetchone()[0]
-            if version not in (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17):
+            if version not in (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18):
                 raise RuntimeError(f'Unsupported control-center database schema version: {version}')
-            if version < 17:
+            if version < 18:
                 db.execute('PRAGMA foreign_keys = OFF')
             if version == 0:
                 if db.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchone():
@@ -187,6 +187,15 @@ class AgentStore:
                     if db.execute('PRAGMA foreign_key_check').fetchone():
                         raise sqlite3.IntegrityError('Invalid work intent migration references')
                     db.execute('PRAGMA user_version = 17')
+                    version = 17
+                if version == 17:
+                    if not db.in_transaction:
+                        db.execute('BEGIN')
+                    delegations.migrate(db)
+                    if db.execute('PRAGMA foreign_key_check').fetchone():
+                        raise sqlite3.IntegrityError('Invalid delegation migration references')
+                    db.execute('PRAGMA user_version = 18')
+                db.execute('SELECT delegation_id,project_id,parent_task_id,requested_by_agent_id,requested_by_assignment_id,request_key,instruction,status,child_task_id,created_at,updated_at,materialized_at,closed_at FROM delegations LIMIT 0')
                 db.execute('SELECT intent_id,activation_order,holds_authority FROM work_intents LIMIT 0')
                 db.execute('SELECT ownership_id,generation,state FROM resource_ownership LIMIT 0')
                 db.execute('SELECT claim_id,assignment_id,probe_status,probe_checked_at,probe_reason FROM resource_claims LIMIT 0')
@@ -734,6 +743,31 @@ class AgentStore:
             db.execute('BEGIN IMMEDIATE')
             dependencies.change_edge(db, task_id, source_id, remove)
         return self.get_task(task_id)
+
+    def create_delegation(self, parent_task_id, **options):
+        with self._connection() as db:
+            db.execute('BEGIN IMMEDIATE')
+            return delegations.create(db, parent_task_id, **options)
+
+    def attach_delegation_child(self, delegation_id, child_task_id):
+        with self._connection() as db:
+            db.execute('BEGIN IMMEDIATE')
+            return delegations.attach_child(db, delegation_id, child_task_id)
+
+    def transition_delegation(self, delegation_id, status):
+        with self._connection() as db:
+            db.execute('BEGIN IMMEDIATE')
+            return delegations.transition(db, delegation_id, status)
+
+    def get_delegation(self, delegation_id):
+        with self._connection() as db:
+            db.execute('BEGIN')
+            return delegations.get(db, delegation_id)
+
+    def list_delegations(self, parent_task_id):
+        with self._connection() as db:
+            db.execute('BEGIN')
+            return delegations.list_for_task(db, parent_task_id)
 
     def create_work_intent(self, task_id, **options):
         with self._connection() as db:

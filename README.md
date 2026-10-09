@@ -12,7 +12,7 @@ A local workspace for supervising AI coding agents: see what is running, follow 
 
 - Start Mock or Codex agents; choose `read-only` (default) or `workspace-write` for Codex. Mock agents simulate progress and do not execute the supplied task.
 - Follow live status through Server-Sent Events (SSE), with polling fallback, and browse paginated output history.
-- Stop an agent or an existing agent subtree, reply to waiting Codex agents, redirect a running session, or explicitly delegate decisions.
+- Stop an agent or an existing agent subtree, reply to waiting Codex agents, redirect a running session, or respond to explicit agent decision requests.
 - Navigate existing parent/child relationships; search and filter by status and color; edit agent names and inspect name history.
 - Use an attention panel, light/dark/system themes, a resizable inspector, and opt-in browser/Windows notifications.
 - Retain agent metadata and output in SQLite across backend restarts. Recovery does not automatically restart workers.
@@ -25,7 +25,8 @@ A local workspace for supervising AI coding agents: see what is running, follow 
 | Projects and Task workspaces | Canonical Project roots, per-Task Git worktrees, freshness checks, and explicit conflict-aware integration. |
 | Lifecycle and dependencies | Pause/resume/cancel, subtree impact, dependency validation, and durable blockers. |
 | Resource coordination | Managed claims, fair queues, deadlock detection, port preflight, and bounded controller reservations. |
-| Logical work intents | Explicit responsibility scopes, overlap inspection, and hierarchical delegation. |
+| Logical work intents | Explicit responsibility scopes, hierarchical overlap detection, and conflict inspection. |
+| Delegation records | Durable request provenance and validated links to existing Child Tasks; internal primitives and read-only inspection only. |
 
 These foundations have API endpoints but no dedicated Project, Task-lifecycle, integration, resource, or work-intent editors in the current UI. The dashboard uses workspaces when launching agents; it does not yet provide an orchestration interface.
 
@@ -127,6 +128,7 @@ Backend tests cover lifecycle, persistence, coordination, and workspace behavior
 ## Technical documentation
 
 - [Tasks, lifecycle, and dependencies](docs/task-lifecycle.md) — work identity, controls, blockers, and recovery.
+- [Delegation foundation](docs/delegations.md) — provider-independent request identity, provenance, lifecycle, and child-link invariants.
 - [Projects, workspaces, and integration](docs/workspaces.md) — snapshots, staleness, conflict handling, and canonical-file protection.
 - [Resource coordination and work intents](docs/resource-coordination.md) — fairness, deadlocks, runtime evidence, and responsibility scopes.
 - [AGENTS.md](AGENTS.md) — repository-wide security, documentation, and development rules for Codex.

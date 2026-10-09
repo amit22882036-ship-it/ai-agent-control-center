@@ -432,7 +432,7 @@ class RuntimeResourceTests(unittest.TestCase):
             before = {t: db.execute(f'SELECT rowid,* FROM {t} ORDER BY rowid').fetchall() for t in tables}
         AgentStore(self.path)
         with closing(sqlite3.connect(self.path)) as db:
-            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 17)
+            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 18)
             self.assertEqual(db.execute('SELECT * FROM resource_ownership').fetchall(), [])
             for t in tables:
                 self.assertEqual(db.execute(f'SELECT rowid,* FROM {t} ORDER BY rowid').fetchall(), before[t], t)
@@ -450,7 +450,7 @@ class RuntimeResourceTests(unittest.TestCase):
         with closing(sqlite3.connect(self.path)) as db, db:
             self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 15)
             self.assertIsNone(db.execute("SELECT name FROM sqlite_master WHERE name='resource_ownership'").fetchone())
-            db.execute('PRAGMA user_version=18')
+            db.execute('PRAGMA user_version=19')
         with self.assertRaises(RuntimeError):
             AgentStore(self.path)
 

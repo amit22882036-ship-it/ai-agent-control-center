@@ -562,3 +562,13 @@ def release_work_intent_route(task_id: str, intent_id: str):
 @app.get('/tasks/{task_id}/work-overlaps')
 def work_overlaps_route(task_id: str):
     return {'overlaps': _task_action(lambda: manager._task_store().work_intents(task_id, overlaps=True))}
+
+
+@app.get('/tasks/{task_id}/delegations')
+def delegations_route(task_id: str):
+    return {'delegations': _task_action(lambda: manager._task_store().list_delegations(task_id))}
+
+
+@app.get('/delegations/{delegation_id}')
+def delegation_route(delegation_id: str):
+    return _task_action(lambda: manager._task_store().get_delegation(delegation_id))

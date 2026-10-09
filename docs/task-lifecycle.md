@@ -4,7 +4,7 @@ Tasks represent durable work; Agents are workers linked through assignment histo
 
 `POST /tasks` creates work, `GET /tasks` and `GET /tasks/{task_id}` inspect it, `GET /tasks/{task_id}/assignments` exposes assignment history, and `POST /tasks/{task_id}/start-agent` starts a worker for eligible pending work. Explicit child creation uses `POST /agents/{parent_id}/children/start`; the current dashboard displays existing relationships but does not mount a child-creation form. Hierarchy does not automatically infer dependencies or decompose work.
 
-This reference preserves the Stage 2 design and migration details. Stage labels explain how the implementation evolved; later sections refine earlier behavior. The current database schema is v17.
+This reference preserves the Stage 2 design and migration details. Stage labels explain how the implementation evolved; later sections refine earlier behavior. The current database schema is v18; [Delegation records](delegations.md) add request provenance without replacing Task hierarchy or lifecycle.
 
 [Project overview and setup](../README.md) | [Task lifecycle](task-lifecycle.md) | [Workspaces](workspaces.md) | [Resource coordination](resource-coordination.md)
 

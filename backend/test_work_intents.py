@@ -432,7 +432,7 @@ class WorkIntentTests(unittest.TestCase):
             before = {t: db.execute(f'SELECT rowid,{columns[t]} FROM {t} ORDER BY rowid').fetchall() for t in tables}
         AgentStore(self.path)
         with closing(sqlite3.connect(self.path)) as db:
-            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 17)
+            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 18)
             self.assertEqual(db.execute('SELECT * FROM work_intents').fetchall(), [])
             self.assertEqual(db.execute('PRAGMA foreign_key_check').fetchall(), [])
             for table in tables:
@@ -451,7 +451,7 @@ class WorkIntentTests(unittest.TestCase):
             self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 16)
             self.assertIsNone(db.execute("SELECT name FROM sqlite_master WHERE name='work_intents'").fetchone())
             self.assertNotIn('waiting_intent_id', [r[1] for r in db.execute('PRAGMA table_info(task_blockers)')])
-            db.execute('PRAGMA user_version=18')
+            db.execute('PRAGMA user_version=19')
         with self.assertRaises(RuntimeError):
             AgentStore(self.path)
 
