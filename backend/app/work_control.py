@@ -47,7 +47,15 @@ def sync(db, assignment, runtime_status):
     task = db.execute('SELECT * FROM tasks WHERE task_id=?', (assignment['task_id'],)).fetchone()
     intent = task['control_intent']
     blocked = dependencies.hard_blocked(db, task['task_id'])
-    if intent == 'active' and (blocked or task['stop_required']):
+    if ('orchestration_handoff' in task.keys() and task['orchestration_handoff']
+            and intent != 'canceled' and runtime_status != 'running'):
+        # A dormant orchestration continuation is not a user question and not
+        # an ended assignment. Cancel still follows the ordinary termination path.
+        target = 'paused' if intent == 'paused' else 'blocked'
+        end, reason = False, None
+        db.execute("UPDATE agents SET status='stopped',waiting_question=NULL WHERE agent_id=?", (assignment['agent_id'],))
+        db.execute('UPDATE tasks SET stop_required=0,stop_reason=NULL WHERE task_id=?', (task['task_id'],))
+    elif intent == 'active' and (blocked or task['stop_required']):
         target = 'in_progress' if runtime_status == 'running' else 'blocked'
         reason = resources.end_reason(db, task['task_id'])
         end = runtime_status in ('finished', 'stopped')

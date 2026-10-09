@@ -1,4 +1,6 @@
 from . import runtime_resources
+from .codex_events import StructuredCommand, Execution
+from . import delegation_protocol
 from .work_control import require_active
 import os
 import logging
@@ -102,6 +104,8 @@ def _finalize_process(agent_id: str, process: subprocess.Popen | None, allow_aut
         if (process is None or agents.get(agent_id) is not process or agent_statuses[agent_id] != "running"
                 or process.poll() is None or not process.stdout.closed):
             return
+        if _finish_structured(agent_id, process):
+            return
         task_id = _agent_task_id(agent_id)
         controlled = _store.get_task(task_id) if task_id else None
         if controlled and (controlled['control_intent'] != 'active' or controlled['stop_required'] or any(b['hard'] for b in controlled['active_blockers'])):
@@ -196,7 +200,12 @@ def _save_agent(agent_id: str, emit=True) -> bool:
             similar = agent_similar_decisions[agent_id]
             always = agent_always_decisions[agent_id]
             try:
+                context = _structured(agents.get(agent_id))
+                if context and context.origin and not _store.execution_can_save(context.origin):
+                    return False
                 assignment_options = {}
+                if context and context.origin:
+                    assignment_options['execution_origin'] = context.origin
                 pending_task = getattr(cache, 'assignment_task_id', None)
                 if pending_task is not None:
                     assignment_options['assignment_task_id'] = pending_task
@@ -286,7 +295,7 @@ def shutdown_agents() -> list[dict[str, str]]:
     return failures
 
 
-def _codex_command(sandbox: CodexSandbox = "read-only", session_id: str | None = None) -> str:
+def _codex_command(sandbox: CodexSandbox = "read-only", session_id: str | None = None, *, structured=False) -> str:
     if sandbox not in ("read-only", "workspace-write"):
         raise ValueError("Unknown Codex sandbox")
     if os.name != "nt":
@@ -298,12 +307,114 @@ def _codex_command(sandbox: CodexSandbox = "read-only", session_id: str | None =
     cmd = Path(os.environ["SystemRoot"]) / "System32" / "cmd.exe"
     # Only validated CLI options enter cmd.exe; the prompt is sent through stdin.
     prompt_args = f"resume {UUID(session_id)} -" if session_id else "-"
-    command = f'"{launcher}" exec --sandbox {sandbox} --color never --skip-git-repo-check {prompt_args}'
+    command = f'"{launcher}" exec --sandbox {sandbox} --color never --skip-git-repo-check {"--json " if structured else ""}{prompt_args}'
     # cmd /s /c strips the outer quotes, preserving the quoted launcher path.
-    return f'"{cmd}" /d /s /v:off /c "{command}"'
+    result = f'"{cmd}" /d /s /v:off /c "{command}"'
+    return StructuredCommand(result) if structured else result
+
+
+def _structured(process):
+    context = getattr(process, '_control_center_execution', None)
+    return context if isinstance(context, Execution) else None
+
+
+def _bind_execution(agent_id, process):
+    context = _structured(process)
+    if context:
+        context.events.expected_session = agent_sessions[agent_id]
+        context.origin = _task_store().begin_delegation_execution(agent_id, str(uuid4()))
+
+
+def _finish_structured(agent_id, process):
+    """Finalize only after both pipes close, under the existing runtime lock.
+
+    Readers cannot acquire that lock (Stop/Redirect join them). They collect
+    evidence; this finalizer alone performs the durable handoff.
+    """
+    context = _structured(process)
+    if not context:
+        return False
+    if not process.stderr.closed:
+        return True
+    if context.origin and not _task_store().execution_is_current(context.origin):
+        # Ownership may have moved independently of this process. Do not write
+        # even a failure status through the newer assignment.
+        agent_statuses[agent_id] = 'stopped'
+        return True
+    if context.processed:
+        return False
+    context.processed = True
+    try:
+        if context.revoked or _shutting_down or context.origin is None:
+            raise ValueError('Delegation execution was interrupted')
+        message = context.events.finish(process.poll())
+        if delegation_protocol.is_envelope(message):
+            _task_store().accept_delegation_message(context.origin, message,
+                session_id=context.events.session_id, message_id=context.events.message_id)
+            agent_statuses[agent_id] = 'stopped'
+            agent_waiting_questions[agent_id] = None
+            notifications.cancel(agent_id)
+            agent_outputs[agent_id].append('--- Delegation requests recorded; waiting for orchestration ---')
+            _save_agent(agent_id)
+            return True
+        # Waiting/decision control is trusted only from the successful final
+        # assistant message, never from tools, stderr or unfinished turns.
+        for line in message.splitlines():
+            parsed = _ansi.sub('', line).strip()
+            if parsed.startswith(_waiting_marker) and parsed[len(_waiting_marker):].strip():
+                agent_waiting_questions[agent_id] = parsed[len(_waiting_marker):].strip()
+            if parsed == _similar_handled_marker and agent_similar_decisions[agent_id].automatic_question:
+                agent_similar_decisions[agent_id].handled = True
+            if parsed == _always_handled_marker and agent_always_decisions[agent_id].automatic_attempt:
+                agent_always_decisions[agent_id].handled = True
+        return False
+    except (ValueError, LookupError, OSError, sqlite3.Error):
+        # Also safe if commit succeeded but acknowledgement/publication failed:
+        # work_control.sync retains the committed orchestration continuation.
+        logger.exception('Structured execution did not complete normally for %s', agent_id)
+        agent_statuses[agent_id] = 'stopped'
+        agent_waiting_questions[agent_id] = None
+        notifications.cancel(agent_id)
+        agent_outputs[agent_id].append('--- Structured execution stopped; inspect output before retrying ---')
+        _save_agent(agent_id)
+        return True
+
+
+def _read_stderr(agent_id, process):
+    try:
+        with process.stderr as stream:
+            for line in stream:
+                with _data_lock:
+                    if agents.get(agent_id) is process:
+                        agent_outputs[agent_id].append(line.rstrip('\r\n'))
+                        _save_agent(agent_id)
+    except (OSError, ValueError):
+        with _data_lock:
+            _structured(process).events.error = 'Codex stderr stream was interrupted'
+        logger.exception('Could not finish reading Codex stderr')
 
 
 def _read_output(agent_id: str, process: subprocess.Popen) -> None:
+    context = _structured(process)
+    if context:
+        stderr_reader = Thread(target=_read_stderr, args=(agent_id, process), daemon=True)
+        stderr_reader.start()
+        try:
+            with process.stdout as stdout:
+                for line in stdout:
+                    with _data_lock:
+                        if agents.get(agent_id) is not process:
+                            continue
+                        agent_outputs[agent_id].extend(context.events.feed(line))
+                        if context.events.session_id and not context.events.error:
+                            agent_sessions[agent_id] = context.events.session_id
+                        _save_agent(agent_id)
+        except (OSError, ValueError):
+            context.events.error = 'Codex event stream was interrupted'
+            logger.exception('Could not finish reading Codex events')
+        finally:
+            stderr_reader.join()
+        return
     # CLI section state belongs to this reader/process, never to the logical agent.
     section = "other"
     header = True
@@ -350,11 +461,12 @@ def _start_reader(agent_id: str, process: subprocess.Popen) -> None:
 
 
 def _spawn_process(command: str | list[str], agent_type: AgentType, *, cwd) -> subprocess.Popen:
-    return subprocess.Popen(
+    structured = isinstance(command, StructuredCommand)
+    process = subprocess.Popen(
         command,
         stdin=subprocess.PIPE if agent_type == "codex" else None,
         stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
+        stderr=subprocess.PIPE if structured else subprocess.STDOUT,
         text=True,
         bufsize=1,
         encoding="utf-8" if agent_type == "codex" else None,
@@ -362,6 +474,9 @@ def _spawn_process(command: str | list[str], agent_type: AgentType, *, cwd) -> s
         cwd=cwd,
         shell=False,
     )
+    if structured:
+        process._control_center_execution = Execution()
+    return process
 
 
 def _task_project_root(task):
@@ -434,8 +549,13 @@ def _workspace_session(action):
 
 
 def start_agent(task: str, agent_type: AgentType = "mock", sandbox: CodexSandbox = "read-only",
-                parent_id: str | None = None, *, task_id: str | None = None) -> str:
+                parent_id: str | None = None, *, task_id: str | None = None,
+                delegation_protocol_enabled: bool = False) -> str:
+    if delegation_protocol_enabled and (agent_type != 'codex' or _store is None):
+        raise ValueError('Delegation protocol requires a persistent Codex agent')
     prepared = _prepare_agent_start(task, agent_type, sandbox, parent_id, task_id=task_id)
+    if delegation_protocol_enabled:
+        prepared = (*prepared[:4], _codex_command(sandbox, structured=True), prepared[5])
     # Git/filesystem work runs outside the broad process-state lock. SQLite
     # ownership is rechecked when launching after this potentially slow step.
     task_id = prepared[2]
@@ -538,7 +658,8 @@ def _launch_prepared_agent(task, parent_id, task_id, parent_task, command, agent
     try:
         if not _save_agent(agent_id):
             raise RuntimeError('Unable to persist agent start; please retry.')
-    except (ValueError, LookupError, RuntimeError) as exc:
+        _bind_execution(agent_id, process)
+    except (ValueError, LookupError, RuntimeError, OSError, sqlite3.Error) as exc:
         # A concurrent claimant may win after validation but before the commit.
         # Keep the worker tracked and terminate it; never steal its assignment.
         if isinstance(exc, (ValueError, LookupError)):
@@ -700,6 +821,8 @@ def stop_agent(agent_id: str) -> dict[str, str] | None:
     if agent_id not in agents:
         return None
     process = agents[agent_id]
+    if _structured(process):
+        _structured(process).revoked = True
     if process is None or process.poll() is not None:
         if process is not None and agent_statuses[agent_id] == "running" and not process.stdout.closed:
             reader = agent_readers[agent_id]
@@ -783,6 +906,8 @@ def redirect_agent(agent_id: str, instruction: str) -> dict[str, str] | None:
     task_id = _agent_task_id(agent_id)
     if task_id:
         reject_divergence(evaluate_workspace_freshness(_store, task_id))
+    if _structured(process):
+        _structured(process).revoked = True
     _stop_windows_tree(process)
     try:
         return _resume_agent(agent_id, command, instruction, "--- Redirect ---", cwd=cwd)
@@ -930,6 +1055,9 @@ def _resume_agent(agent_id: str, command: str, text: str, marker: str,
                   automatic_question: str | None = None,
                   always_decision: bool = False, automatic_always: bool = False,
                   cwd=None) -> dict[str, str]:
+    execution = _structured(agents[agent_id])
+    if execution and execution.origin and not _task_store().execution_is_current(execution.origin):
+        raise ValueError('Cannot resume a stale execution assignment')
     # Drain the old process before adding the marker or resumed output.
     reader = agent_readers.get(agent_id)
     if reader is not None:
@@ -944,6 +1072,8 @@ def _resume_agent(agent_id: str, command: str, text: str, marker: str,
     if state:
         state['integration_order'] = _store.integration_cursor(task_id)
     invalidation = session_context(_store, agent_id, state) if state else ''
+    if _store and _store.execution_settings(agent_id):
+        command = _codex_command(agent_sandboxes[agent_id], agent_sessions[agent_id], structured=True)
     replacement = _spawn_with_resources(task_id, agent_id, command, "codex", cwd)
     history = [marker, text if history_text is None else history_text]
     with _data_lock:
@@ -968,8 +1098,11 @@ def _resume_agent(agent_id: str, command: str, text: str, marker: str,
     always.handled = False
     notifications.cancel(agent_id)
     _save_agent(agent_id)
-    _start_reader(agent_id, replacement)
     try:
+        try:
+            _bind_execution(agent_id, replacement)
+        finally:
+            _start_reader(agent_id, replacement)
         with replacement.stdin:
             prompt = invalidation + _codex_prompt(text)
             if not always_decision and always.configured:
@@ -979,7 +1112,7 @@ def _resume_agent(agent_id: str, command: str, text: str, marker: str,
                            "When disabled, honor the current request and any explicit current decision "
                            "delegation, but do not apply earlier Always Decide authorization.")
             replacement.stdin.write(prompt)
-    except OSError:
+    except (OSError, ValueError, LookupError, sqlite3.Error):
         try:
             stop_agent(agent_id)
         except (OSError, RuntimeError):
@@ -996,6 +1129,9 @@ def _resume_agent(agent_id: str, command: str, text: str, marker: str,
                 raise RuntimeError("Failed resume output is still closing; please retry.")
             with _data_lock:
                 old_process, old_status, old_question, old_session, old_cache = previous
+                old_execution, failed_execution = _structured(old_process), _structured(replacement)
+                if old_execution and old_execution.origin and failed_execution and failed_execution.origin:
+                    _store.restore_delegation_execution(old_execution.origin, failed_execution.origin)
                 agents[agent_id] = old_process
                 agent_statuses[agent_id] = old_status
                 agent_waiting_questions[agent_id] = old_question

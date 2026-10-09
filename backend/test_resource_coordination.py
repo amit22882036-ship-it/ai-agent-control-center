@@ -472,7 +472,7 @@ class CoordinationTests(unittest.TestCase):
             self.assertEqual([r['claim_id'] for r in waits], [one['claim_id'], two['claim_id']])
             self.assertTrue(all(r['waiting_since'] is None for r in waits))
             self.assertEqual(db.execute('SELECT COUNT(*) FROM resource_deadlocks').fetchone()[0], 0)
-            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 18)
+            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 19)
             self.assertEqual(db.execute('PRAGMA foreign_key_check').fetchall(), [])
             coordination.migrate(db)  # Explicit idempotency, including backfill.
             self.assertEqual(len(list(db.execute('SELECT * FROM resource_waits'))), 2)
@@ -494,7 +494,7 @@ class CoordinationTests(unittest.TestCase):
             self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 13)
             self.assertIsNone(db.execute("SELECT name FROM sqlite_master WHERE name='resource_waits'").fetchone())
             self.assertNotIn('deadlock_id', [r[1] for r in db.execute('PRAGMA table_info(task_blockers)')])
-            db.execute('PRAGMA user_version=19')
+            db.execute('PRAGMA user_version=20')
         with self.assertRaises(RuntimeError):
             AgentStore(self.path)
         # Restore valid fixture for teardown only, after asserting rejection.

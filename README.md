@@ -26,7 +26,7 @@ A local workspace for supervising AI coding agents: see what is running, follow 
 | Lifecycle and dependencies | Pause/resume/cancel, subtree impact, dependency validation, and durable blockers. |
 | Resource coordination | Managed claims, fair queues, deadlock detection, port preflight, and bounded controller reservations. |
 | Logical work intents | Explicit responsibility scopes, hierarchical overlap detection, and conflict inspection. |
-| Delegation records | Durable request provenance and validated links to existing Child Tasks; internal primitives and read-only inspection only. |
+| Delegation requests | Durable provenance, opt-in structured Codex requests, and atomic Parent handoff; no automatic Child creation or execution. |
 
 These foundations have API endpoints but no dedicated Project, Task-lifecycle, integration, resource, or work-intent editors in the current UI. The dashboard uses workspaces when launching agents; it does not yet provide an orchestration interface.
 
@@ -128,7 +128,7 @@ Backend tests cover lifecycle, persistence, coordination, and workspace behavior
 ## Technical documentation
 
 - [Tasks, lifecycle, and dependencies](docs/task-lifecycle.md) — work identity, controls, blockers, and recovery.
-- [Delegation foundation](docs/delegations.md) — provider-independent request identity, provenance, lifecycle, and child-link invariants.
+- [Delegations and request protocol](docs/delegations.md) — request provenance, opt-in Codex JSONL, atomic Parent handoff, and recovery.
 - [Projects, workspaces, and integration](docs/workspaces.md) — snapshots, staleness, conflict handling, and canonical-file protection.
 - [Resource coordination and work intents](docs/resource-coordination.md) — fairness, deadlocks, runtime evidence, and responsibility scopes.
 - [AGENTS.md](AGENTS.md) — repository-wide security, documentation, and development rules for Codex.

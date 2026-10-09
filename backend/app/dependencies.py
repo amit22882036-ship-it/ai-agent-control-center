@@ -72,6 +72,8 @@ def hard_blocked(db, task_id):
 
 def describe(db, row):
     result = dict(row)
+    if result.get('orchestration_handoff'):
+        result['orchestration_handoff'] = json.loads(result['orchestration_handoff'])
     result['active_blockers'] = [dict(r) for r in db.execute('SELECT * FROM task_blockers WHERE task_id=? AND active=1 ORDER BY rowid', (row['task_id'],))]
     result['replanning_reasons'] = [dict(r) for r in db.execute('SELECT * FROM task_replan_reasons WHERE task_id=? AND active=1 ORDER BY rowid', (row['task_id'],))]
     result['replanning_required'] = bool(result['replanning_reasons'])
@@ -114,6 +116,11 @@ def reconcile(db, triggering_claim_id=None, preflight_tasks=()):
                 hierarchical.add((current, source['task_id'], 'child_canceled'))
             current = ancestor['parent_task_id']
     set_reasons(db, 'task_replan_reasons', 'reason_type', 'hierarchy', hierarchical)
+    # This reason is owned by orchestration, not a dependency edge. It survives
+    # Pause/Resume and restart; later milestones will explicitly settle it.
+    set_reasons(db, 'task_blockers', 'blocker_type', 'orchestration',
+                {(t['task_id'], None, 'delegation_requested') for t in tasks.values()
+                 if t.get('orchestration_handoff') and t['status'] not in TERMINAL})
     work_intents.reconcile(db, tasks)
     resources.reconcile(db, tasks, triggering_claim_id, preflight_tasks)
     for record in tasks.values():

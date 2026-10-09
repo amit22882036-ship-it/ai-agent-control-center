@@ -52,8 +52,7 @@ def list_for_task(db, parent_task_id):
         'SELECT * FROM delegations WHERE parent_task_id=? ORDER BY rowid', (parent_task_id,))]
 
 
-def create(db, parent_task_id, *, project_id, requested_by_agent_id,
-           requested_by_assignment_id, request_key, instruction):
+def validate_request(request_key, instruction):
     if (not isinstance(request_key, str) or not 1 <= len(request_key) <= 128
             or request_key != request_key.strip()
             or any(ord(c) < 32 or ord(c) == 127 for c in request_key)):
@@ -61,6 +60,11 @@ def create(db, parent_task_id, *, project_id, requested_by_agent_id,
     if (not isinstance(instruction, str) or not instruction.strip()
             or len(instruction) > 32768 or '\x00' in instruction):
         raise ValueError('Delegation instruction must be non-blank and at most 32768 characters without NUL')
+
+
+def create(db, parent_task_id, *, project_id, requested_by_agent_id,
+           requested_by_assignment_id, request_key, instruction):
+    validate_request(request_key, instruction)
     parent = dependencies.task(db, parent_task_id)
     if not project_id or parent['project_id'] != project_id:
         raise ValueError('Delegation requires the Parent Task Project')
