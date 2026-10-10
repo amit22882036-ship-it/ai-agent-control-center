@@ -44,10 +44,14 @@ def migrate(db):
 
 
 def sync(db, assignment, runtime_status):
+    from . import delegation_orchestration as orchestration
     task = db.execute('SELECT * FROM tasks WHERE task_id=?', (assignment['task_id'],)).fetchone()
+    if orchestration.sync(db, assignment, runtime_status):
+        return
     intent = task['control_intent']
     blocked = dependencies.hard_blocked(db, task['task_id'])
     if ('orchestration_handoff' in task.keys() and task['orchestration_handoff']
+            and orchestration.state(db, task['task_id']) is None
             and intent != 'canceled' and runtime_status != 'running'):
         # A dormant orchestration continuation is not a user question and not
         # an ended assignment. Cancel still follows the ordinary termination path.
@@ -67,6 +71,8 @@ def sync(db, assignment, runtime_status):
             target = task['status']
         reason = 'completed' if runtime_status == 'finished' else 'stopped'
         end = runtime_status in ('finished', 'stopped')
+        if runtime_status == 'finished' and orchestration.outstanding(db, task['task_id']):
+            target, reason = 'blocked', 'blocked'
     else:
         dormant_wait = intent == 'paused' and (task['resume_status'] == 'waiting' or task['block_resume_status'] == 'waiting') and runtime_status == 'waiting'
         target = intent if runtime_status != 'running' else task['status']

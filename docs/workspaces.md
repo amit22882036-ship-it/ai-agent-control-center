@@ -2,7 +2,7 @@
 
 These backend capabilities separate a Project's canonical source from each Task's execution files. The dashboard starts root work in the default repository Project; Project registration and explicit integration are API-only. Both Mock and Codex starts provision Task workspaces. Workspace isolation protects source organization, but is not a complete security boundary: linked worktrees share Git history, and external resources require separate coordination.
 
-This reference preserves the Stage 2 design and migration details. Stage labels explain how the implementation evolved; later sections refine earlier behavior. The current database schema is v20; [Delegation materialization](delegations.md) reuses this Task-owned workspace infrastructure under explicit backend activation.
+This reference preserves the Stage 2 design and migration details. Stage labels explain how the implementation evolved; later sections refine earlier behavior. The current database schema is v22; [Delegation materialization](delegations.md) reuses this Task-owned workspace infrastructure under explicit backend activation.
 
 [Project overview and setup](../README.md) | [Task lifecycle](task-lifecycle.md) | [Workspaces](workspaces.md) | [Resource coordination](resource-coordination.md)
 
@@ -57,3 +57,5 @@ Each write checks its expected pre-image and uses atomic file replacement. On fa
 At backend startup, interrupted preparation is marked failed. Interrupted apply matching the complete before snapshot is failed safely; matching the result, source, and journal can be finalized as applied. Anything else requires recovery. Recovery does not write files. Exact already-applied source snapshots are idempotent against the same logical destination, even after reopening storage.
 
 Parent session context uses the existing durable source-context acknowledgment plus an integration-history cursor. All child-integration paths since the last successful prompt delivery are combined into a bounded re-read instruction; failed delivery retains the warning. Integrations do not modify Task lifecycle or descriptions, resume Agents, or perform AI review/tests/deployment. Sibling staleness follows naturally from the parent's changed content. Source continuation may still require reconciliation because integration deliberately does not refresh/rebase the retained source workspace.
+
+Stage 2H.4's separately activated Hybrid service calls this same integration machinery for completed Child results. It waits for quiet source/Parent workspaces, retains exact source evidence across retries, refuses automatic file-changing integration for a read-only Parent, and references the existing applied/noop journal before offering successful acknowledgement. The orchestration caller controls later session resume and review; integration itself still owns no Worker lifecycle. It never automatically integrates the Parent into the canonical Project.

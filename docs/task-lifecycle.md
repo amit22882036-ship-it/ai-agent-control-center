@@ -4,7 +4,7 @@ Tasks represent durable work; Agents are workers linked through assignment histo
 
 `POST /tasks` creates work, `GET /tasks` and `GET /tasks/{task_id}` inspect it, `GET /tasks/{task_id}/assignments` exposes assignment history, and `POST /tasks/{task_id}/start-agent` starts a worker for eligible pending work. Explicit child creation uses `POST /agents/{parent_id}/children/start`; the current dashboard displays existing relationships but does not mount a child-creation form. Hierarchy does not automatically infer dependencies or decompose work.
 
-This reference preserves the Stage 2 design and migration details. Stage labels explain how the implementation evolved; later sections refine earlier behavior. The current database schema is v20; [Delegation records](delegations.md) add request provenance without replacing Task hierarchy or lifecycle.
+This reference preserves the Stage 2 design and migration details. Stage labels explain how the implementation evolved; later sections refine earlier behavior. The current database schema is v22; [Delegation records](delegations.md) add request provenance without replacing Task hierarchy or lifecycle.
 
 [Project overview and setup](../README.md) | [Task lifecycle](task-lifecycle.md) | [Workspaces](workspaces.md) | [Resource coordination](resource-coordination.md)
 
@@ -43,3 +43,9 @@ Pause/Cancel now apply to the target and all unfinished descendants, preserving 
 Multi-worker application is phased: commit intent/provenance/blockers, stop and drain workers outside SQL transactions, then persist completion or `recovery_required`. A failed stop retains truthful running state and execution gates; other workers still settle. The API returns an unavailable error on runtime/storage failure; inspect Tasks and operation records and retry the same action. A dependency stop failure exposes `stop_required` and can be retried by repeating the edge operation. Recovery uses durable intent and the existing no-reattachment policy; it preserves graph/history and never spawns workers. It does not claim to terminate or reattach an unknown OS process surviving an abrupt backend crash.
 
 Workspace isolation, freshness, integration conflicts, canonical/index protection and session-context checks remain separate and unchanged. There is no frontend dependency editor or autonomous replanning.
+
+## Hybrid orchestration lifecycle (Stage 2H.4)
+
+Separately enabled [Hybrid Delegations](delegations.md#hybrid-parent-execution-stage-2h4) retain the Parent assignment while waiting for Child results. Explicitly admitted independent/review/final continuations reuse the same Agent and session with a fresh execution generation. Existing Task statuses remain unchanged: orchestration waits are blocked with reason metadata, independent work is in progress, and genuine user questions remain waiting.
+
+Finishing an independent Worker turn cannot complete a Parent with unresolved required Delegations. Both Worker-to-Task synchronization and explicit assignment completion enforce this invariant. Successful Child execution, workspace integration, Parent acknowledgement and overall Parent completion are distinct transitions. Rejection/cancellation does not silently satisfy required work; only accepted results allow the final Parent completion path. Stop revokes follow-up continuation, Pause/Resume keeps existing ownership semantics, and uncertain launches remain blocked for inspection. Startup never schedules execution.

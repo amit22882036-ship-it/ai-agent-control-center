@@ -47,6 +47,10 @@ def get(db, delegation_id):
     if db.execute("SELECT 1 FROM sqlite_master WHERE name='delegation_materializations'").fetchone():
         progress = db.execute('SELECT * FROM delegation_materializations WHERE delegation_id=?', (delegation_id,)).fetchone()
         result['materialization'] = dict(progress) if progress else None
+    if db.execute("SELECT 1 FROM sqlite_master WHERE name='delegation_results'").fetchone():
+        rows = [dict(r) for r in db.execute('SELECT * FROM delegation_results WHERE delegation_id=? ORDER BY rowid', (delegation_id,))]
+        if rows:
+            result['results'] = rows
     return result
 
 
@@ -120,6 +124,6 @@ def transition(db, delegation_id, status):
     if status == 'canceled' and record['status'] == 'canceled':
         return record
     if status != 'canceled' or record['status'] not in ('requested', 'materialized'):
-        raise ValueError('Unsupported Delegation transition; result delivery is not implemented')
+        raise ValueError('Unsupported direct Delegation transition; results and acknowledgements require the authorized orchestration services')
     db.execute(f"UPDATE delegations SET status='canceled',closed_at={NOW},updated_at={NOW} WHERE delegation_id=?", (delegation_id,))
     return get(db, delegation_id)

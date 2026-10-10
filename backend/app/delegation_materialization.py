@@ -5,10 +5,10 @@ TaskAssignments remain authoritative. No process/filesystem work occurs in the
 transaction helpers; the manager supplies the existing launch implementation.
 """
 from dataclasses import dataclass
-import json
 from uuid import uuid4
 
 from . import delegations, dependencies, work_control, work_intents
+from . import delegation_orchestration, delegation_rounds
 from .task_domain import task_title
 
 NOW = delegations.NOW
@@ -54,7 +54,7 @@ def authorize(db, identifier, limits=DEFAULT_LIMITS):
     parent = dependencies.task(db, record['parent_task_id'])
     if record['status'] not in ('requested', 'materialized') or parent['project_id'] != record['project_id']:
         raise ValueError('Delegation is canceled, closed or belongs to a different Project')
-    receipt = json.loads(parent['orchestration_handoff']) if parent['orchestration_handoff'] else {}
+    receipt = delegation_rounds.receipt_for(db, parent['task_id'], identifier)
     if (receipt.get('reason') != 'delegation_requested' or identifier not in receipt.get('delegation_ids', ())
             or {'request_key': record['request_key'], 'instruction': record['instruction']} not in receipt.get('requests', ())):
         raise ValueError('Delegation has no matching accepted Parent handoff')
@@ -62,13 +62,14 @@ def authorize(db, identifier, limits=DEFAULT_LIMITS):
     # Authority belongs to the receipt's current assignment, not that old Worker.
     agent = db.execute('SELECT * FROM agents WHERE agent_id=?', (receipt.get('agent_id'),)).fetchone()
     assignment = db.execute('SELECT * FROM task_assignments WHERE assignment_id=?', (receipt.get('assignment_id'),)).fetchone()
+    hybrid = delegation_orchestration.materialization_owner(db, parent, agent, receipt)
     if (not agent or not agent['child_materialization_enabled'] or not agent['delegation_protocol_enabled']
-            or agent['execution_generation'] != receipt.get('generation')
-            or agent['session_id'] != receipt.get('session_id') or agent['status'] != 'stopped'
+            or (not hybrid and agent['execution_generation'] != receipt.get('generation'))
+            or agent['session_id'] != receipt.get('session_id') or (not hybrid and agent['status'] != 'stopped')
             or not assignment or assignment['ended_at'] is not None
             or assignment['task_id'] != parent['task_id'] or assignment['agent_id'] != agent['agent_id']):
         raise ValueError('Materialization activation or Parent handoff ownership is no longer current')
-    if parent['control_intent'] != 'active' or parent['status'] != 'blocked' or parent['stop_required']:
+    if parent['control_intent'] != 'active' or (not hybrid and parent['status'] != 'blocked') or parent['stop_required']:
         raise ValueError('Parent control state prevents materialization')
     if db.execute("""SELECT 1 FROM task_blockers WHERE task_id=? AND active=1 AND hard=1
         AND NOT(blocker_type='orchestration' AND reason_code='delegation_requested')""", (parent['task_id'],)).fetchone():
@@ -104,7 +105,7 @@ def attach(db, identifier, limits=DEFAULT_LIMITS):
         if inspect(db, identifier) is None:
             raise ValueError('Externally attached Child requires inspection; cannot adopt execution')
         return record
-    count = db.execute('SELECT COUNT(*) FROM tasks WHERE parent_task_id=?', (parent['task_id'],)).fetchone()[0]
+    count = db.execute("SELECT COUNT(*) FROM tasks WHERE parent_task_id=? AND status NOT IN ('completed','canceled')", (parent['task_id'],)).fetchone()[0]
     if count >= limits.children_per_parent:
         raise ValueError('Parent Child capacity reached; request retained')
     # The public Task API keeps its 20000-character limit. This internal path

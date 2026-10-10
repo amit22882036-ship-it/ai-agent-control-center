@@ -74,6 +74,11 @@ def describe(db, row):
     result = dict(row)
     if result.get('orchestration_handoff'):
         result['orchestration_handoff'] = json.loads(result['orchestration_handoff'])
+        from . import delegation_orchestration, delegation_rounds
+        current = delegation_orchestration.state(db, row['task_id'])
+        if current:
+            result['delegation_continuation'] = current
+        result['delegation_rounds'] = delegation_rounds.history(db, row['task_id'])
     result['active_blockers'] = [dict(r) for r in db.execute('SELECT * FROM task_blockers WHERE task_id=? AND active=1 ORDER BY rowid', (row['task_id'],))]
     result['replanning_reasons'] = [dict(r) for r in db.execute('SELECT * FROM task_replan_reasons WHERE task_id=? AND active=1 ORDER BY rowid', (row['task_id'],))]
     result['replanning_required'] = bool(result['replanning_reasons'])
@@ -118,9 +123,11 @@ def reconcile(db, triggering_claim_id=None, preflight_tasks=()):
     set_reasons(db, 'task_replan_reasons', 'reason_type', 'hierarchy', hierarchical)
     # This reason is owned by orchestration, not a dependency edge. It survives
     # Pause/Resume and restart; later milestones will explicitly settle it.
+    from . import delegation_orchestration
     set_reasons(db, 'task_blockers', 'blocker_type', 'orchestration',
                 {(t['task_id'], None, 'delegation_requested') for t in tasks.values()
-                 if t.get('orchestration_handoff') and t['status'] not in TERMINAL})
+                 if t.get('orchestration_handoff') and t['status'] not in TERMINAL
+                 and delegation_orchestration.blocks(db, t['task_id'])})
     work_intents.reconcile(db, tasks)
     resources.reconcile(db, tasks, triggering_claim_id, preflight_tasks)
     for record in tasks.values():
@@ -233,6 +240,9 @@ def begin_control(db, root_id, intent):
         db.execute(f"UPDATE task_control_operations SET status='applying',impact=?,failures='[]',updated_at={NOW} WHERE operation_id=?", (json.dumps(plan), identifier))
     for key in plan['affected_task_ids']:
         record = task(db, key)
+        from . import delegation_orchestration
+        if delegation_orchestration.state(db, key):
+            delegation_orchestration.revoke(db, key, 'Parent work control ' + intent)
         db.execute('INSERT OR IGNORE INTO task_control_members(operation_id,task_id) VALUES (?,?)', (identifier, key))
         restore = record['resume_status'] if record['control_intent'] == 'paused' else (record['status'] if record['status'] in ('waiting', 'blocked') else 'pending')
         db.execute(f'UPDATE tasks SET control_intent=?,resume_status=?,updated_at={NOW} WHERE task_id=?', (intent, restore if intent == 'paused' else None, key))
@@ -276,6 +286,9 @@ def resume(db, root_id):
         if not owned:
             target = current['resume_status'] or 'pending'
             db.execute(f"UPDATE tasks SET control_intent='active',status=?,resume_status=NULL,updated_at={NOW} WHERE task_id=?", (target, key))
+            from . import delegation_orchestration
+            if delegation_orchestration.state(db, key):
+                delegation_orchestration.resume_control(db, key)
     reconcile(db)
     return operation['operation_id'] if operation else None
 

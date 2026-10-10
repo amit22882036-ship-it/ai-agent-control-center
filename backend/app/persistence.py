@@ -11,6 +11,7 @@ from .task_domain import task_title, validate_task_status, validate_end_reason
 from .agent_names import default_display_name, validate_display_color
 from .output_history import OUTPUT_PAGE_SIZE, OUTPUT_MAX_LIMIT
 from .project_domain import DEFAULT_ROOT, canonical_path, contains, project_name
+from . import delegation_orchestration, delegation_rounds
 
 
 class AgentStore:
@@ -21,7 +22,7 @@ class AgentStore:
         self._lock = RLock()
         with self._connection() as db:
             version = db.execute('PRAGMA user_version').fetchone()[0]
-            if version not in range(21):
+            if version not in range(23):
                 raise RuntimeError(f'Unsupported control-center database schema version: {version}')
             if version < 18:
                 db.execute('PRAGMA foreign_keys = OFF')
@@ -207,6 +208,26 @@ class AgentStore:
                         db.execute('BEGIN IMMEDIATE')
                     delegation_materialization.migrate(db)
                     db.execute('PRAGMA user_version = 20')
+                    version = 20
+                if version == 20:
+                    if not db.in_transaction:
+                        db.execute('BEGIN IMMEDIATE')
+                    delegation_orchestration.migrate(db)
+                    db.execute('PRAGMA user_version = 21')
+                    version = 21
+                if version == 21:
+                    if not db.in_transaction:
+                        db.execute('BEGIN IMMEDIATE')
+                    delegation_rounds.migrate(db)
+                    if db.execute('PRAGMA foreign_key_check').fetchone():
+                        raise sqlite3.IntegrityError('Invalid delegation round migration references')
+                    db.execute('PRAGMA user_version = 22')
+                db.execute('SELECT round_id,receipt,not_before FROM delegation_rounds LIMIT 0')
+                db.execute('SELECT round_id,delegation_id FROM delegation_round_requests LIMIT 0')
+                db.execute('SELECT hybrid_delegation_enabled FROM agents LIMIT 0')
+                db.execute('SELECT current_generation FROM delegation_continuations LIMIT 0')
+                db.execute('SELECT result_id FROM delegation_results LIMIT 0')
+                db.execute('SELECT delivery_id FROM delegation_deliveries LIMIT 0')
                 db.execute('SELECT child_materialization_enabled FROM agents LIMIT 0')
                 db.execute('SELECT delegation_id,phase,attempts,launch_agent_id,last_error FROM delegation_materializations LIMIT 0')
                 db.execute('SELECT execution_generation,delegation_protocol_enabled FROM agents LIMIT 0')
@@ -680,6 +701,8 @@ class AgentStore:
             task = db.execute('SELECT * FROM tasks WHERE task_id=?', (original['task_id'],)).fetchone() if original else None
             if task and task['control_intent'] != 'active':
                 reason = task['control_intent']
+            elif task and reason == 'completed' and delegation_orchestration.outstanding(db, task['task_id']):
+                raise ValueError('Required Delegations remain unresolved')
             elif task and (task['stop_required'] or dependencies.hard_blocked(db, task['task_id'])):
                 reason = resources.end_reason(db, task['task_id'])
             updated = db.execute("""UPDATE task_assignments SET ended_at=strftime('%Y-%m-%dT%H:%M:%fZ','now'), ended_reason=?
@@ -708,6 +731,7 @@ class AgentStore:
         with self._connection() as db:
             db.execute('BEGIN IMMEDIATE')
             delegation_materialization.recover(db)
+            delegation_orchestration.recover(db)
             runtime_resources.recover(db)
             for agent in db.execute("SELECT agent_id FROM agents WHERE status='running'").fetchall():
                 key = agent['agent_id']
@@ -737,6 +761,8 @@ class AgentStore:
 
             dependencies.reconcile(db)
             dependencies.finish_operations(db)
+            for row in db.execute('SELECT task_id FROM delegation_continuations').fetchall():
+                delegation_orchestration.collect(db, row[0])
 
     def request_work_control(self, task_id, intent):
         with self._connection() as db:
@@ -765,7 +791,13 @@ class AgentStore:
     def execution_settings(self, agent_id):
         with self._connection() as db:
             row = db.execute('SELECT delegation_protocol_enabled FROM agents WHERE agent_id=?', (agent_id,)).fetchone()
-            return bool(row and row[0])
+            return bool(row and (row[0] or self._hybrid_child(db, agent_id)))
+
+    @staticmethod
+    def _hybrid_child(db, agent_id):
+        return db.execute('''SELECT 1 FROM task_assignments a JOIN delegations d ON d.child_task_id=a.task_id
+            JOIN delegation_continuations c ON c.task_id=d.parent_task_id
+            WHERE a.agent_id=? AND a.ended_at IS NULL''', (agent_id,)).fetchone() is not None
 
     def execution_is_current(self, origin):
         with self._connection() as db:
@@ -791,7 +823,12 @@ class AgentStore:
             work_control.require_active(task, db=db)
             if not task['project_id']:
                 raise ValueError('Delegation execution requires resolved Project ownership')
-            db.execute('UPDATE agents SET execution_generation=?,delegation_protocol_enabled=1 WHERE agent_id=?', (generation, agent_id))
+            previous = db.execute('SELECT execution_generation FROM agents WHERE agent_id=?', (agent_id,)).fetchone()[0]
+            delegation_orchestration.bind(db, task['task_id'], previous, generation)
+            # Structured Child result validation is not permission to recursively
+            # request Delegations. Existing opt-in Parents retain that permission.
+            enabled = 0 if self._hybrid_child(db, agent_id) else 1
+            db.execute('UPDATE agents SET execution_generation=?,delegation_protocol_enabled=? WHERE agent_id=?', (generation, enabled, agent_id))
             return delegation_handoff.ExecutionOrigin(agent_id, assignment['assignment_id'],
                        task['task_id'], task['project_id'], generation)
 
@@ -800,7 +837,7 @@ class AgentStore:
             db.execute('BEGIN IMMEDIATE')
             return delegation_handoff.accept(db, origin, message, session_id=session_id, message_id=message_id)
 
-    def restore_delegation_execution(self, previous, failed):
+    def restore_delegation_execution(self, previous, failed, previous_hybrid=None):
         with self._connection() as db:
             db.execute('BEGIN IMMEDIATE')
             changed = db.execute('''UPDATE agents SET execution_generation=? WHERE agent_id=? AND execution_generation=?
@@ -808,6 +845,16 @@ class AgentStore:
                 (previous.generation, previous.agent_id, failed.generation, previous.assignment_id, previous.agent_id)).rowcount
             if changed != 1:
                 raise ValueError('Failed resume no longer owns its assignment')
+            if previous_hybrid:
+                task = dependencies.task(db, previous.parent_task_id)
+                current = delegation_orchestration.state(db, previous.parent_task_id)
+                if task['control_intent'] != 'active' or current['current_generation'] != failed.generation:
+                    raise ValueError('Failed Hybrid resume can no longer restore prior control')
+                db.execute('UPDATE delegation_continuations SET current_generation=?,phase=?,mode=?,last_error=? WHERE task_id=?',
+                    (previous.generation, previous_hybrid['phase'], previous_hybrid['mode'], previous_hybrid['last_error'], previous.parent_task_id))
+                if current['delivery_id']:
+                    db.execute('UPDATE delegation_deliveries SET generation=? WHERE delivery_id=?', (previous.generation,current['delivery_id']))
+                dependencies.reconcile(db)
 
     def create_delegation(self, parent_task_id, **options):
         with self._connection() as db:
@@ -945,7 +992,7 @@ class AgentStore:
             finally:
                 db.close()
 
-    def save_agent(self, record, output_lines=(), output_entries=None, assignment_task_id=None, execution_origin=None):
+    def save_agent(self, record, output_lines=(), output_entries=None, assignment_task_id=None, execution_origin=None, completion_evidence=None):
         """Commit metadata and any new output together, retaining creation order."""
         values = dict(record)
         values.setdefault('display_name', default_display_name(values['task']))
@@ -1017,6 +1064,8 @@ class AgentStore:
                                               (record['agent_id'], seq)).fetchone()[0]
                         if existing != text:
                             raise sqlite3.IntegrityError('Output sequence collision with different text')
+            if completion_evidence:
+                delegation_orchestration.record_exit(db, record['agent_id'], completion_evidence)
 
     def name_history(self, agent_id):
         with self._connection() as db:
