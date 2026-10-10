@@ -1,4 +1,4 @@
-from . import runtime_resources
+from . import runtime_resources, dependencies
 from .codex_events import StructuredCommand, Execution
 from . import delegation_protocol
 from .work_control import require_active
@@ -13,7 +13,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from functools import wraps
 from contextlib import nullcontext, contextmanager, ExitStack
-from threading import RLock, Thread
+from threading import RLock, Thread, Timer
 from typing import Literal
 from uuid import UUID, uuid4
 
@@ -25,6 +25,7 @@ from .workspace_freshness import evaluate_workspace_freshness, ensure_workspace_
 from .project_domain import canonical_path
 from .realtime import changes
 from .output_history import OutputCache, RECENT_OUTPUT_LIMIT, OUTPUT_PAGE_SIZE, OUTPUT_MAX_LIMIT
+from . import delegation_materialization
 
 logger = logging.getLogger(__name__)
 
@@ -159,6 +160,7 @@ def _finalize_process(agent_id: str, process: subprocess.Popen | None, allow_aut
         agent_statuses[agent_id] = status
         _save_agent(agent_id)
         _settle_coordination()
+        _wake_delegation_siblings(agent_id)
         try:
             notifications.transition(agent_id, status, agent_tasks[agent_id])
         except Exception:
@@ -356,6 +358,10 @@ def _finish_structured(agent_id, process):
             notifications.cancel(agent_id)
             agent_outputs[agent_id].append('--- Delegation requests recorded; waiting for orchestration ---')
             _save_agent(agent_id)
+            with _task_store()._connection() as db:
+                enabled = db.execute('SELECT child_materialization_enabled FROM agents WHERE agent_id=?', (agent_id,)).fetchone()[0]
+            if enabled:
+                _schedule_materialization(context.origin.parent_task_id)
             return True
         # Waiting/decision control is trusted only from the successful final
         # assistant message, never from tools, stderr or unfinished turns.
@@ -550,7 +556,10 @@ def _workspace_session(action):
 
 def start_agent(task: str, agent_type: AgentType = "mock", sandbox: CodexSandbox = "read-only",
                 parent_id: str | None = None, *, task_id: str | None = None,
-                delegation_protocol_enabled: bool = False) -> str:
+                delegation_protocol_enabled: bool = False,
+                child_materialization_enabled: bool = False, _materialization=None) -> str:
+    if child_materialization_enabled and not delegation_protocol_enabled:
+        raise ValueError('Child materialization requires explicit delegation protocol activation')
     if delegation_protocol_enabled and (agent_type != 'codex' or _store is None):
         raise ValueError('Delegation protocol requires a persistent Codex agent')
     prepared = _prepare_agent_start(task, agent_type, sandbox, parent_id, task_id=task_id)
@@ -569,7 +578,9 @@ def start_agent(task: str, agent_type: AgentType = "mock", sandbox: CodexSandbox
         cwd = _execution_workspace(task_id, prepared[5])
         if _store is not None:
             ensure_workspace_current(_store, task_id)
-        return _launch_prepared_agent(*prepared[:5], agent_type, sandbox, cwd)
+        return _launch_prepared_agent(*prepared[:5], agent_type, sandbox, cwd,
+                                      materialization=_materialization,
+                                      child_materialization_enabled=child_materialization_enabled)
 
 
 @_synchronized
@@ -626,7 +637,8 @@ def _prepare_agent_start(task: str, agent_type: AgentType, sandbox: CodexSandbox
 
 
 @_synchronized
-def _launch_prepared_agent(task, parent_id, task_id, parent_task, command, agent_type, sandbox, cwd):
+def _launch_prepared_agent(task, parent_id, task_id, parent_task, command, agent_type, sandbox, cwd,
+                           *, materialization=None, child_materialization_enabled=False):
     if _shutting_down:
         raise RuntimeError('Backend is shutting down; agent start was not performed')
     if _store is not None:
@@ -640,7 +652,20 @@ def _launch_prepared_agent(task, parent_id, task_id, parent_task, command, agent
                          f"Your assigned contribution:\n{task}\n\n"
                          "Work specifically on your assigned contribution in support of the parent work.")
     agent_id = str(uuid4())
-    process = _spawn_with_resources(task_id, agent_id, command, agent_type, cwd)
+    if _store is not None:
+        with _store._connection() as db:
+            db.execute('BEGIN IMMEDIATE')
+            if materialization:
+                identifier, limits = materialization
+                record, _, provider = delegation_materialization.authorize(db, identifier, limits)
+                if record['child_task_id'] != task_id or provider['agent_type'] != agent_type or (agent_type == 'codex' and provider['sandbox'] != sandbox):
+                    raise ValueError('Child launch provider, permissions or ownership changed')
+                db.execute("UPDATE delegation_materializations SET phase='workspace_ready' WHERE delegation_id=? AND phase='attached'", (identifier,))
+                agent_id, _ = delegation_materialization.admit(db, identifier, limits)
+            else:
+                delegation_materialization.check_worker(db, task_id)
+    process = _spawn_with_resources(task_id, agent_id, command, agent_type, cwd,
+                                   materialization=materialization)
     agent_statuses[agent_id] = "running"
     agent_parents[agent_id] = parent_id
     agent_outputs[agent_id] = OutputCache()
@@ -659,6 +684,9 @@ def _launch_prepared_agent(task, parent_id, task_id, parent_task, command, agent
         if not _save_agent(agent_id):
             raise RuntimeError('Unable to persist agent start; please retry.')
         _bind_execution(agent_id, process)
+        if child_materialization_enabled:
+            with _store._connection() as db:
+                db.execute('UPDATE agents SET child_materialization_enabled=1 WHERE agent_id=?', (agent_id,))
     except (ValueError, LookupError, RuntimeError, OSError, sqlite3.Error) as exc:
         # A concurrent claimant may win after validation but before the commit.
         # Keep the worker tracked and terminate it; never steal its assignment.
@@ -690,9 +718,20 @@ def _launch_prepared_agent(task, parent_id, task_id, parent_task, command, agent
     return agent_id
 
 
-def _spawn_with_resources(task_id, agent_id, command, agent_type, cwd):
+def _spawn_with_resources(task_id, agent_id, command, agent_type, cwd, *, materialization=None):
     try:
         with runtime_resources.launch(_store, task_id, agent_id):
+            if materialization:
+                identifier, limits = materialization
+                # Serialize the last control check with Popen. This short
+                # transaction excludes concurrent cancellation at the boundary;
+                # slow Git preparation never holds a SQLite write transaction.
+                with _store._connection() as db:
+                    db.execute('BEGIN IMMEDIATE')
+                    delegation_materialization.authorize(db, identifier, limits)
+                    delegation_materialization.check_worker(db, task_id, agent_id)
+                    require_active(dependencies.task(db, task_id), pending=True, db=db)
+                    return _spawn_process(command, agent_type, cwd=cwd)
             return _spawn_process(command, agent_type, cwd=cwd)
     except runtime_resources.ResourceUnavailable:
         # The launch was prevented, but its durable blocker still needs an SSE
@@ -732,6 +771,75 @@ def get_task_assignments(task_id):
 def start_task_agent(task_id, agent_type='mock', sandbox='read-only'):
     agent_id = start_agent('', agent_type, sandbox, task_id=task_id)
     return {'task_id': task_id, 'agent_id': agent_id, 'status': 'running'}
+
+
+def _launch_delegated_child(task_id, identifier, limits):
+    with _task_store()._connection() as db:
+        _, _, provider = delegation_materialization.authorize(db, identifier, limits)
+    return start_agent('', provider['agent_type'], provider['sandbox'] or 'read-only',
+                       task_id=task_id, _materialization=(identifier, limits))
+
+
+def materialize_delegations(parent_task_id, *, limits=delegation_materialization.DEFAULT_LIMITS, retry=False):
+    """Backend-only controlled recovery; never called by GET or startup.
+
+    Each pass is bounded. Started/uncertain executions cannot be relaunched by
+    retrying, and the existing Task locks serialize concurrent preparation.
+    """
+    store = _task_store()
+    service = delegation_materialization.Materializer(store, _launch_delegated_child, _emit_agent_change, limits)
+    results = []
+    for record in store.list_delegations(parent_task_id):
+        if record['status'] not in ('requested', 'materialized'):
+            continue
+        try:
+            with task_lock(store, 'delegation:' + record['delegation_id'], blocking=False):
+                if retry:
+                    with store._connection() as db:
+                        db.execute('BEGIN IMMEDIATE')
+                        delegation_materialization.authorize(db, record['delegation_id'], limits)
+                        db.execute("UPDATE delegation_materializations SET attempts=0 WHERE delegation_id=? AND phase IN ('attached','workspace_ready')", (record['delegation_id'],))
+                results.append(service.run(record['delegation_id']))
+        except (ValueError, LookupError, OSError, sqlite3.Error) as exc:
+            logger.info('Delegation preparation deferred: %s', exc)
+            results.append({'delegation_id': record['delegation_id'], 'last_error': str(exc)})
+    return results
+
+
+def _schedule_materialization(parent_task_id):
+    # Bounded daemon pass, outside the reader/finalizer and lifecycle lock.
+    # No automatic scheduling during initialization or recovery.
+    store = _store
+    def run(attempt=0):
+        if store is not _store or _shutting_down:
+            return
+        try:
+            results = materialize_delegations(parent_task_id)
+            delays = delegation_materialization.DEFAULT_LIMITS.retry_seconds
+            if attempt < len(delays) and any(r.get('phase') in ('attached', 'workspace_ready') for r in results):
+                timer = Timer(delays[attempt], run, (attempt + 1,))
+                timer.daemon = True
+                timer.start()
+        except Exception:
+            logger.exception('Delegation materialization requires inspection')
+    Thread(target=run, daemon=True).start()
+
+
+def _wake_delegation_siblings(agent_id):
+    if _store is None or _shutting_down:
+        return
+    with _store._connection() as db:
+        row = db.execute('''SELECT d.parent_task_id FROM delegations d JOIN task_assignments a
+            ON a.task_id=d.child_task_id WHERE a.agent_id=?''', (agent_id,)).fetchone()
+        if not row:
+            return
+        parent = _store.get_task(row['parent_task_id'])
+        receipt = parent['orchestration_handoff']
+        # Only live-run activation may schedule successors. Restored parents
+        # have no process; recovery always requires an explicit backend call.
+        if not receipt or agents.get(receipt['agent_id']) is None:
+            return
+    _schedule_materialization(row['parent_task_id'])
 
 
 @_synchronized

@@ -43,13 +43,17 @@ def get(db, delegation_id):
     row = db.execute('SELECT * FROM delegations WHERE delegation_id=?', (delegation_id,)).fetchone()
     if row is None:
         raise LookupError('Delegation not found')
-    return dict(row)
+    result = dict(row)
+    if db.execute("SELECT 1 FROM sqlite_master WHERE name='delegation_materializations'").fetchone():
+        progress = db.execute('SELECT * FROM delegation_materializations WHERE delegation_id=?', (delegation_id,)).fetchone()
+        result['materialization'] = dict(progress) if progress else None
+    return result
 
 
 def list_for_task(db, parent_task_id):
     dependencies.task(db, parent_task_id)
-    return [dict(r) for r in db.execute(
-        'SELECT * FROM delegations WHERE parent_task_id=? ORDER BY rowid', (parent_task_id,))]
+    return [get(db, r[0]) for r in db.execute(
+        'SELECT delegation_id FROM delegations WHERE parent_task_id=? ORDER BY rowid', (parent_task_id,))]
 
 
 def validate_request(request_key, instruction):
@@ -82,7 +86,7 @@ def create(db, parent_task_id, *, project_id, requested_by_agent_id,
             raise ValueError('Request key already belongs to a different delegation instruction')
         # A current replacement may rediscover the request; keep original origin,
         # timestamps, child link and terminal state. Never revive or overwrite it.
-        return dict(existing)
+        return get(db, existing['delegation_id'])
     work_control.require_active(parent, db=db)
     identifier = str(uuid4())
     db.execute('''INSERT INTO delegations(delegation_id,project_id,parent_task_id,

@@ -2,7 +2,7 @@
 
 These are backend-only coordination and inspection capabilities. They do not constitute an autonomous scheduler, a Docker/database integration, or OS-wide resource isolation. Declarations coordinate managed Tasks; port adapters add bounded observations and reservations, with the limitations below. Logical intents describe responsibility separately from concrete resources.
 
-This reference preserves the Stage 2 design and migration details. Stage labels explain how the implementation evolved; later sections refine earlier behavior. The current database schema is v19; [Delegation handoffs](delegations.md) reuse the existing execution gates and claim reconciliation rules.
+This reference preserves the Stage 2 design and migration details. Stage labels explain how the implementation evolved; later sections refine earlier behavior. The current database schema is v20; [Delegation handoffs](delegations.md) reuse the existing execution gates and claim reconciliation rules.
 
 [Project overview and setup](../README.md) | [Task lifecycle](task-lifecycle.md) | [Workspaces](workspaces.md) | [Resource coordination](resource-coordination.md)
 

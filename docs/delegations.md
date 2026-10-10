@@ -1,6 +1,6 @@
-# Delegations and Agent request protocol (Stage 2H.1–2H.2)
+# Delegations, Agent requests and Child materialization (Stage 2H.1–2H.3)
 
-Delegations record why a Parent Task requested a unit of work and which Worker assignment originated it. They are provider-independent durable metadata, separate from Task hierarchy, dependencies, work intents and resource claims. Stage 2H.2 adds an opt-in structured request protocol and durable Parent handoff. It adds no automatic child creation, execution, workspace provisioning, result delivery, integration or frontend controls.
+Delegations record why a Parent Task requested a unit of work and which Worker assignment originated it. They are provider-independent durable metadata, separate from Task hierarchy, dependencies, work intents and resource claims. Stage 2H.2 adds an opt-in structured request protocol and durable Parent handoff. Stage 2H.3 adds separately activated Child Task/workspace materialization and bounded execution. Result delivery, Parent continuation, integration and new frontend controls remain outside this milestone.
 
 ## Schema and recovery
 
@@ -25,7 +25,9 @@ Transactional schema **v17 → v18** adds only `delegations`:
 
 The v18 migration creates no records for historical Tasks and does not modify existing tables. Migrations roll back on failure and reject unsupported future versions. Reopening or recovering does not advance Delegations, infer results, create missing children, or reinterpret old provenance as current ownership.
 
-The current schema is **v19**. The transactional **v18 → v19** migration adds nullable `agents.execution_generation`, default-off `agents.delegation_protocol_enabled`, and nullable `tasks.orchestration_handoff`. Existing records retain their identities and behavior; no historical handoffs are fabricated. Execution generations distinguish resumed subprocesses within the same Agent/assignment. They augment the existing Agent row rather than introducing another ownership registry. Handoff JSON stores the reason, original Agent/assignment/generation, session, turn/message identity, validated requests and accepted Delegation IDs. Task reads expose this metadata as an object or null.
+The **v18 → v19** transaction adds nullable `agents.execution_generation`, default-off `agents.delegation_protocol_enabled`, and nullable `tasks.orchestration_handoff`. Existing records retain their identities and behavior; no historical handoffs are fabricated. Execution generations distinguish resumed subprocesses within the same Agent/assignment. They augment the existing Agent row rather than introducing another ownership registry. Handoff JSON stores the reason, original Agent/assignment/generation, session, turn/message identity, validated requests and accepted Delegation IDs. Task reads expose this metadata as an object or null.
+
+The current schema is **v20**. Its transactional **v19 → v20** migration adds default-off `agents.child_materialization_enabled` and the `delegation_materializations` progress journal. Each journal row belongs to one Delegation and records phase, preparation attempts, proposed launch Agent UUID, last error and update time. The launch UUID deliberately has no Agent foreign key because it is persisted before `Popen`; it is progress evidence, not a second assignment registry. Historical Agents remain disabled and no Children or workspaces are fabricated. Migration failure rolls back both schema and version.
 
 ## Internal service primitives
 
@@ -49,7 +51,7 @@ Creation enters `requested`. Only `attach_delegation_child` advances it to `mate
 
 `transition_delegation(..., 'canceled')` intentionally abandons a requested or materialized record and sets `closed_at`; repeating cancellation is idempotent. It does **not** cancel the Child Task or stop any Worker. `result_ready` and `acknowledged` are reserved schema states; no service transition into them exists in 2H.1. Other transitions, backward movement, and direct materialization without a validated Child are rejected. Task/Agent completion, Stop, Pause, Resume, Cancel and restart do not mirror their state into this separate protocol lifecycle.
 
-Linking existing work is only metadata, so it remains possible after origin replacement; it does not bypass gates to start that Child. No permissions are stored or expanded. Actual future Child execution must continue using normal workspace, sandbox, resource, work-intent and Task lifecycle checks.
+Linking existing work is only metadata, so it remains possible after origin replacement; it does not authorize starting that Child. The link itself grants no permissions. Materialized Child execution uses the workspace, sandbox, resource, work-intent and Task lifecycle checks described below.
 
 ## Read-only inspection
 
@@ -95,7 +97,7 @@ Readers collect evidence without taking the manager's lifecycle lock; Stop/Redir
 
 The Parent Task becomes **blocked**, with an orchestration blocker whose reason is `delegation_requested`. Its existing assignment stays unended and its Codex session remains available as metadata. The Agent is **stopped**, has no `waiting_question`, and generates no user-input or finished notification. Existing Reply/Decide controls therefore do not appear. This dormant orchestration continuation cannot be manually resumed through user-waiting controls. Pause/Resume preserves the blocker; Cancel may end the assignment without deleting Delegations or the receipt. Stop remains safe and does not launch or discard accepted requests.
 
-No child is created and no Parent is automatically resumed. This is a temporary handoff policy for 2H.2, not a permanent requirement that a Parent wait for all children. Future parallel execution must retain existing dependency, workspace, resource and work-intent gates.
+Acceptance itself does not create a Child. A separately enabled materialization pass can now create and start eligible Children after the acceptance commit. The Parent remains incomplete, blocked and dormant; no result delivery or automatic Parent resume occurs.
 
 ## Failures and recovery
 
@@ -108,4 +110,39 @@ No child is created and no Parent is automatically resumed. This is a temporary 
 
 Backend code can explicitly call `agent_manager.start_agent(..., agent_type="codex", delegation_protocol_enabled=True)` for a persistent Task. This keyword is **not** exposed in an HTTP request model or dashboard control. The caller supplies the task/instruction explaining the desired envelope; default Agents are not prompted to delegate. Mock agents cannot opt in. The setting persists on the Agent and carries through existing Codex resume paths.
 
-Stage 2H.3 can enable this internal capability when it implements safe Child materialization. Until then, accepted requests remain inspection-only and orchestration handoffs have no release/resume workflow. Stage 2H.4 adds result delivery/Parent acknowledgement; 2H.5 adds recursive safety/recovery; Stage 2I adds autonomous decomposition/replanning. There is no scheduler, permission expansion, implicit dependency creation, delegation cancellation cascade or automatic integration here.
+To enable Child materialization for that Parent, backend code must additionally pass `child_materialization_enabled=True`. Both flags default off; the HTTP start models and UI expose neither. The flag is committed before delivering the initial prompt. The accepted handoff schedules a bounded background pass after commit, outside the output reader and lifecycle lock. Ordinary Agents remain unchanged, and normal creation still defaults to Mock. The generic materialization service inherits either Mock or Codex, but the only real request adapter currently implemented is Codex; Mock does not emit delegation requests.
+
+## Child creation and workspace preparation
+
+`app/delegation_materialization.py` owns the provider-independent transaction checks and progression. The manager supplies the existing start machinery. One `BEGIN IMMEDIATE` transaction verifies the accepted receipt, current generation/assignment/session, activation, Project, control state and blockers, then inserts one UUID Child Task and attaches it through `delegations.attach_child`. The journal entry commits with the link. Retries reuse that Child; concurrent transactions cannot create two.
+
+Only the matching orchestration blocker is exempted for the dormant Parent. Ordinary child creation still rejects blocked Parents. Unrelated hard blockers, cancellation, pause, stale ownership and invalid Project links prevent materialization. Claims suspended by orchestration alone are not execution permission; actual conflicts still block. Externally attached Children are not silently adopted by this service.
+
+The entire validated Delegation instruction, including whitespace and up to 32768 characters, becomes the Child description. The existing internal Task storage supports this; the public Task API retains its 20000-character limit. Only the display title is shortened by the existing title helper.
+
+The existing start path provisions a Task-owned isolated workspace from the Parent Task workspace, reuses durable valid workspaces, checks freshness and holds existing Task/upstream integration locks. Provisioning failure preserves the Child and Delegation and records an error. Existing workspace compensation applies only to a newly created, unrecorded provisioning attempt. Startup failure never deletes a durable workspace. A crash leaving an unrecorded filesystem path still requires inspection rather than silent adoption.
+
+## Execution admission and coordination
+
+The Child inherits the receipt's current Parent provider and exact Codex sandbox. No permissions come from the request envelope. Provider availability is checked by the existing command builder. Children do not inherit autonomous delegation activation. stdin, `shell=False`, process-tree Stop, session parsing, output, TaskAssignment persistence and SSE use the existing launch path.
+
+After workspace preparation, admission rechecks Parent/Child control, pending/unassigned state, assignment history, resources, work intents and workspace provenance. It commits a `launching` journal with a new Agent UUID **before** starting a process. A final short SQLite transaction serializes the last control check with `Popen`; Task/assignment persistence then revalidates ownership before sending the Codex prompt. Generic starts cannot bypass a pending or uncertain materialization. TaskAssignments remain the source of Worker ownership.
+
+`Limits` centralizes conservative defaults: 16 direct Children per Parent (including manually created Children), four concurrent delegated Children across Projects, one hierarchy level, three external preparation attempts and retry delays of 2 and 10 seconds. Backend callers can supply a validated `Limits` value for a controlled pass. Existing excess requests remain durable.
+
+Absent declared coordination evidence, another running/waiting Worker or uncertain launch in the same Project defers the Child. Parallel admission requires active, authoritative `single_owner` work intents for both Tasks, with no overlapping declared scopes. This also considers unrelated root Tasks. No scopes are inferred from natural-language instructions, and declarations must accurately describe the work. Existing resource fairness, deadlocks, dependencies, external preflight and runtime ownership gates still apply; machine-global resource claims can conflict across Projects. Workspace isolation alone is not admission evidence.
+
+Normal Child completion can wake staged siblings from the same live Parent run. Capacity/lifecycle deferral does not consume an external preparation attempt; each scheduled retry chain is bounded. No Child completion delivers results, integrates files or completes/resumes the Parent.
+
+## Partial failure and controlled recovery
+
+The journal progresses through `attached`, `workspace_ready`, `launching`, `started`, or `recovery_required`. Workspace metadata remains authoritative even when a crash leaves the journal at `attached`. `started` is recorded after the existing start function returns successfully. Read-only Delegation endpoints expose the journal as `materialization` (or null); existing Task/Agent reads and SSE expose the created work without a new dashboard screen.
+
+- Before attachment commit: Child and link both roll back.
+- After attachment or workspace commit: retry validates and reuses the same identities.
+- Once launch admission commits: an error or interrupted acknowledgement is conservatively uncertain; no automatic second paid attempt is allowed, even if the failure may have occurred before `Popen`.
+- Restart marks interrupted launches and previously running materialized Children `recovery_required`. It never reattaches PIDs or launches Workers. The existing Parent receipt and assignment remain durable.
+- `agent_manager.materialize_delegations(parent_task_id)` is the backend-only controlled retry entry point for an activated Parent. `retry=True` resets only pre-launch preparation counters after authorization. It cannot reset `launching`, `started` or `recovery_required`, replace an existing Worker, or recreate a Child. Ambiguous process ownership requires operator inspection; no automated override is implemented.
+- Successful Child Stop retains workspace/history and follows ordinary Task semantics. Explicit replacement after an established, safely stopped launch follows the existing Task API. Materialization retries never replace it. Pause/Cancel continue through existing lifecycle controls and are rechecked at launch boundaries. No new recursive cancellation policy is introduced.
+
+All UI invalidations follow durable commits; failure to publish does not undo accepted work. There is no startup scheduler, automatic result delivery, or Parent handoff release workflow. Stage 2H.4 adds result delivery/acknowledgement, 2H.5 recursive safety/recovery, and Stage 2I decomposition/replanning. Synthetic subprocess tests and temporary Git repositories verify orchestration; authenticated paid Codex E2E remains separate verification.

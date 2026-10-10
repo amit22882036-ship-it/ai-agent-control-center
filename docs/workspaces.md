@@ -2,7 +2,7 @@
 
 These backend capabilities separate a Project's canonical source from each Task's execution files. The dashboard starts root work in the default repository Project; Project registration and explicit integration are API-only. Both Mock and Codex starts provision Task workspaces. Workspace isolation protects source organization, but is not a complete security boundary: linked worktrees share Git history, and external resources require separate coordination.
 
-This reference preserves the Stage 2 design and migration details. Stage labels explain how the implementation evolved; later sections refine earlier behavior. The current database schema is v19; [Delegation records](delegations.md) do not provision or change workspaces.
+This reference preserves the Stage 2 design and migration details. Stage labels explain how the implementation evolved; later sections refine earlier behavior. The current database schema is v20; [Delegation materialization](delegations.md) reuses this Task-owned workspace infrastructure under explicit backend activation.
 
 [Project overview and setup](../README.md) | [Task lifecycle](task-lifecycle.md) | [Workspaces](workspaces.md) | [Resource coordination](resource-coordination.md)
 

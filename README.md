@@ -26,7 +26,7 @@ A local workspace for supervising AI coding agents: see what is running, follow 
 | Lifecycle and dependencies | Pause/resume/cancel, subtree impact, dependency validation, and durable blockers. |
 | Resource coordination | Managed claims, fair queues, deadlock detection, port preflight, and bounded controller reservations. |
 | Logical work intents | Explicit responsibility scopes, hierarchical overlap detection, and conflict inspection. |
-| Delegation requests | Durable provenance, opt-in structured Codex requests, and atomic Parent handoff; no automatic Child creation or execution. |
+| Delegation requests | Opt-in structured requests and Parent handoff; separately enabled, recoverable Child Task/workspace creation and bounded execution. No result delivery or Parent continuation yet. |
 
 These foundations have API endpoints but no dedicated Project, Task-lifecycle, integration, resource, or work-intent editors in the current UI. The dashboard uses workspaces when launching agents; it does not yet provide an orchestration interface.
 

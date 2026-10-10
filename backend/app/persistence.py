@@ -6,7 +6,7 @@ from pathlib import Path
 import sqlite3
 from threading import RLock
 from uuid import uuid4
-from . import work_control, dependencies, resources, resource_coordination, external_resources, runtime_resources, work_intents, delegations, delegation_handoff
+from . import work_control, dependencies, resources, resource_coordination, external_resources, runtime_resources, work_intents, delegations, delegation_handoff, delegation_materialization
 from .task_domain import task_title, validate_task_status, validate_end_reason
 from .agent_names import default_display_name, validate_display_color
 from .output_history import OUTPUT_PAGE_SIZE, OUTPUT_MAX_LIMIT
@@ -21,7 +21,7 @@ class AgentStore:
         self._lock = RLock()
         with self._connection() as db:
             version = db.execute('PRAGMA user_version').fetchone()[0]
-            if version not in range(20):
+            if version not in range(21):
                 raise RuntimeError(f'Unsupported control-center database schema version: {version}')
             if version < 18:
                 db.execute('PRAGMA foreign_keys = OFF')
@@ -201,6 +201,14 @@ class AgentStore:
                         db.execute('BEGIN IMMEDIATE')
                     delegation_handoff.migrate(db)
                     db.execute('PRAGMA user_version = 19')
+                    version = 19
+                if version == 19:
+                    if not db.in_transaction:
+                        db.execute('BEGIN IMMEDIATE')
+                    delegation_materialization.migrate(db)
+                    db.execute('PRAGMA user_version = 20')
+                db.execute('SELECT child_materialization_enabled FROM agents LIMIT 0')
+                db.execute('SELECT delegation_id,phase,attempts,launch_agent_id,last_error FROM delegation_materializations LIMIT 0')
                 db.execute('SELECT execution_generation,delegation_protocol_enabled FROM agents LIMIT 0')
                 db.execute('SELECT orchestration_handoff FROM tasks LIMIT 0')
                 db.execute('SELECT delegation_id,project_id,parent_task_id,requested_by_agent_id,requested_by_assignment_id,request_key,instruction,status,child_task_id,created_at,updated_at,materialized_at,closed_at FROM delegations LIMIT 0')
@@ -634,6 +642,7 @@ class AgentStore:
     def create_assignment(self, task_id, agent_id):
         with self._connection() as db:
             db.execute('BEGIN IMMEDIATE')
+            delegation_materialization.check_worker(db, task_id, agent_id)
             if db.execute('SELECT 1 FROM task_assignments WHERE ended_at IS NULL AND (task_id=? OR agent_id=?)',
                           (task_id, agent_id)).fetchone():
                 raise ValueError('Task or agent already has an active assignment')
@@ -698,6 +707,7 @@ class AgentStore:
         """
         with self._connection() as db:
             db.execute('BEGIN IMMEDIATE')
+            delegation_materialization.recover(db)
             runtime_resources.recover(db)
             for agent in db.execute("SELECT agent_id FROM agents WHERE status='running'").fetchall():
                 key = agent['agent_id']
@@ -957,6 +967,9 @@ class AgentStore:
                 if task is None:
                     raise LookupError('Task not found')
                 if existing_assignment is None:
+                    progress = delegation_materialization.check_worker(db, assignment_task_id, record['agent_id'])
+                    if progress and record['status'] == 'running':
+                        delegation_materialization.authorize(db, progress['delegation_id'])
                     work_control.require_active(task, pending=True, db=db)
                 if existing_assignment is None and (task['status'] != 'pending' or db.execute(
                         'SELECT 1 FROM task_assignments WHERE task_id=? AND ended_at IS NULL', (assignment_task_id,)).fetchone()):
