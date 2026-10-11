@@ -12,6 +12,7 @@ from .agent_names import default_display_name, validate_display_color
 from .output_history import OUTPUT_PAGE_SIZE, OUTPUT_MAX_LIMIT
 from .project_domain import DEFAULT_ROOT, canonical_path, contains, project_name
 from . import delegation_orchestration, delegation_rounds, delegation_safety
+from . import planning
 
 
 class AgentStore:
@@ -22,7 +23,7 @@ class AgentStore:
         self._lock = RLock()
         with self._connection() as db:
             version = db.execute('PRAGMA user_version').fetchone()[0]
-            if version not in range(24):
+            if version not in range(25):
                 raise RuntimeError(f'Unsupported control-center database schema version: {version}')
             if version < 18:
                 db.execute('PRAGMA foreign_keys = OFF')
@@ -230,6 +231,16 @@ class AgentStore:
                     if db.execute('PRAGMA foreign_key_check').fetchone():
                         raise sqlite3.IntegrityError('Invalid recursive delegation migration references')
                     db.execute('PRAGMA user_version = 23')
+                    version = 23
+                if version == 23:
+                    if not db.in_transaction:
+                        db.execute('BEGIN IMMEDIATE')
+                    planning.migrate(db)
+                    if db.execute('PRAGMA foreign_key_check').fetchone():
+                        raise sqlite3.IntegrityError('Invalid planning migration references')
+                    db.execute('PRAGMA user_version = 24')
+                db.execute('SELECT planning_enabled FROM agents LIMIT 0')
+                db.execute('SELECT task_id,revision,content FROM planning_revisions LIMIT 0')
                 db.execute('SELECT recursive_delegation_enabled FROM agents LIMIT 0')
                 db.execute('SELECT admission_error FROM delegations LIMIT 0')
                 db.execute('SELECT round_id,receipt,not_before FROM delegation_rounds LIMIT 0')
@@ -800,8 +811,29 @@ class AgentStore:
 
     def execution_settings(self, agent_id):
         with self._connection() as db:
-            row = db.execute('SELECT delegation_protocol_enabled FROM agents WHERE agent_id=?', (agent_id,)).fetchone()
-            return bool(row and (row[0] or self._hybrid_child(db, agent_id)))
+            row = db.execute('SELECT delegation_protocol_enabled,planning_enabled FROM agents WHERE agent_id=?', (agent_id,)).fetchone()
+            return bool(row and (row[0] or row[1] or self._hybrid_child(db, agent_id)))
+
+    def planning_enabled(self, agent_id):
+        with self._connection() as db:
+            row = db.execute('SELECT planning_enabled FROM agents WHERE agent_id=?', (agent_id,)).fetchone()
+            return bool(row and row[0])
+
+    def planning_history(self, task_id):
+        with self._connection() as db:
+            return planning.history(db, task_id)
+
+    def current_plan(self, task_id):
+        with self._connection() as db:
+            return planning.current(db, task_id)
+
+    def accept_planning_messages(self, origin, messages, *, session_id):
+        if not 1 <= len(messages) <= planning.MAX_DECISIONS:
+            raise ValueError('Expected 1-16 planning decisions')
+        with self._connection() as db:
+            db.execute('BEGIN IMMEDIATE')
+            return [planning.accept(db, origin, message, session_id=session_id, message_id=identifier)
+                    for identifier, message in messages]
 
     @staticmethod
     def _hybrid_child(db, agent_id):
@@ -839,6 +871,9 @@ class AgentStore:
             # request Delegations. Existing opt-in Parents retain that permission.
             recursive = db.execute('SELECT recursive_delegation_enabled FROM agents WHERE agent_id=?', (agent_id,)).fetchone()[0]
             enabled = 0 if self._hybrid_child(db, agent_id) and not recursive else 1
+            settings = db.execute('SELECT planning_enabled,delegation_protocol_enabled FROM agents WHERE agent_id=?', (agent_id,)).fetchone()
+            if settings['planning_enabled']:
+                enabled = settings['delegation_protocol_enabled']
             db.execute('UPDATE agents SET execution_generation=?,delegation_protocol_enabled=? WHERE agent_id=?', (generation, enabled, agent_id))
             return delegation_handoff.ExecutionOrigin(agent_id, assignment['assignment_id'],
                        task['task_id'], task['project_id'], generation)
@@ -1061,6 +1096,11 @@ class AgentStore:
                 db.execute('UPDATE agents SET child_materialization_enabled=?,hybrid_delegation_enabled=?,recursive_delegation_enabled=? WHERE agent_id=?',
                     (int(activation.get('child_materialization_enabled', False)), int(activation.get('hybrid_delegation_enabled', False)),
                      int(activation.get('recursive_delegation_enabled', False)), record['agent_id']))
+                if activation.get('planning_enabled'):
+                    if record['agent_type'] != 'codex':
+                        raise ValueError('Planning runtime requires Codex')
+                    db.execute('UPDATE agents SET planning_enabled=1,delegation_protocol_enabled=? WHERE agent_id=?',
+                               (int(activation.get('delegation_protocol_enabled', False)), record['agent_id']))
             self._sync_task(db, record['agent_id'], record['status'])
             latest = db.execute('SELECT name FROM agent_name_history WHERE agent_id=? ORDER BY id DESC LIMIT 1',
                                 (record['agent_id'],)).fetchone()

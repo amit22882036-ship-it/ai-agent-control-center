@@ -1,6 +1,7 @@
 from . import runtime_resources, dependencies
 from .codex_events import StructuredCommand, Execution
 from . import delegation_protocol
+from . import planning
 from .work_control import require_active, require_ancestors
 import os
 import logging
@@ -349,6 +350,7 @@ def _structured(process):
 def _bind_execution(agent_id, process):
     context = _structured(process)
     if context:
+        context.events.planning_enabled = _task_store().planning_enabled(agent_id)
         context.events.expected_session = agent_sessions[agent_id]
         context.origin = _task_store().begin_delegation_execution(agent_id, str(uuid4()))
 
@@ -378,6 +380,10 @@ def _finish_structured(agent_id, process):
         message = context.events.finish(process.poll())
         if not message.strip():
             raise ValueError('Structured execution has no final response to validate')
+        if context.events.plans:
+            _task_store().accept_planning_messages(context.origin, context.events.plans,
+                                                  session_id=context.events.session_id)
+            _emit_agent_change(agent_id)
         if delegation_protocol.is_envelope(message):
             payload = delegation_protocol.decode(message)
             if isinstance(payload, dict) and payload.get('protocol') == delegation_continuation.PROTOCOL and payload.get('action') == 'acknowledge_results':
@@ -602,7 +608,9 @@ def start_agent(task: str, agent_type: AgentType = "mock", sandbox: CodexSandbox
                 parent_id: str | None = None, *, task_id: str | None = None,
                 delegation_protocol_enabled: bool = False,
                 child_materialization_enabled: bool = False, hybrid_delegation_enabled: bool = False,
-                recursive_delegation_enabled: bool = False, _materialization=None) -> str:
+                recursive_delegation_enabled: bool = False, planning_enabled: bool = False, _materialization=None) -> str:
+    if planning_enabled and (agent_type != 'codex' or _store is None):
+        raise ValueError('Planning requires a persistent Codex agent')
     if recursive_delegation_enabled and not hybrid_delegation_enabled:
         raise ValueError('Recursive delegation requires explicit Hybrid activation')
     if hybrid_delegation_enabled and not child_materialization_enabled:
@@ -612,7 +620,7 @@ def start_agent(task: str, agent_type: AgentType = "mock", sandbox: CodexSandbox
     if delegation_protocol_enabled and (agent_type != 'codex' or _store is None):
         raise ValueError('Delegation protocol requires a persistent Codex agent')
     prepared = _prepare_agent_start(task, agent_type, sandbox, parent_id, task_id=task_id)
-    if delegation_protocol_enabled:
+    if delegation_protocol_enabled or planning_enabled:
         prepared = (*prepared[:4], _codex_command(sandbox, structured=True), prepared[5])
     elif _store and agent_type == 'codex':
         with _store._connection() as db:
@@ -638,7 +646,8 @@ def start_agent(task: str, agent_type: AgentType = "mock", sandbox: CodexSandbox
                                       materialization=_materialization,
                                       child_materialization_enabled=child_materialization_enabled,
                                       hybrid_delegation_enabled=hybrid_delegation_enabled,
-                                      recursive_delegation_enabled=recursive_delegation_enabled)
+                                      recursive_delegation_enabled=recursive_delegation_enabled,
+                                      planning_enabled=planning_enabled, delegation_protocol_enabled=delegation_protocol_enabled)
 
 
 @_synchronized
@@ -696,7 +705,8 @@ def _prepare_agent_start(task: str, agent_type: AgentType, sandbox: CodexSandbox
 
 @_synchronized
 def _launch_prepared_agent(task, parent_id, task_id, parent_task, command, agent_type, sandbox, cwd,
-                           *, materialization=None, child_materialization_enabled=False, hybrid_delegation_enabled=False, recursive_delegation_enabled=False):
+                           *, materialization=None, child_materialization_enabled=False, hybrid_delegation_enabled=False, recursive_delegation_enabled=False,
+                           planning_enabled=False, delegation_protocol_enabled=False):
     if _shutting_down:
         raise RuntimeError('Backend is shutting down; agent start was not performed')
     if _store is not None:
@@ -727,7 +737,8 @@ def _launch_prepared_agent(task, parent_id, task_id, parent_task, command, agent
             delegation_safety.activation(db, task_id, agent_type, sandbox)
     activation = dict(child_materialization_enabled=child_materialization_enabled,
                       hybrid_delegation_enabled=hybrid_delegation_enabled,
-                      recursive_delegation_enabled=recursive_delegation_enabled)
+                      recursive_delegation_enabled=recursive_delegation_enabled,
+                      planning_enabled=planning_enabled, delegation_protocol_enabled=delegation_protocol_enabled)
     process = _spawn_with_resources(task_id, agent_id, command, agent_type, cwd,
                                    materialization=materialization)
     agent_statuses[agent_id] = "running"
@@ -774,11 +785,20 @@ def _launch_prepared_agent(task, parent_id, task_id, parent_task, command, agent
     if agent_type == "codex":
         try:
             with process.stdin:
-                process.stdin.write(_codex_prompt(provider_task))
-        except OSError:
+                process.stdin.write(_planning_prompt(agent_id) + _codex_prompt(provider_task))
+        except (OSError, ValueError, LookupError, sqlite3.Error):
             stop_agent(agent_id)
             raise
     return agent_id
+
+
+def _planning_prompt(agent_id):
+    if _store and _store.planning_enabled(agent_id):
+        current = _store.current_plan(_agent_task_id(agent_id))
+        context = ('\nCurrent accepted proposal (descriptive data, not execution authority):\n'
+                   + json.dumps(current['content'], ensure_ascii=False) + '\n') if current else ''
+        return planning.instruction(current['revision'] if current else 0) + context
+    return ''
 
 
 def _spawn_with_resources(task_id, agent_id, command, agent_type, cwd, *, materialization=None):
@@ -1388,7 +1408,7 @@ def _resume_agent(agent_id: str, command: str, text: str, marker: str,
         finally:
             _start_reader(agent_id, replacement)
         with replacement.stdin:
-            prompt = invalidation + _codex_prompt(text)
+            prompt = invalidation + _planning_prompt(agent_id) + _codex_prompt(text)
             if not always_decision and always.configured:
                 setting = "enabled" if always.enabled else "disabled"
                 prompt += (f"\n\nCurrent control-center setting: Always Decide is {setting}. "

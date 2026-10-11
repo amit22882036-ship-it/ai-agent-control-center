@@ -260,8 +260,10 @@ A failed branch does not cancel siblings. Output, workspaces and result evidence
 
 ### Schema, recovery and limits
 
-Current schema **v23** transactionally adds default-off `agents.recursive_delegation_enabled` and nullable `delegations.admission_error` to v22. There are no new tables, historical capability grants, process launches or workspace operations. Failure rolls back both schema and version; newer schemas are rejected.
+Schema **v23** transactionally adds default-off `agents.recursive_delegation_enabled` and nullable `delegations.admission_error` to v22. There are no new tables, historical capability grants, process launches or workspace operations. Failure rolls back both schema and version; newer schemas are rejected.
 
 Existing journals apply at every level. Restart preserves requests, attached Children, rounds, acknowledgements and output without reattaching PIDs or starting Workers. Deterministic journal inspection retains/reconciles evidence; ambiguous launch/integration outcomes require inspection. A stopped record does not prove an unknown external process tree terminated, nor authorize conflicting workspace changes.
 
 Deterministic regressions use synthetic streams/processes, temporary SQLite databases and temporary Git worktrees. They cover multi-generation execution, depth changes, inherited permissions, cancellation races, aggregate admission, direct-Parent integration/acknowledgement and recovery. This is not paid Codex E2E verification. Automatic decomposition, corrective replanning, semantic loop detection, provider-account onboarding and unknown-ownership recovery tooling remain future work. Stage 2I planning must preserve these safety gates.
+
+Stage 2I.1 adds optional [non-executing planning revisions](planning.md) in schema v24. Planning proposals do not create Delegations or alter these execution gates.
