@@ -4,9 +4,36 @@ import sqlite3
 from . import dependencies, resources
 
 
+def ancestry(db, task_id):
+    """Authoritative leaf-to-root path, with corruption rejected rather than hidden."""
+    path, seen = [], set()
+    while task_id is not None:
+        if task_id in seen:
+            raise ValueError('Task hierarchy cycle')
+        seen.add(task_id)
+        current = dependencies.task(db, task_id)
+        if path and current['project_id'] != path[0]['project_id']:
+            raise ValueError('Task ancestry crosses Projects')
+        path.append(current)
+        task_id = current['parent_task_id']
+    return path
+
+
+def require_ancestors(db, task_id):
+    # A dormant/stopped orchestration Parent is not canceled work. Check intent,
+    # not its runtime status; independent descendants retain their own lifecycle.
+    path = ancestry(db, task_id)
+    for parent in path[1:]:
+        if parent['control_intent'] != 'active' or parent['stop_required']:
+            raise ValueError('Ancestor work control prevents continuation')
+    return path
+
+
 def require_active(task, *, pending=False, db=None):
     if task is None:
         raise LookupError('Task not found')
+    if db is not None:
+        require_ancestors(db, task['task_id'])
     blocked = dependencies.hard_blocked(db, task['task_id']) if db is not None else any(b['hard'] for b in task.get('active_blockers', ()))
     resource_pending = resources.pending(db, task['task_id']) if db is not None else task.get('resource_claims_pending', False)
     if task['stop_required'] or blocked or resource_pending:

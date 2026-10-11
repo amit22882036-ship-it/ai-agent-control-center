@@ -1,7 +1,7 @@
 from . import runtime_resources, dependencies
 from .codex_events import StructuredCommand, Execution
 from . import delegation_protocol
-from .work_control import require_active
+from .work_control import require_active, require_ancestors
 import os
 import logging
 import re
@@ -25,6 +25,7 @@ from .workspace_freshness import evaluate_workspace_freshness, ensure_workspace_
 from .project_domain import canonical_path
 from .realtime import changes
 from .output_history import OutputCache, RECENT_OUTPUT_LIMIT, OUTPUT_PAGE_SIZE, OUTPUT_MAX_LIMIT
+from . import delegation_safety
 from . import delegation_materialization
 from . import delegation_continuation, delegation_orchestration
 from .delegation_delivery import DeliveryService
@@ -204,7 +205,7 @@ def _emit_agent_change(agent_id: str) -> None:
         logger.exception("Could not publish agent invalidation")
 
 
-def _save_agent(agent_id: str, emit=True) -> bool:
+def _save_agent(agent_id: str, emit=True, *, activation=None) -> bool:
     # Readers never take _state_lock: Stop/Redirect join them while holding it.
     # Cache sequence assignment, persistence and publication share _data_lock.
     with _data_lock:
@@ -220,6 +221,8 @@ def _save_agent(agent_id: str, emit=True) -> bool:
                 if context and context.origin and not _store.execution_can_save(context.origin):
                     return False
                 assignment_options = {}
+                if activation is not None:
+                    assignment_options['activation'] = activation
                 if context and context.origin:
                     assignment_options['execution_origin'] = context.origin
                 evidence = getattr(agents.get(agent_id), '_control_center_completion', None)
@@ -418,6 +421,8 @@ def _finish_structured(agent_id, process):
         agent_waiting_questions[agent_id] = None
         notifications.cancel(agent_id)
         agent_outputs[agent_id].append('--- Structured execution stopped; inspect output before retrying ---')
+        if context.events.error:
+            agent_outputs[agent_id].append(context.events.error)
         _save_agent(agent_id)
         _notify_hybrid_child_end(agent_id)
         return True
@@ -568,6 +573,8 @@ def _upstream_guard(task_id):
 
 
 def _execution_preflight(task_id, *, pending=False):
+    with _store._connection() as db:
+        require_ancestors(db, task_id)
     current = _store.get_task(task_id)
     if current and any(c['mode'] != 'advisory' and c['status'] != 'released'
                        for c in _store.resource_claims(task_id)):
@@ -595,7 +602,9 @@ def start_agent(task: str, agent_type: AgentType = "mock", sandbox: CodexSandbox
                 parent_id: str | None = None, *, task_id: str | None = None,
                 delegation_protocol_enabled: bool = False,
                 child_materialization_enabled: bool = False, hybrid_delegation_enabled: bool = False,
-                _materialization=None) -> str:
+                recursive_delegation_enabled: bool = False, _materialization=None) -> str:
+    if recursive_delegation_enabled and not hybrid_delegation_enabled:
+        raise ValueError('Recursive delegation requires explicit Hybrid activation')
     if hybrid_delegation_enabled and not child_materialization_enabled:
         raise ValueError('Hybrid execution requires explicit Child materialization activation')
     if child_materialization_enabled and not delegation_protocol_enabled:
@@ -628,7 +637,8 @@ def start_agent(task: str, agent_type: AgentType = "mock", sandbox: CodexSandbox
         return _launch_prepared_agent(*prepared[:5], agent_type, sandbox, cwd,
                                       materialization=_materialization,
                                       child_materialization_enabled=child_materialization_enabled,
-                                      hybrid_delegation_enabled=hybrid_delegation_enabled)
+                                      hybrid_delegation_enabled=hybrid_delegation_enabled,
+                                      recursive_delegation_enabled=recursive_delegation_enabled)
 
 
 @_synchronized
@@ -686,7 +696,7 @@ def _prepare_agent_start(task: str, agent_type: AgentType, sandbox: CodexSandbox
 
 @_synchronized
 def _launch_prepared_agent(task, parent_id, task_id, parent_task, command, agent_type, sandbox, cwd,
-                           *, materialization=None, child_materialization_enabled=False, hybrid_delegation_enabled=False):
+                           *, materialization=None, child_materialization_enabled=False, hybrid_delegation_enabled=False, recursive_delegation_enabled=False):
     if _shutting_down:
         raise RuntimeError('Backend is shutting down; agent start was not performed')
     if _store is not None:
@@ -712,6 +722,12 @@ def _launch_prepared_agent(task, parent_id, task_id, parent_task, command, agent
                 agent_id, _ = delegation_materialization.admit(db, identifier, limits)
             else:
                 delegation_materialization.check_worker(db, task_id)
+    if recursive_delegation_enabled:
+        with _store._connection() as db:
+            delegation_safety.activation(db, task_id, agent_type, sandbox)
+    activation = dict(child_materialization_enabled=child_materialization_enabled,
+                      hybrid_delegation_enabled=hybrid_delegation_enabled,
+                      recursive_delegation_enabled=recursive_delegation_enabled)
     process = _spawn_with_resources(task_id, agent_id, command, agent_type, cwd,
                                    materialization=materialization)
     agent_statuses[agent_id] = "running"
@@ -729,14 +745,11 @@ def _launch_prepared_agent(task, parent_id, task_id, parent_task, command, agent
     agent_always_decisions[agent_id] = AlwaysDecisions()
     agents[agent_id] = process
     try:
-        if not _save_agent(agent_id):
+        if not _save_agent(agent_id, activation=activation):
             raise RuntimeError('Unable to persist agent start; please retry.')
         _bind_execution(agent_id, process)
         if _store:
             process._control_center_assignment = _store.get_active_assignment_for_agent(agent_id)['assignment_id']
-        if child_materialization_enabled:
-            with _store._connection() as db:
-                db.execute('UPDATE agents SET child_materialization_enabled=1,hybrid_delegation_enabled=? WHERE agent_id=?', (int(hybrid_delegation_enabled), agent_id))
     except (ValueError, LookupError, RuntimeError, OSError, sqlite3.Error) as exc:
         # A concurrent claimant may win after validation but before the commit.
         # Keep the worker tracked and terminate it; never steal its assignment.
@@ -785,6 +798,8 @@ def _spawn_with_resources(task_id, agent_id, command, agent_type, cwd, *, materi
             if _store and task_id:
                 with _store._connection() as db:
                     db.execute('BEGIN IMMEDIATE')
+                    delegation_safety.worker_boundary(db, task_id)
+                    require_ancestors(db, task_id)
                     current = delegation_orchestration.state(db, task_id)
                     if current:
                         _, _, owner = delegation_orchestration.owner(db, task_id, allow_running=True)
@@ -840,16 +855,18 @@ def _launch_delegated_child(task_id, identifier, limits):
     with _task_store()._connection() as db:
         _, _, provider = delegation_materialization.authorize(db, identifier, limits)
     return start_agent('', provider['agent_type'], provider['sandbox'] or 'read-only',
-                       task_id=task_id, _materialization=(identifier, limits))
+                       task_id=task_id, _materialization=(identifier, limits),
+                       **delegation_safety.inherited(provider))
 
 
-def materialize_delegations(parent_task_id, *, limits=delegation_materialization.DEFAULT_LIMITS, retry=False):
+def materialize_delegations(parent_task_id, *, limits=None, retry=False):
     """Backend-only controlled recovery; never called by GET or startup.
 
     Each pass is bounded. Started/uncertain executions cannot be relaunched by
     retrying, and the existing Task locks serialize concurrent preparation.
     """
     store = _task_store()
+    limits = limits or delegation_materialization.configured_limits()
     service = delegation_materialization.Materializer(store, _launch_delegated_child, _emit_agent_change, limits)
     results = []
     for record in store.list_delegations(parent_task_id):
@@ -1486,6 +1503,8 @@ def integrate_task(task_id):
     def assert_quiet(current_task_id):
         # Do not refresh statuses here: that could automatically resume a policy.
         with _state_lock:
+            with store._connection() as db:
+                delegation_safety.require_known_ownership(db, current_task_id)
             for assignment in store.list_task_assignments(current_task_id):
                 key = assignment['agent_id']
                 process = agents.get(key)

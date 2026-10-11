@@ -6,15 +6,17 @@ Worker ownership: current assignments, generations and control gates still do.
 import json
 from dataclasses import dataclass
 from uuid import uuid4
+from . import delegation_safety
 
 
 @dataclass(frozen=True)
 class Policy:
     burst: int = 4
     window_seconds: int = 60
+    tree_burst: int = 8
 
     def __post_init__(self):
-        if self.burst < 1 or self.window_seconds < 1:
+        if self.burst < 1 or self.window_seconds < 1 or self.tree_burst < 1:
             raise ValueError('Round admission limits must be positive')
 
 
@@ -61,6 +63,9 @@ def record(db, task_id, receipt, *, round_id=None, legacy=False, policy=None):
     prior = db.execute('SELECT not_before FROM delegation_rounds WHERE task_id=? ORDER BY rowid DESC LIMIT 1 OFFSET ?',
                        (task_id, policy.burst - 1)).fetchone()
     eligible = 0 if legacy else timestamp if not prior else max(timestamp, prior[0] + policy.window_seconds)
+    if not legacy:
+        eligible = max(eligible, delegation_safety.root_slot(db, task_id, timestamp,
+                       burst=policy.tree_burst, window_seconds=policy.window_seconds))
     identifier = round_id or str(uuid4())
     db.execute('''INSERT INTO delegation_rounds(round_id,task_id,assignment_id,agent_id,
         generation,message_id,receipt,accepted_at,not_before) VALUES (?,?,?,?,?,?,?,?,?)''',

@@ -3,7 +3,7 @@ import json
 from dataclasses import dataclass
 
 from . import delegation_protocol, delegations, dependencies, work_control, runtime_resources
-from . import delegation_continuation, delegation_orchestration, delegation_rounds
+from . import delegation_continuation, delegation_orchestration, delegation_rounds, delegation_safety
 
 
 @dataclass(frozen=True)
@@ -50,6 +50,7 @@ def accept(db, origin, message, *, session_id, message_id):
             or assignment['agent_id'] != origin.agent_id or assignment['task_id'] != origin.parent_task_id
             or task['project_id'] != origin.project_id):
         raise ValueError('Stale or mismatched delegation execution ownership')
+    work_control.require_ancestors(db, origin.parent_task_id)
     # A committed receipt can be reread after a lost acknowledgement. It cannot
     # revive canceled work, launch a process, or replace another generation.
     receipt = json.loads(task['orchestration_handoff']) if task['orchestration_handoff'] else None
@@ -69,6 +70,9 @@ def accept(db, origin, message, *, session_id, message_id):
             raise ValueError('Parent must finish its current continuation or acknowledge delivered results before a new round')
         if db.execute("SELECT 1 FROM delegation_deliveries WHERE task_id=? AND status<>'acknowledged'", (origin.parent_task_id,)).fetchone():
             raise ValueError('Outstanding delivery must be acknowledged before a new round')
+    delegation_safety.check_depth(db, origin.parent_task_id, child=True)
+    if db.execute('SELECT 1 FROM delegations WHERE child_task_id=?', (origin.parent_task_id,)).fetchone() and not agent['recursive_delegation_enabled']:
+        raise ValueError('Recursive delegation is not authorized for this Child')
     if agent['status'] != 'running':
         raise ValueError('Delegation requires a running originating Agent')
     work_control.require_active(task, db=db)

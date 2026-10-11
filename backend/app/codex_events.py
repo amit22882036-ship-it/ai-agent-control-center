@@ -78,6 +78,10 @@ class CodexEvents:
             return []
         if kind in ('error', 'turn.failed'):
             self.error = 'Codex turn failed'
+            detail = event.get('error')
+            if isinstance(detail, dict) and detail.get('code') in (
+                    'rate_limit_exceeded', 'usage_limit_reached', 'insufficient_quota'):
+                self.error = 'Codex provider limit reported; explicit continuation required (reset time unknown)'
             return [line.rstrip('\r\n')]
         if not self.started:
             raise ValueError('event outside a turn')

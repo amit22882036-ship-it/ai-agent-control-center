@@ -6,7 +6,7 @@ claim process ownership. A launch with unknown outcome is not automatically retr
 import json
 from uuid import uuid4
 
-from . import dependencies, work_control, work_intents, delegations, delegation_rounds
+from . import dependencies, work_control, work_intents, delegations, delegation_rounds, delegation_safety
 
 NOW = delegations.NOW
 EXECUTING = ('launching', 'independent', 'reviewing', 'finishing')
@@ -76,6 +76,7 @@ def blocks(db, task_id):
 
 
 def owner(db, task_id, *, allow_running=False):
+    work_control.require_ancestors(db, task_id)
     current = state(db, task_id)
     parent = dependencies.task(db, task_id)
     receipt = json.loads(parent['orchestration_handoff']) if parent['orchestration_handoff'] else {}
@@ -131,7 +132,9 @@ def parallel_admission(db, task_id, required_intents=()):
           OR EXISTS (SELECT 1 FROM delegations d WHERE d.child_task_id=t.task_id AND d.parent_task_id=?
                      AND t.status NOT IN ('completed','canceled'))
           OR EXISTS (SELECT 1 FROM delegation_materializations m JOIN delegations d USING(delegation_id)
-                     WHERE d.child_task_id=t.task_id AND m.phase IN ('launching','recovery_required')))
+                     WHERE d.child_task_id=t.task_id AND m.phase IN ('launching','recovery_required'))
+          OR EXISTS (SELECT 1 FROM delegation_continuations c WHERE c.task_id=t.task_id
+                     AND c.phase IN ('launching','recovery_required')))
         ''', (task['project_id'], task_id, task_id)).fetchall()
     for other in others:
         theirs = [r for r in work_intents.inspect(db, other['task_id'])
@@ -296,6 +299,7 @@ def prepare_delivery(db, task_id):
     else:
         return None
     parallel_admission(db, task_id, plan['intent_ids'] if mode == 'independent' else ())
+    delegation_safety.worker_boundary(db, task_id)
     launch_id = str(uuid4())
     db.execute(f"UPDATE delegation_continuations SET phase='launching',mode=?,launch_id=?,delivery_id=?,last_error=NULL,updated_at={NOW} WHERE task_id=?",
                (mode, launch_id, delivery_id, task_id))

@@ -11,7 +11,7 @@ from .task_domain import task_title, validate_task_status, validate_end_reason
 from .agent_names import default_display_name, validate_display_color
 from .output_history import OUTPUT_PAGE_SIZE, OUTPUT_MAX_LIMIT
 from .project_domain import DEFAULT_ROOT, canonical_path, contains, project_name
-from . import delegation_orchestration, delegation_rounds
+from . import delegation_orchestration, delegation_rounds, delegation_safety
 
 
 class AgentStore:
@@ -22,7 +22,7 @@ class AgentStore:
         self._lock = RLock()
         with self._connection() as db:
             version = db.execute('PRAGMA user_version').fetchone()[0]
-            if version not in range(23):
+            if version not in range(24):
                 raise RuntimeError(f'Unsupported control-center database schema version: {version}')
             if version < 18:
                 db.execute('PRAGMA foreign_keys = OFF')
@@ -222,6 +222,16 @@ class AgentStore:
                     if db.execute('PRAGMA foreign_key_check').fetchone():
                         raise sqlite3.IntegrityError('Invalid delegation round migration references')
                     db.execute('PRAGMA user_version = 22')
+                    version = 22
+                if version == 22:
+                    if not db.in_transaction:
+                        db.execute('BEGIN IMMEDIATE')
+                    delegation_safety.migrate(db)
+                    if db.execute('PRAGMA foreign_key_check').fetchone():
+                        raise sqlite3.IntegrityError('Invalid recursive delegation migration references')
+                    db.execute('PRAGMA user_version = 23')
+                db.execute('SELECT recursive_delegation_enabled FROM agents LIMIT 0')
+                db.execute('SELECT admission_error FROM delegations LIMIT 0')
                 db.execute('SELECT round_id,receipt,not_before FROM delegation_rounds LIMIT 0')
                 db.execute('SELECT round_id,delegation_id FROM delegation_round_requests LIMIT 0')
                 db.execute('SELECT hybrid_delegation_enabled FROM agents LIMIT 0')
@@ -827,7 +837,8 @@ class AgentStore:
             delegation_orchestration.bind(db, task['task_id'], previous, generation)
             # Structured Child result validation is not permission to recursively
             # request Delegations. Existing opt-in Parents retain that permission.
-            enabled = 0 if self._hybrid_child(db, agent_id) else 1
+            recursive = db.execute('SELECT recursive_delegation_enabled FROM agents WHERE agent_id=?', (agent_id,)).fetchone()[0]
+            enabled = 0 if self._hybrid_child(db, agent_id) and not recursive else 1
             db.execute('UPDATE agents SET execution_generation=?,delegation_protocol_enabled=? WHERE agent_id=?', (generation, enabled, agent_id))
             return delegation_handoff.ExecutionOrigin(agent_id, assignment['assignment_id'],
                        task['task_id'], task['project_id'], generation)
@@ -992,7 +1003,7 @@ class AgentStore:
             finally:
                 db.close()
 
-    def save_agent(self, record, output_lines=(), output_entries=None, assignment_task_id=None, execution_origin=None, completion_evidence=None):
+    def save_agent(self, record, output_lines=(), output_entries=None, assignment_task_id=None, execution_origin=None, completion_evidence=None, activation=None):
         """Commit metadata and any new output together, retaining creation order."""
         values = dict(record)
         values.setdefault('display_name', default_display_name(values['task']))
@@ -1042,6 +1053,14 @@ class AgentStore:
                            'SELECT ?,base_snapshot,(SELECT COALESCE(MAX(integration_order),0) FROM integrations '
                            "WHERE destination_key=? AND status='applied') FROM task_workspaces WHERE task_id=?",
                            (record['agent_id'], 'task:' + assignment_task_id, assignment_task_id))
+            if activation is not None and existing_assignment is None:
+                if activation.get('recursive_delegation_enabled'):
+                    if not activation.get('hybrid_delegation_enabled') or not activation.get('child_materialization_enabled'):
+                        raise ValueError('Recursive activation requires Hybrid capability')
+                    delegation_safety.activation(db, assignment_task_id, record['agent_type'], record['sandbox'])
+                db.execute('UPDATE agents SET child_materialization_enabled=?,hybrid_delegation_enabled=?,recursive_delegation_enabled=? WHERE agent_id=?',
+                    (int(activation.get('child_materialization_enabled', False)), int(activation.get('hybrid_delegation_enabled', False)),
+                     int(activation.get('recursive_delegation_enabled', False)), record['agent_id']))
             self._sync_task(db, record['agent_id'], record['status'])
             latest = db.execute('SELECT name FROM agent_name_history WHERE agent_id=? ORDER BY id DESC LIMIT 1',
                                 (record['agent_id'],)).fetchone()

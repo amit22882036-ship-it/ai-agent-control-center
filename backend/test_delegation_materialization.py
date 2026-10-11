@@ -278,7 +278,7 @@ class MaterializationTests(unittest.TestCase):
             self.assertNotIn('child_materialization_enabled', {r['name'] for r in db.execute('PRAGMA table_info(agents)')})
         self.store = AgentStore(self.path)
         with self.store._connection() as db:
-            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 22)
+            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 23)
             self.assertEqual(db.execute('SELECT COUNT(*) FROM delegation_materializations').fetchone()[0], 0)
 
     def test_worker_collision_rejected_without_stealing_assignment(self):
@@ -299,7 +299,7 @@ class MaterializationTests(unittest.TestCase):
             db.execute('UPDATE tasks SET parent_task_id=? WHERE task_id=?', (root['task_id'], self.parent['task_id']))
         identifier, = self.accepted()
         with self.assertRaisesRegex(ValueError, 'depth'):
-            self.attach(identifier)
+            self.attach(identifier, materialization.Limits(depth=1))
         self.assertEqual(self.store.get_delegation(identifier)['status'], 'requested')
 
     def test_unrelated_live_root_without_intents_prevents_parallel_launch(self):

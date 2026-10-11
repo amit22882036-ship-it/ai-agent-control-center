@@ -2,7 +2,7 @@
 
 These are backend-only coordination and inspection capabilities. They do not constitute an autonomous scheduler, a Docker/database integration, or OS-wide resource isolation. Declarations coordinate managed Tasks; port adapters add bounded observations and reservations, with the limitations below. Logical intents describe responsibility separately from concrete resources.
 
-This reference preserves the Stage 2 design and migration details. Stage labels explain how the implementation evolved; later sections refine earlier behavior. The current database schema is v22; [Delegation handoffs](delegations.md) reuse the existing execution gates and claim reconciliation rules.
+This reference preserves the Stage 2 design and migration details. Stage labels explain how the implementation evolved; later sections refine earlier behavior. The current database schema is v23; [Delegation handoffs](delegations.md) reuse the existing execution gates and claim reconciliation rules.
 
 [Project overview and setup](../README.md) | [Task lifecycle](task-lifecycle.md) | [Workspaces](workspaces.md) | [Resource coordination](resource-coordination.md)
 
@@ -136,3 +136,7 @@ Delegation is explicit: the source intent must belong to an ancestor Task in the
 Stop and Worker replacement preserve the Task's active intents and Workspace. Waiting and system/resource blocking preserve intents. Pause suspends them once termination is confirmed; an unresolved running Worker retains authority until safely stopped. Resume rechecks overlap before execution. Completion and Cancel release intents while preserving UUIDs, timestamps and release reasons; failed termination never prematurely gives a competing Worker authority. Existing centralized start, continuation, Redirect, child-start and persistence gates enforce the blockers. Stale process finalizers retain their existing identity guards.
 
 Schema **v16 → v17** adds `work_intents` and nullable intent-pair provenance on `task_blockers`, with indexes for idempotency and independent blockers. Migration is transactional and creates no historical intents. Startup preserves pending/waiting intent ownership and reconciles paused/terminal lifecycle without spawning Workers. GET inspection is read-only. Work-intent precedence remains separate from resource fairness/deadlock graphs; no resource deadlock is invented from logical overlap. Complex multi-scope conflicts require explicit release/control decisions; automatic resolution, intent deadlock solving, orchestration and semantic duplicate-work discovery remain future work.
+
+## Recursive admission (Stage 2H.5)
+
+Delegated Workers share global concurrency capacity across all depths. Running/waiting and uncertain executions count; dormant Parents waiting for orchestration do not. Nested Parent resume must reacquire a slot. Per-Parent and aggregate root-tree round throttles reserve durable admission times, so descendant fanout cannot bypass the rate policy. These are operational limits, not financial/token budgets or semantic loop detection. Ancestor control intent, resources, authoritative scopes, dependencies and freshness remain independent gates. Unknown/overlapping responsibility fails closed. See [recursive delegation](delegations.md#recursive-delegation-stage-2h5) for configuration and recovery details.

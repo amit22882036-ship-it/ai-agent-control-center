@@ -4,11 +4,11 @@ The journal is evidence of external-operation progress, not Worker ownership.
 TaskAssignments remain authoritative. No process/filesystem work occurs in the
 transaction helpers; the manager supplies the existing launch implementation.
 """
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from uuid import uuid4
 
 from . import delegations, dependencies, work_control, work_intents
-from . import delegation_orchestration, delegation_rounds
+from . import delegation_orchestration, delegation_rounds, delegation_safety
 from .task_domain import task_title
 
 NOW = delegations.NOW
@@ -18,7 +18,7 @@ NOW = delegations.NOW
 class Limits:
     children_per_parent: int = 16
     concurrent_children: int = 4
-    depth: int = 1
+    depth: int = 4
     preparation_attempts: int = 3
     retry_seconds: tuple = (2, 10)
 
@@ -30,6 +30,10 @@ class Limits:
 
 
 DEFAULT_LIMITS = Limits()
+
+
+def configured_limits():
+    return replace(DEFAULT_LIMITS, depth=delegation_safety.maximum_depth())
 
 
 def migrate(db):
@@ -49,9 +53,11 @@ def inspect(db, identifier):
     return dict(row) if row else None
 
 
-def authorize(db, identifier, limits=DEFAULT_LIMITS):
+def authorize(db, identifier, limits=None):
+    limits = limits or configured_limits()
     record = delegations.get(db, identifier)
     parent = dependencies.task(db, record['parent_task_id'])
+    _check_depth(db, parent, limits)
     if record['status'] not in ('requested', 'materialized') or parent['project_id'] != record['project_id']:
         raise ValueError('Delegation is canceled, closed or belongs to a different Project')
     receipt = delegation_rounds.receipt_for(db, parent['task_id'], identifier)
@@ -84,18 +90,11 @@ def authorize(db, identifier, limits=DEFAULT_LIMITS):
 
 
 def _check_depth(db, parent, limits):
-    depth, current, seen = 1, parent, set()
-    while current['parent_task_id']:
-        if current['task_id'] in seen:
-            raise ValueError('Task hierarchy cycle')
-        seen.add(current['task_id'])
-        depth += 1
-        current = dependencies.task(db, current['parent_task_id'])
-    if depth > limits.depth:
-        raise ValueError('Delegation depth limit reached')
+    delegation_safety.check_depth(db, parent['task_id'], child=True, limit=limits.depth)
 
 
-def attach(db, identifier, limits=DEFAULT_LIMITS):
+def attach(db, identifier, limits=None):
+    limits = limits or configured_limits()
     record, parent, _ = authorize(db, identifier, limits)
     _check_depth(db, parent, limits)
     if record['child_task_id']:
@@ -129,7 +128,8 @@ def check_worker(db, task_id, agent_id=None):
     return dict(row) if row else None
 
 
-def admit(db, identifier, limits=DEFAULT_LIMITS):
+def admit(db, identifier, limits=None):
+    limits = limits or configured_limits()
     record, _, provider = authorize(db, identifier, limits)
     progress = inspect(db, identifier)
     if not progress or progress['phase'] != 'workspace_ready':
@@ -146,12 +146,10 @@ def admit(db, identifier, limits=DEFAULT_LIMITS):
         JOIN agents g USING(agent_id) WHERE a.ended_at IS NULL AND g.status IN ('running','waiting')''')]
     reserved = [dict(r) for r in db.execute('''SELECT t.* FROM tasks t JOIN delegations d ON d.child_task_id=t.task_id
         JOIN delegation_materializations m USING(delegation_id) WHERE m.phase IN ('launching','recovery_required')''')]
+    reserved.extend(dict(r) for r in db.execute('''SELECT t.* FROM tasks t
+        JOIN delegation_continuations c USING(task_id) WHERE c.phase IN ('launching','recovery_required')'''))
     live = {t['task_id']: t for t in live + reserved}
-    delegated_live = db.execute('''SELECT COUNT(*) FROM delegation_materializations m JOIN delegations d USING(delegation_id)
-        WHERE m.phase IN ('launching','recovery_required') OR EXISTS
-        (SELECT 1 FROM task_assignments a WHERE a.task_id=d.child_task_id AND a.ended_at IS NULL)''').fetchone()[0]
-    if delegated_live >= limits.concurrent_children:
-        raise ValueError('Child concurrency capacity reached')
+    delegation_safety.require_capacity(db, task_id, limits.concurrent_children)
     own = [r for r in work_intents.inspect(db, task_id) if r['status'] == 'active' and r['mode'] == 'single_owner' and r['holds_authority']]
     for other in live.values():
         if other['project_id'] != child['project_id']:
@@ -176,18 +174,29 @@ def recover(db):
 
 class Materializer:
     """One controlled pass. The caller schedules bounded retries, never startup."""
-    def __init__(self, store, launch, publish, limits=DEFAULT_LIMITS):
-        self.store, self.launch, self.publish, self.limits = store, launch, publish, limits
+    def __init__(self, store, launch, publish, limits=None):
+        self.store, self.launch, self.publish = store, launch, publish
+        self.limits = limits or configured_limits()
 
     def prepare(self, identifier):
         with self.store._connection() as db:
             db.execute('BEGIN IMMEDIATE')
             record = attach(db, identifier, self.limits)
+            db.execute('UPDATE delegations SET admission_error=NULL WHERE delegation_id=?', (identifier,))
         self.publish(None)
         return record
 
     def run(self, identifier):
-        record = self.prepare(identifier)
+        try:
+            record = self.prepare(identifier)
+        except ValueError as exc:
+            # Includes newly lowered depth policy. Preserve requests/history and
+            # expose the reason durably; no retry timer is generated for this.
+            with self.store._connection() as db:
+                db.execute('BEGIN IMMEDIATE')
+                db.execute('UPDATE delegations SET admission_error=? WHERE delegation_id=?', (str(exc)[:500], identifier))
+            self.publish(None)
+            return dict(delegation_id=identifier, last_error=str(exc))
         with self.store._connection() as db:
             db.execute('BEGIN IMMEDIATE')
             progress = inspect(db, identifier)
