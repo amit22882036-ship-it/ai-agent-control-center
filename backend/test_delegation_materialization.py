@@ -278,7 +278,7 @@ class MaterializationTests(unittest.TestCase):
             self.assertNotIn('child_materialization_enabled', {r['name'] for r in db.execute('PRAGMA table_info(agents)')})
         self.store = AgentStore(self.path)
         with self.store._connection() as db:
-            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 24)
+            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 25)
             self.assertEqual(db.execute('SELECT COUNT(*) FROM delegation_materializations').fetchone()[0], 0)
 
     def test_worker_collision_rejected_without_stealing_assignment(self):

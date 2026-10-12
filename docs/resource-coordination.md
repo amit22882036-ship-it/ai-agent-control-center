@@ -2,7 +2,7 @@
 
 These are backend-only coordination and inspection capabilities. They do not constitute an autonomous scheduler, a Docker/database integration, or OS-wide resource isolation. Declarations coordinate managed Tasks; port adapters add bounded observations and reservations, with the limitations below. Logical intents describe responsibility separately from concrete resources.
 
-This reference preserves the Stage 2 design and migration details. Stage labels explain how the implementation evolved; later sections refine earlier behavior. The current database schema is v24; [Delegation handoffs](delegations.md) reuse the existing execution gates and claim reconciliation rules.
+This reference preserves the Stage 2 design and migration details. Stage labels explain how the implementation evolved; later sections refine earlier behavior. The current database schema is v25; [Delegation handoffs](delegations.md) reuse the existing execution gates and claim reconciliation rules.
 
 [Project overview and setup](../README.md) | [Task lifecycle](task-lifecycle.md) | [Workspaces](workspaces.md) | [Resource coordination](resource-coordination.md)
 
@@ -140,3 +140,5 @@ Schema **v16 → v17** adds `work_intents` and nullable intent-pair provenance o
 ## Recursive admission (Stage 2H.5)
 
 Delegated Workers share global concurrency capacity across all depths. Running/waiting and uncertain executions count; dormant Parents waiting for orchestration do not. Nested Parent resume must reacquire a slot. Per-Parent and aggregate root-tree round throttles reserve durable admission times, so descendant fanout cannot bypass the rate policy. These are operational limits, not financial/token budgets or semantic loop detection. Ancestor control intent, resources, authoritative scopes, dependencies and freshness remain independent gates. Unknown/overlapping responsibility fails closed. See [recursive delegation](delegations.md#recursive-delegation-stage-2h5) for configuration and recovery details.
+
+Stage 2I.2 [promotion](planning.md) accepts explicit structured scope/resource declarations from authorized final control messages. Child Work Intents and task-scoped Resource Claims commit with promotion provenance under the existing transaction rules. Project-local scope conflicts, machine-global resource conflicts and runtime launch checks remain separate. Ambiguous work is not admitted; no semantic deduplication guarantee or new coordination engine is introduced.

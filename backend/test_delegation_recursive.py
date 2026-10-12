@@ -44,10 +44,10 @@ class RecursiveTests(unittest.TestCase):
             return self.root
         self.patch(patch.object(manager, '_execution_workspace', side_effect=workspace))
 
-    def root_agent(self, recursive=True, sandbox='workspace-write'):
+    def root_agent(self, recursive=True, sandbox='workspace-write', planning=False):
         return manager.start_agent('Parent work', 'codex', sandbox, task_id=self.task['task_id'],
             delegation_protocol_enabled=True, child_materialization_enabled=True,
-            hybrid_delegation_enabled=True, recursive_delegation_enabled=recursive)
+            hybrid_delegation_enabled=True, recursive_delegation_enabled=recursive, planning_enabled=planning)
 
     def task_for(self, agent):
         return self.store.agent_task_ids(agent)[0]
@@ -75,8 +75,8 @@ class RecursiveTests(unittest.TestCase):
         progress = manager.materialize_delegations(task_id)
         return [p['launch_agent_id'] for p in progress if p.get('phase') == 'started']
 
-    def chain(self, generations=2):
-        agents = [self.root_agent()]
+    def chain(self, generations=2, **options):
+        agents = [self.root_agent(**options)]
         for _ in range(generations):
             self.request(agents[-1])
             child, = self.children(agents[-1])
@@ -97,6 +97,17 @@ class RecursiveTests(unittest.TestCase):
         with self.store._connection() as db:
             self.assertEqual(safety.occupied(db), {self.task_for(agents[-1])})
 
+    def test_recursive_planning_inherits_through_depth_limit(self):
+        agents = self.chain(4, planning=True, sandbox='read-only')
+        for agent in agents:
+            self.assertTrue(self.store.planning_enabled(agent))
+            self.assertEqual(manager.agent_types[agent], 'codex')
+            self.assertEqual(manager.agent_sandboxes[agent], 'read-only')
+        count = len(self.commands)
+        self.assertEqual(self.request(agents[-1]), [])
+        self.assertEqual(len(self.commands), count)
+        self.assertEqual(len(self.store.list_tasks()), 5)
+
     def test_activation_inherited_with_provider_sandbox(self):
         root = self.root_agent(sandbox='read-only')
         self.request(root)
@@ -106,6 +117,7 @@ class RecursiveTests(unittest.TestCase):
         self.assertEqual((row['agent_type'], row['sandbox']), ('codex', 'read-only'))
         self.assertTrue(all(row[k] for k in ('delegation_protocol_enabled', 'child_materialization_enabled',
                                            'hybrid_delegation_enabled', 'recursive_delegation_enabled')))
+        self.assertFalse(row['planning_enabled'])
         self.assertIn('--json', self.commands[-1])
         self.assertEqual(len(self.request(child)), 1)
 
@@ -512,7 +524,7 @@ class RecursiveTests(unittest.TestCase):
             self.assertNotIn('recursive_delegation_enabled', {r['name'] for r in db.execute('PRAGMA table_info(agents)')})
         AgentStore(self.store.path)
         with self.store._connection() as db:
-            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 24)
+            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 25)
             self.assertIsNone(db.execute('PRAGMA foreign_key_check').fetchone())
 
     def real_workspaces(self):

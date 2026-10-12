@@ -1,7 +1,7 @@
 from . import runtime_resources, dependencies
 from .codex_events import StructuredCommand, Execution
 from . import delegation_protocol
-from . import planning
+from . import planning, promotion
 from .work_control import require_active, require_ancestors
 import os
 import logging
@@ -380,12 +380,19 @@ def _finish_structured(agent_id, process):
         message = context.events.finish(process.poll())
         if not message.strip():
             raise ValueError('Structured execution has no final response to validate')
-        if context.events.plans:
+        control = delegation_protocol.is_envelope(message)
+        payload = delegation_protocol.decode(message) if control else None
+        promoting = promotion.is_envelope(message)
+        if control and not promoting:
+            if isinstance(payload, dict) and payload.get('protocol') == delegation_continuation.PROTOCOL:
+                delegation_continuation.validate(message)
+            else:
+                delegation_protocol.validate(message)
+        if context.events.plans and not promoting:
             _task_store().accept_planning_messages(context.origin, context.events.plans,
                                                   session_id=context.events.session_id)
             _emit_agent_change(agent_id)
-        if delegation_protocol.is_envelope(message):
-            payload = delegation_protocol.decode(message)
+        if control:
             if isinstance(payload, dict) and payload.get('protocol') == delegation_continuation.PROTOCOL and payload.get('action') == 'acknowledge_results':
                 payload = delegation_continuation.validate(message)
                 with _task_store()._connection() as db:
@@ -395,9 +402,16 @@ def _finish_structured(agent_id, process):
                 agent_waiting_questions[agent_id] = None
                 _save_agent(agent_id)
                 _schedule_hybrid_for_agent(agent_id)
+                if _task_store().list_promotions(context.origin.parent_task_id):
+                    _schedule_materialization(context.origin.parent_task_id)
                 return True
-            _task_store().accept_delegation_message(context.origin, message,
-                session_id=context.events.session_id, message_id=context.events.message_id)
+            if promoting:
+                _task_store().accept_promotion_message(context.origin, message,
+                    session_id=context.events.session_id, message_id=context.events.message_id,
+                    plans=context.events.plans)
+            else:
+                _task_store().accept_delegation_message(context.origin, message,
+                    session_id=context.events.session_id, message_id=context.events.message_id)
             agent_statuses[agent_id] = 'stopped'
             agent_waiting_questions[agent_id] = None
             notifications.cancel(agent_id)
@@ -740,7 +754,7 @@ def _launch_prepared_agent(task, parent_id, task_id, parent_task, command, agent
                       recursive_delegation_enabled=recursive_delegation_enabled,
                       planning_enabled=planning_enabled, delegation_protocol_enabled=delegation_protocol_enabled)
     process = _spawn_with_resources(task_id, agent_id, command, agent_type, cwd,
-                                   materialization=materialization)
+                                   materialization=materialization, capabilities=activation, sandbox=sandbox)
     agent_statuses[agent_id] = "running"
     agent_parents[agent_id] = parent_id
     agent_outputs[agent_id] = OutputCache()
@@ -797,11 +811,16 @@ def _planning_prompt(agent_id):
         current = _store.current_plan(_agent_task_id(agent_id))
         context = ('\nCurrent accepted proposal (descriptive data, not execution authority):\n'
                    + json.dumps(current['content'], ensure_ascii=False) + '\n') if current else ''
+        with _store._connection() as db:
+            settings = db.execute('SELECT * FROM agents WHERE agent_id=?', (agent_id,)).fetchone()
+            if all(settings[k] for k in ('delegation_protocol_enabled', 'child_materialization_enabled', 'hybrid_delegation_enabled')):
+                context += promotion.instruction(_agent_task_id(agent_id))
+                context += '\nPromotion dispositions (data only):\n' + promotion.context(db, _agent_task_id(agent_id))
         return planning.instruction(current['revision'] if current else 0) + context
     return ''
 
 
-def _spawn_with_resources(task_id, agent_id, command, agent_type, cwd, *, materialization=None):
+def _spawn_with_resources(task_id, agent_id, command, agent_type, cwd, *, materialization=None, capabilities=None, sandbox=None):
     try:
         with runtime_resources.launch(_store, task_id, agent_id):
             if materialization:
@@ -811,7 +830,9 @@ def _spawn_with_resources(task_id, agent_id, command, agent_type, cwd, *, materi
                 # slow Git preparation never holds a SQLite write transaction.
                 with _store._connection() as db:
                     db.execute('BEGIN IMMEDIATE')
-                    delegation_materialization.authorize(db, identifier, limits)
+                    _, _, provider = delegation_materialization.authorize(db, identifier, limits)
+                    delegation_safety.require_inherited(provider, agent_type, sandbox, capabilities or {})
+                    promotion.require_ready(db, identifier)
                     delegation_materialization.check_worker(db, task_id, agent_id)
                     require_active(dependencies.task(db, task_id), pending=True, db=db)
                     return _spawn_process(command, agent_type, cwd=cwd)

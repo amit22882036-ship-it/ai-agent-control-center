@@ -2,7 +2,7 @@
 
 A local workspace for supervising AI coding agents: see what is running, follow output, answer questions, and intervene without juggling separate terminal sessions.
 
-**Active work in progress.** Stage 2 development is building durable task ownership, isolated workspaces, and coordination beneath the dashboard. The long-term goal is to help people manage related work across multiple agents; autonomous planning and multi-provider orchestration are not implemented yet.
+**Active work in progress.** Stage 2 development is building durable task ownership, isolated workspaces, and coordination beneath the dashboard. Backend opt-in planning and coordinated delegation are available; dashboard orchestration and multiple providers remain future work.
 
 > **Local use only:** the backend currently has no authentication. Do not expose it to untrusted networks or operate it as a production-ready hosted service. Task prompts, agent output, and workspace metadata can contain private information.
 
@@ -26,7 +26,7 @@ A local workspace for supervising AI coding agents: see what is running, follow 
 | Lifecycle and dependencies | Pause/resume/cancel, subtree impact, dependency validation, and durable blockers. |
 | Resource coordination | Managed claims, fair queues, deadlock detection, port preflight, and bounded controller reservations. |
 | Logical work intents | Explicit responsibility scopes, hierarchical overlap detection, and conflict inspection. |
-| Planning decisions | Backend opt-in, non-executing proposals with immutable revisions and execution provenance; see [planning](docs/planning.md). |
+| Planning and promotion | Backend opt-in plan revisions and explicit promotion of selected proposals through coordinated Delegation admission, with bounded inheritance for explicitly authorized recursive Codex descendants; see [planning](docs/planning.md). |
 | Delegation requests | Backend opt-in recursive requests, bounded Child execution, safely admitted Parent continuation, direct-Parent result integration/delivery, and explicit review. |
 
 These foundations include API and backend-only capabilities, with no dedicated Project, Task-lifecycle, integration, resource, or work-intent editors in the current UI. The dashboard uses workspaces when launching agents; it does not yet provide an orchestration interface.

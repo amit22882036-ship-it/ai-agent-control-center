@@ -129,8 +129,10 @@ def check_worker(db, task_id, agent_id=None):
 
 
 def admit(db, identifier, limits=None):
+    from . import promotion
     limits = limits or configured_limits()
     record, _, provider = authorize(db, identifier, limits)
+    promotion.require_ready(db, identifier)
     progress = inspect(db, identifier)
     if not progress or progress['phase'] != 'workspace_ready':
         raise ValueError('Child is not ready for a new launch')
@@ -179,11 +181,17 @@ class Materializer:
         self.limits = limits or configured_limits()
 
     def prepare(self, identifier):
+        from . import promotion
         with self.store._connection() as db:
             db.execute('BEGIN IMMEDIATE')
-            record = attach(db, identifier, self.limits)
-            db.execute('UPDATE delegations SET admission_error=NULL WHERE delegation_id=?', (identifier,))
+            promoted = promotion.row_for(db, identifier)
+            record = promotion.prepare(db, identifier, self.limits) if promoted else attach(db, identifier, self.limits)
+            if not promoted:
+                db.execute('UPDATE delegations SET admission_error=NULL WHERE delegation_id=?', (identifier,))
         self.publish(None)
+        if promoted:
+            with self.store._connection() as db:
+                promotion.require_ready(db, identifier)
         return record
 
     def run(self, identifier):

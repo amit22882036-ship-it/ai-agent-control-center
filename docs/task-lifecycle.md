@@ -4,7 +4,7 @@ Tasks represent durable work; Agents are workers linked through assignment histo
 
 `POST /tasks` creates work, `GET /tasks` and `GET /tasks/{task_id}` inspect it, `GET /tasks/{task_id}/assignments` exposes assignment history, and `POST /tasks/{task_id}/start-agent` starts a worker for eligible pending work. Explicit child creation uses `POST /agents/{parent_id}/children/start`; the current dashboard displays existing relationships but does not mount a child-creation form. Hierarchy does not automatically infer dependencies or decompose work.
 
-This reference preserves the Stage 2 design and migration details. Stage labels explain how the implementation evolved; later sections refine earlier behavior. The current database schema is v24; [Delegation records](delegations.md) add request provenance without replacing Task hierarchy or lifecycle.
+This reference preserves the Stage 2 design and migration details. Stage labels explain how the implementation evolved; later sections refine earlier behavior. The current database schema is v25; [Delegation records](delegations.md) add request provenance without replacing Task hierarchy or lifecycle.
 
 [Project overview and setup](../README.md) | [Task lifecycle](task-lifecycle.md) | [Workspaces](workspaces.md) | [Resource coordination](resource-coordination.md)
 
@@ -51,3 +51,5 @@ Separately enabled [Hybrid Delegations](delegations.md#hybrid-parent-execution-s
 Finishing an independent Worker turn cannot complete a Parent with unresolved required Delegations. Both Worker-to-Task synchronization and explicit assignment completion enforce this invariant. Successful Child execution, workspace integration, Parent acknowledgement and overall Parent completion are distinct transitions. Rejection/cancellation does not silently satisfy required work; only accepted results allow the final Parent completion path. Stop revokes follow-up continuation, Pause/Resume keeps existing ownership semantics, and uncertain launches remain blocked for inspection. Startup never schedules execution.
 
 Stage 2H.5 extends admission checks to Task ancestors. Subtree Cancel and Child attachment serialize authoritative decisions with `BEGIN IMMEDIATE`; a late launch is rechecked and compensated before stdin delivery if cancellation wins assignment persistence. Stop Agent still affects only that execution, while Cancel covers unfinished descendants. Existing ancestor-owned Pause/Resume semantics remain unchanged. See [recursive delegation](delegations.md#recursive-delegation-stage-2h5) for depth, capacity and recovery boundaries.
+
+Stage 2I.2 promotion exposes `promotions` and `promotion_decisions` in Task reads. Unpromoted proposal prerequisites remain explicit blockers; real prerequisites reuse Task dependency edges. Proposal dependencies require integrated, acknowledged results before Child launch. All selected Delegations remain required for Parent completion; see [planning](planning.md).

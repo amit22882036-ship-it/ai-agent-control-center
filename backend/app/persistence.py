@@ -12,7 +12,7 @@ from .agent_names import default_display_name, validate_display_color
 from .output_history import OUTPUT_PAGE_SIZE, OUTPUT_MAX_LIMIT
 from .project_domain import DEFAULT_ROOT, canonical_path, contains, project_name
 from . import delegation_orchestration, delegation_rounds, delegation_safety
-from . import planning
+from . import planning, promotion
 
 
 class AgentStore:
@@ -23,7 +23,7 @@ class AgentStore:
         self._lock = RLock()
         with self._connection() as db:
             version = db.execute('PRAGMA user_version').fetchone()[0]
-            if version not in range(25):
+            if version not in range(26):
                 raise RuntimeError(f'Unsupported control-center database schema version: {version}')
             if version < 18:
                 db.execute('PRAGMA foreign_keys = OFF')
@@ -239,6 +239,16 @@ class AgentStore:
                     if db.execute('PRAGMA foreign_key_check').fetchone():
                         raise sqlite3.IntegrityError('Invalid planning migration references')
                     db.execute('PRAGMA user_version = 24')
+                    version = 24
+                if version == 24:
+                    if not db.in_transaction:
+                        db.execute('BEGIN IMMEDIATE')
+                    promotion.migrate(db)
+                    if db.execute('PRAGMA foreign_key_check').fetchone():
+                        raise sqlite3.IntegrityError('Invalid promotion migration references')
+                    db.execute('PRAGMA user_version = 25')
+                db.execute('SELECT task_id,decision_key FROM promotion_decisions LIMIT 0')
+                db.execute('SELECT delegation_id,disposition FROM promotion_items LIMIT 0')
                 db.execute('SELECT planning_enabled FROM agents LIMIT 0')
                 db.execute('SELECT task_id,revision,content FROM planning_revisions LIMIT 0')
                 db.execute('SELECT recursive_delegation_enabled FROM agents LIMIT 0')
@@ -835,6 +845,20 @@ class AgentStore:
             return [planning.accept(db, origin, message, session_id=session_id, message_id=identifier)
                     for identifier, message in messages]
 
+    def accept_promotion_message(self, origin, message, *, session_id, message_id, plans=()):
+        if len(plans) > planning.MAX_DECISIONS:
+            raise ValueError('Too many planning decisions')
+        with self._connection() as db:
+            db.execute('BEGIN IMMEDIATE')
+            for identifier, text in plans:
+                planning.accept(db, origin, text, session_id=session_id, message_id=identifier)
+            return promotion.accept(db, origin, message, session_id=session_id, message_id=message_id)
+
+    def list_promotions(self, task_id):
+        with self._connection() as db:
+            dependencies.task(db, task_id)
+            return promotion.inspect(db, task_id)
+
     @staticmethod
     def _hybrid_child(db, agent_id):
         return db.execute('''SELECT 1 FROM task_assignments a JOIN delegations d ON d.child_task_id=a.task_id
@@ -1062,7 +1086,8 @@ class AgentStore:
                 if existing_assignment is None:
                     progress = delegation_materialization.check_worker(db, assignment_task_id, record['agent_id'])
                     if progress and record['status'] == 'running':
-                        delegation_materialization.authorize(db, progress['delegation_id'])
+                        _, _, provider = delegation_materialization.authorize(db, progress['delegation_id'])
+                        delegation_safety.require_inherited(provider, record['agent_type'], record['sandbox'], activation or {})
                     work_control.require_active(task, pending=True, db=db)
                 if existing_assignment is None and (task['status'] != 'pending' or db.execute(
                         'SELECT 1 FROM task_assignments WHERE task_id=? AND ended_at IS NULL', (assignment_task_id,)).fetchone()):

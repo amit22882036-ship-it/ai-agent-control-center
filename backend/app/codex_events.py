@@ -41,6 +41,7 @@ class CodexEvents:
     message: str | None = None
     message_id: str | None = None
     saw_request: bool = False
+    promotion_message: str | None = None
     items: dict = field(default_factory=dict)
     completion: str | None = None
 
@@ -124,6 +125,12 @@ class CodexEvents:
             if not isinstance(text, str):
                 raise ValueError('invalid agent message')
             self.message, self.message_id = text, identifier
+            from . import promotion
+            if self.promotion_message is not None:
+                raise ValueError('Promotion must be the final assistant message')
+            if promotion.is_envelope(text):
+                promotion.validate(text)
+                self.promotion_message = identifier
             if self.planning_enabled and planning.is_envelope(text):
                 planning.validate(text)
                 if len(self.plans) >= planning.MAX_DECISIONS:

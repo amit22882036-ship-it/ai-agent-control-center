@@ -59,7 +59,8 @@ def inherited(provider):
             ('delegation_protocol_enabled', 'child_materialization_enabled', 'hybrid_delegation_enabled'))):
         raise ValueError('Invalid recursive Parent capability')
     return dict(delegation_protocol_enabled=enabled, child_materialization_enabled=enabled,
-                hybrid_delegation_enabled=enabled, recursive_delegation_enabled=enabled)
+                hybrid_delegation_enabled=enabled, recursive_delegation_enabled=enabled,
+                planning_enabled=enabled and bool(provider['planning_enabled']))
 
 
 def occupied(db):
@@ -100,3 +101,12 @@ def root_slot(db, task_id, timestamp, *, burst=8, window_seconds=60):
         WHERE r.accepted_at IS NOT NULL ORDER BY r.not_before DESC,r.rowid DESC LIMIT 1 OFFSET ?''',
         (root, burst - 1)).fetchone()
     return max(timestamp, prior[0] + window_seconds) if prior else timestamp
+
+
+def require_inherited(provider, agent_type, sandbox, capabilities):
+    """Recheck the actual launch request against fresh durable Parent authority."""
+    allowed = inherited(provider)
+    if (provider['agent_type'] != agent_type
+            or (agent_type == 'codex' and provider['sandbox'] != sandbox)
+            or any(capabilities.get(key, False) and not value for key, value in allowed.items())):
+        raise ValueError('Inherited Child capabilities exceed current Parent authorization')

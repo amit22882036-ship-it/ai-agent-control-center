@@ -124,7 +124,7 @@ The existing start path provisions a Task-owned isolated workspace from the Pare
 
 ## Execution admission and coordination
 
-The Child inherits the receipt's current Parent provider and exact Codex sandbox. No permissions come from the request envelope. Provider availability is checked by the existing command builder. Children do not inherit autonomous delegation activation. stdin, `shell=False`, process-tree Stop, session parsing, output, TaskAssignment persistence and SSE use the existing launch path.
+The Child inherits the receipt's current Parent provider and exact Codex sandbox. No permissions come from the request envelope. Provider availability is checked by the existing command builder. Children inherit autonomous delegation activation only under the explicit recursive capability described below; otherwise it remains disabled. stdin, `shell=False`, process-tree Stop, session parsing, output, TaskAssignment persistence and SSE use the existing launch path.
 
 After workspace preparation, admission rechecks Parent/Child control, pending/unassigned state, assignment history, resources, work intents and workspace provenance. It commits a `launching` journal with a new Agent UUID **before** starting a process. A final short SQLite transaction serializes the last control check with `Popen`; Task/assignment persistence then revalidates ownership before sending the Codex prompt. Generic starts cannot bypass a pending or uncertain materialization. TaskAssignments remain the source of Worker ownership.
 
@@ -267,3 +267,7 @@ Existing journals apply at every level. Restart preserves requests, attached Chi
 Deterministic regressions use synthetic streams/processes, temporary SQLite databases and temporary Git worktrees. They cover multi-generation execution, depth changes, inherited permissions, cancellation races, aggregate admission, direct-Parent integration/acknowledgement and recovery. This is not paid Codex E2E verification. Automatic decomposition, corrective replanning, semantic loop detection, provider-account onboarding and unknown-ownership recovery tooling remain future work. Stage 2I planning must preserve these safety gates.
 
 Stage 2I.1 adds optional [non-executing planning revisions](planning.md) in schema v24. Planning proposals do not create Delegations or alter these execution gates.
+
+Stage 2I.2 adds [explicit plan promotion](planning.md#coordinated-promotion-stage-2i2) through the same Hybrid handoff, rounds, Child materialization and result acknowledgement. Promotion records are provenance, not a second Worker lifecycle; unresolved selected work remains required.
+
+Authorized recursive planning in Stage 2I.2 additionally requires the Parent planning flag: only newly materialized Codex Children inherit it, under the same provider, sandbox, depth and current-ownership gates. Ordinary Root defaults and existing Agents remain unchanged; replacement permission is explicit. See [planning activation](planning.md).

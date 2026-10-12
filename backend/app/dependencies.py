@@ -72,6 +72,10 @@ def hard_blocked(db, task_id):
 
 def describe(db, row):
     result = dict(row)
+    if db.execute("SELECT 1 FROM sqlite_master WHERE name='promotion_items'").fetchone():
+        from . import promotion
+        result['promotions'] = promotion.inspect(db, row['task_id'])
+        result['promotion_decisions'] = promotion.history(db, row['task_id'])
     if result.get('orchestration_handoff'):
         result['orchestration_handoff'] = json.loads(result['orchestration_handoff'])
         from . import delegation_orchestration, delegation_rounds
