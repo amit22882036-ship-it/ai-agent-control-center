@@ -153,7 +153,11 @@ def reconcile(db, tasks):
     if not db.execute("SELECT 1 FROM sqlite_master WHERE name='work_intents'").fetchone():
         return False
     running = {r[0] for r in db.execute("SELECT a.task_id FROM task_assignments a JOIN agents g USING(agent_id) WHERE a.ended_at IS NULL AND g.status='running'")}
+    from . import replanning
+    held = replanning.held_tasks(db)
     for intent in rows(db):
+        if intent['task_id'] in held:
+            continue  # Unconfirmed replanning stop cannot relinquish scope.
         if intent['status'] == 'released':
             continue
         task = tasks[intent['task_id']]

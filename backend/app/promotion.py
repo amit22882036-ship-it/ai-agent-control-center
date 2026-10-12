@@ -137,6 +137,9 @@ def accept(db, origin, message, *, session_id, message_id):
     graph = {r['proposal_id']: json.loads(r['proposal'])['depends_on'] for r in db.execute(
         'SELECT proposal_id,proposal FROM promotion_items WHERE task_id=?', (task['task_id'],))}
     for item in value['items']:
+        from . import replanning
+        if replanning.withdrawn(db, task['task_id'], item['proposal_id']):
+            raise ValueError('Proposal was explicitly withdrawn; use a new identity')
         if item['proposal_id'] not in proposals:
             raise ValueError('Unknown selected proposal')
         graph.setdefault(item['proposal_id'], proposals[item['proposal_id']]['depends_on'])
@@ -323,6 +326,8 @@ def prepare(db, identifier, limits=None):
 
 
 def require_ready(db, identifier):
+    from . import replanning
+    replanning.hold_replacement(db, identifier)
     row = row_for(db, identifier)
     if row and row['disposition'] != 'ready':
         raise ValueError(row['reason'])

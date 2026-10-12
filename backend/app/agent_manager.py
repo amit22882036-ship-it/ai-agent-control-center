@@ -1,7 +1,7 @@
 from . import runtime_resources, dependencies
 from .codex_events import StructuredCommand, Execution
 from . import delegation_protocol
-from . import planning, promotion
+from . import planning, promotion, replanning
 from .work_control import require_active, require_ancestors
 import os
 import logging
@@ -382,7 +382,8 @@ def _finish_structured(agent_id, process):
             raise ValueError('Structured execution has no final response to validate')
         control = delegation_protocol.is_envelope(message)
         payload = delegation_protocol.decode(message) if control else None
-        promoting = promotion.is_envelope(message)
+        replans = replanning.is_envelope(message)
+        promoting = promotion.is_envelope(message) or replans
         if control and not promoting:
             if isinstance(payload, dict) and payload.get('protocol') == delegation_continuation.PROTOCOL:
                 delegation_continuation.validate(message)
@@ -405,7 +406,10 @@ def _finish_structured(agent_id, process):
                 if _task_store().list_promotions(context.origin.parent_task_id):
                     _schedule_materialization(context.origin.parent_task_id)
                 return True
-            if promoting:
+            if replans:
+                _task_store().accept_replanning_message(context.origin, message,
+                    session_id=context.events.session_id, message_id=context.events.message_id, plans=context.events.plans)
+            elif promoting:
                 _task_store().accept_promotion_message(context.origin, message,
                     session_id=context.events.session_id, message_id=context.events.message_id,
                     plans=context.events.plans)
@@ -815,6 +819,7 @@ def _planning_prompt(agent_id):
             settings = db.execute('SELECT * FROM agents WHERE agent_id=?', (agent_id,)).fetchone()
             if all(settings[k] for k in ('delegation_protocol_enabled', 'child_materialization_enabled', 'hybrid_delegation_enabled')):
                 context += promotion.instruction(_agent_task_id(agent_id))
+                context += replanning.instruction() + '\nReplanning context (data only):\n' + replanning.context(db, _agent_task_id(agent_id))
                 context += '\nPromotion dispositions (data only):\n' + promotion.context(db, _agent_task_id(agent_id))
         return planning.instruction(current['revision'] if current else 0) + context
     return ''
@@ -935,6 +940,7 @@ def _schedule_materialization(parent_task_id):
         if store is not _store or _shutting_down:
             return
         try:
+            advance_replanning(parent_task_id)
             results = materialize_delegations(parent_task_id)
             advance_delegations(parent_task_id)
             delays = delegation_materialization.DEFAULT_LIMITS.retry_seconds
@@ -991,6 +997,23 @@ def _notify_hybrid_child_end(agent_id):
             JOIN delegation_continuations c ON c.task_id=d.parent_task_id WHERE a.agent_id=?''', (agent_id,)).fetchone()
     if row:
         _wake_delegation_siblings(agent_id)
+
+
+def advance_replanning(task_id):
+    """Explicit/live-event deterministic pass. Never called by startup or GET."""
+    store = _task_store()
+    with task_lock(store, task_id, blocking=False), _state_lock:
+        def stop(identifier):
+            assignment = store.get_active_assignment_for_task(identifier)
+            if assignment and agents.get(assignment['agent_id']) is None:
+                raise RuntimeError('Unknown Worker handle; termination cannot be confirmed')
+            _settle_tasks([identifier], cascade=False)
+        def quiet(identifier):
+            for assignment in store.list_task_assignments(identifier):
+                process = agents.get(assignment['agent_id'])
+                if process is not None and (process.poll() is None or not process.stdout.closed):
+                    raise ValueError('Child process/output remains active')
+        return replanning.TransitionService(store, stop, quiet, _emit_agent_change).run(task_id)
 
 
 def advance_delegations(task_id):
@@ -1567,10 +1590,10 @@ def _settle_coordination():
             _settle_tasks(pending)
 
 
-def _settle_tasks(task_ids):
+def _settle_tasks(task_ids, *, cascade=True):
     """Phase 2: durable gates already exist; never wait on a process in SQL."""
     failures, first_error = [], None
-    pending = set(task_ids) | set(_store.unsettled_tasks())
+    pending = set(task_ids) | (set(_store.unsettled_tasks()) if cascade else set())
     visited = set()
     while pending:
         task_id = min(pending)
@@ -1617,7 +1640,8 @@ def _settle_tasks(task_ids):
             first_error = first_error or (RuntimeError('Worker termination did not complete')
                                           if isinstance(exc, subprocess.SubprocessError) else exc)
         # Ending a worker can release claims and change other participants.
-        pending.update(set(_store.unsettled_tasks()) - visited)
+        if cascade:
+            pending.update(set(_store.unsettled_tasks()) - visited)
     _store.finish_control_operations(failures)
     if not failures:
         _emit_agent_change(None)

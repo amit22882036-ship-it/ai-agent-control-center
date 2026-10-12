@@ -174,6 +174,8 @@ def reconcile(db, tasks, triggering_claim_id=None, preflight_tasks=()):
     rows = claims(db)
     assignments = {r['assignment_id']: dict(r) for r in db.execute('SELECT * FROM task_assignments')}
     running = {r[0] for r in db.execute("SELECT a.task_id FROM task_assignments a JOIN agents g USING(agent_id) WHERE a.ended_at IS NULL AND g.status='running'")}
+    from . import replanning
+    held = replanning.held_tasks(db)
     externally_blocked = {r[0] for r in db.execute(f"SELECT task_id FROM task_blockers WHERE active=1 AND hard=1 AND NOT {MANAGED_BLOCKER} AND NOT {coordination.DEADLOCK} AND NOT {external.BLOCKER}")}
     suspended = set()
     for key, task in tasks.items():
@@ -184,6 +186,8 @@ def reconcile(db, tasks, triggering_claim_id=None, preflight_tasks=()):
     for c in rows:
         task = tasks[c['task_id']]
         assignment = assignments.get(c['assignment_id'])
+        if c['task_id'] in held:
+            continue  # Preserve physical ownership across uncertain replanning stops.
         if c['status'] == 'released':
             continue
         if ((c['lifetime'] == 'worker' and (not assignment or assignment['ended_at'] is not None))

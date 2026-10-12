@@ -271,3 +271,8 @@ Stage 2I.1 adds optional [non-executing planning revisions](planning.md) in sche
 Stage 2I.2 adds [explicit plan promotion](planning.md#coordinated-promotion-stage-2i2) through the same Hybrid handoff, rounds, Child materialization and result acknowledgement. Promotion records are provenance, not a second Worker lifecycle; unresolved selected work remains required.
 
 Authorized recursive planning in Stage 2I.2 additionally requires the Parent planning flag: only newly materialized Codex Children inherit it, under the same provider, sandbox, depth and current-ownership gates. Ordinary Root defaults and existing Agents remain unchanged; replacement permission is explicit. See [planning activation](planning.md).
+
+Stage 2I.3 adds explicit [adaptive replanning](planning.md#adaptive-replanning-stage-2i3-backend-only) over these services. Safely settled retirement may resolve obsolete required Delegations; unresolved transitions and replacements still block completion. Result acknowledgement and recursive authorization remain required.
+
+
+Verified reuse may retire an unexecuted, consumer-free leaf responsibility when the authorized direct Parent explicitly attests compatibility with an already accepted, freshly integrated result. Backend ownership, workspace and coordination checks remain mandatory. The existing transition journal retains source/target provenance and the attestation; the target is canceled, not completed, and no result or integration is fabricated. Unconfirmed candidates, stale evidence, executed targets and unsupported consumer graph changes remain blocked. See [explicit compatible-result reuse](planning.md#explicit-compatible-result-reuse) for the bounded protocol and recovery contract.

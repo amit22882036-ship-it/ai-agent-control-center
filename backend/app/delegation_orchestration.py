@@ -67,7 +67,11 @@ def outstanding(db, task_id):
     # Canceled/rejected work is unresolved, not silently treated as success.
     if not db.execute("SELECT 1 FROM sqlite_master WHERE name='delegations'").fetchone():
         return False
-    return db.execute("SELECT 1 FROM delegations WHERE parent_task_id=? AND status<>'acknowledged'", (task_id,)).fetchone() is not None
+    from . import replanning
+    if replanning.pending(db, task_id):
+        return True
+    return any(not replanning.retired(db,r[0]) for r in db.execute(
+        "SELECT delegation_id FROM delegations WHERE parent_task_id=? AND status<>'acknowledged'",(task_id,)))
 
 
 def blocks(db, task_id):
@@ -256,6 +260,7 @@ def result_rows(db, task_id):
 
 
 def prepare_delivery(db, task_id):
+    from . import replanning
     current, parent, agent = owner(db, task_id)
     if current['phase'] != 'waiting':
         raise ValueError('Parent continuation already admitted or requires inspection')
@@ -289,13 +294,15 @@ def prepare_delivery(db, task_id):
         mode, delivery_id = 'independent', None
         # Every accepted request must have an attached scope before independent
         # work is admitted; do not infer safety from still-unmaterialized text.
-        if db.execute('SELECT 1 FROM delegations WHERE parent_task_id=? AND child_task_id IS NULL', (task_id,)).fetchone():
+        if any(not replanning.retired(db,r[0]) for r in db.execute('SELECT delegation_id FROM delegations WHERE parent_task_id=? AND child_task_id IS NULL',(task_id,))):
             raise ValueError('Pending Child responsibility scopes are not available')
         parallel_admission(db, task_id, plan['intent_ids'])
         prompt = 'Perform only the approved independent work, then yield at a safe synchronization point:\n' + plan['instruction']
+    elif (review := replanning.review_prompt(db, task_id)):
+        mode, delivery_id, prompt = 'independent', None, review
     elif not outstanding(db, task_id):
         mode, delivery_id = 'finishing', None
-        prompt = 'All required Child results have been accepted. Continue the original Parent Task, verify the overall outcome, and finish only when the whole task is complete.'
+        prompt = 'All required Child responsibilities have been accepted or safely retired. Continue the original Parent Task, verify the overall outcome, and finish only when the whole task is complete.'
     else:
         return None
     parallel_admission(db, task_id, plan['intent_ids'] if mode == 'independent' else ())

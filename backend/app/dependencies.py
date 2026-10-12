@@ -72,6 +72,8 @@ def hard_blocked(db, task_id):
 
 def describe(db, row):
     result = dict(row)
+    from . import replanning
+    result['replan_transitions'] = replanning.inspect(db, row['task_id'])
     if db.execute("SELECT 1 FROM sqlite_master WHERE name='promotion_items'").fetchone():
         from . import promotion
         result['promotions'] = promotion.inspect(db, row['task_id'])
@@ -132,6 +134,8 @@ def reconcile(db, triggering_claim_id=None, preflight_tasks=()):
                 {(t['task_id'], None, 'delegation_requested') for t in tasks.values()
                  if t.get('orchestration_handoff') and t['status'] not in TERMINAL
                  and delegation_orchestration.blocks(db, t['task_id'])})
+    from . import replanning
+    replanning.collect_signals(db)
     work_intents.reconcile(db, tasks)
     resources.reconcile(db, tasks, triggering_claim_id, preflight_tasks)
     for record in tasks.values():

@@ -63,3 +63,5 @@ Stage 2H.4's separately activated Hybrid service calls this same integration mac
 Stage 2H.5 reuses this flow for nested Parents: Grandchild -> direct Child -> Root, with distinct integration evidence and review at each step. There is no ancestor shortcut or recursive merge engine. Uncertain delegated launch/continuation ownership prevents integration even after recovery displays the Agent as stopped. Stop, Cancel and restart retain workspaces; unrelated branches can continue when declared scopes and resource gates permit it.
 
 Stage 2I.2 [promotion](planning.md) reuses controlled Child materialization and these Task-owned workspaces. A stored plan provisions nothing. Blocked promoted work cannot launch a Worker; successful Child results still integrate only into their direct Parent through the existing journal and explicit acknowledgement.
+
+Stage 2I.3 retirement preserves the original Task worktree and partial progress. Replacement Tasks use normal Task workspace provisioning; no obsolete Child files are copied or reset. Reuse remains a candidate until objective integration/freshness checks and authorized compatibility review are satisfied.

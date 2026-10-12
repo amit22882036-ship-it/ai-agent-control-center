@@ -303,7 +303,7 @@ class PromotionTests(unittest.TestCase):
             self.assertFalse(db.execute("SELECT 1 FROM sqlite_master WHERE name='promotion_items'").fetchone())
         AgentStore(self.store.path)
         with self.store._connection() as db:
-            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 25)
+            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 26)
             self.assertIsNone(db.execute('PRAGMA foreign_key_check').fetchone())
 
     def workspace_fixture(self):

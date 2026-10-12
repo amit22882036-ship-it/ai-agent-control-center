@@ -58,7 +58,7 @@ The transactional v23 → v24 migration adds default-off `agents.planning_enable
 
 Migration preserves existing ownership and delegation history, grants no historical permissions, and launches no processes. Failure rolls back schema and version together; future schemas are rejected. Restart retains accepted revisions; uncommitted/buffered decisions are not reconstructed from log text. A crash after plan commit but before normal execution finalization may leave an accepted plan on an interrupted Task: a plan is never completion evidence. Existing recovery decides execution state without launching a Worker.
 
-Stage 2I.1 supplies optional planning records only. The Stage 2I.2 extension below adds explicit execution admission. Stage 2I.3 will handle changes to active work and safe handoffs. Stage 2I.4 will add UI integration and future creation defaults. Neither milestone guarantees semantic duplicate detection.
+Stage 2I.1 supplies optional planning records only. The Stage 2I.2 extension below adds explicit execution admission. Stage 2I.3 below adds explicit responsibility transitions and safe handoffs. Stage 2I.4 will add UI integration and future creation defaults. Neither milestone guarantees semantic duplicate detection.
 
 ## Verification limitation
 
@@ -109,7 +109,7 @@ SQLite immediate transactions serialize admission, scope ownership and immutable
 
 Frozen proposal prerequisites are resolved to real `task_dependencies` edges as their Children become available. An unpromoted prerequisite creates a durable `promotion` blocker on the dependent Child, without creating a fake completed Task. Proposal prerequisites additionally wait for successful integration and explicit Parent acknowledgement, so later Children snapshot the reviewed Parent workspace. Explicit existing-Task prerequisites retain existing completion semantics. Cycles across frozen proposals and later revisions are rejected; real Task edges use the existing cycle validator. Canceled/failed prerequisites cannot release required work as success.
 
-Later rounds may select previously unselected proposals. A retained proposal ID cannot create another Delegation or Child in a later revision. Its original accepted revision, responsibility, coordination declaration and provenance remain immutable. Attempting to change already promoted responsibility conflicts; this is reserved for Stage 2I.3. Updating or withdrawing a descriptive plan does not cancel real work. Resource/dependency resolution requires a fresh bounded orchestration pass, not an old snapshot. Result acknowledgement schedules the existing materialization pass; resource changes alone do not start a paid turn. Operators may invoke the existing backend pass explicitly. A waiting Parent needs authorized independent continuation to choose another round; no model turn is invented solely to select an absent prerequisite.
+Later rounds may select previously unselected proposals. A retained proposal ID cannot create another Delegation or Child in a later revision. Its original accepted revision, responsibility, coordination declaration and provenance remain immutable. Attempting to change already promoted responsibility conflicts; Stage 2I.3 uses an explicit retirement/replacement transition rather than editing that history. Updating or withdrawing a descriptive plan does not cancel real work. Resource/dependency resolution requires a fresh bounded orchestration pass, not an old snapshot. Result acknowledgement schedules the existing materialization pass; resource changes alone do not start a paid turn. Operators may invoke the existing backend pass explicitly. A waiting Parent needs authorized independent continuation to choose another round; no model turn is invented solely to select an absent prerequisite.
 
 ### Identity, inspection, migration and recovery
 
@@ -120,3 +120,81 @@ Exact decision replay returns the original receipt without creating work or rese
 Existing `GET /tasks` and `GET /tasks/{task_id}` include `promotions` and `promotion_decisions`; `AgentStore.list_promotions(task_id)` is available internally. Delegation reads retain their normal Child, admission-error and materialization evidence. Safe prompt preparation/resume includes at most sixteen own promotion dispositions and eight related same-Project scope declarations, with a total 16 KiB serialized context limit. Related work includes bounded Task identity/title/status and declared scope, including completed-work candidates; it never includes entire output histories or foreign-Project owners. Context is informative, never a lease; live processes receive no injected messages.
 
 There is no committed gap between admission and Delegation provenance: they share one transaction. Interrupted workspace preparation reuses the existing Child/journal. Unknown launch outcomes remain `recovery_required` and cannot trigger another automatic launch. Restart preserves mixed dispositions and never reattaches PIDs or starts a Parent/Child. Stop, subtree cancellation, permission gates, direct-Parent result delivery, explicit acknowledgement and integration idempotency continue through Stage 2H. Required Delegations from all rounds block premature Parent completion. Reuse/ambiguous/conflicting work needs explicit inspection or later replanning; no semantic-resolution loop is added.
+
+## Adaptive replanning (Stage 2I.3, backend only)
+
+An authorized Codex Parent may explicitly retire or preserve admitted work, add prerequisites to an unexecuted direct Child, withdraw unpromoted proposals, and select replacement proposals. Descriptive planning revisions still never change Workers. Existing Root defaults, recursive planning inheritance and provider/sandbox restrictions are unchanged. The runtime accepts only a successful, final structured assistant message; tool output, stderr, prose, fences, failed turns and incomplete streams have no control authority.
+
+The strict `control-center.replanning.v1` envelope has exactly these fields:
+
+```json
+{
+  "protocol": "control-center.replanning.v1",
+  "task_id": "00000000-0000-4000-8000-000000000001",
+  "decision_key": "retire-old-parser",
+  "revision": 2,
+  "changes": [{
+    "action": "retire",
+    "delegation_id": "00000000-0000-4000-8000-000000000002",
+    "expected": "<64-character backend state token>",
+    "reason": "The previous interface is obsolete",
+    "replacement": "new-parser",
+    "depends_on_task_ids": [],
+    "reuse_result_id": null
+  }],
+  "withdraw": [],
+  "promote": [],
+  "continuation": null
+}
+```
+
+The example illustrates a relationship, not a standalone executable request: `new-parser` must already be admitted or selected in `promote` using the existing promotion.v1 item contract. Actions are `retain`, `retire`, `depend`, and `reuse`. Only `retire` may name a replacement; only `depend` may add Task prerequisite IDs; `reuse` must identify a known direct-Parent result. Changes, withdrawals and promotions each permit at most 16 items, within the 64 KiB envelope limit. Fields, UUIDs, types, JSON duplicate keys, graph cycles and identities are validated before effects. `expected` is supplied in bounded backend context and covers the target Delegation, Task, Worker generations/assignments, dependencies, descendants and claims. It is an optimistic state check, never permission. Parent assignment, Project, recursive authorization and current execution generation are independently validated.
+
+`revision` references the current immutable plan. Planning messages in the same successful invocation, replanning acceptance and replacement promotion commit together. A decision key returns the original receipt on exact replay; changed content conflicts. Equivalent payloads with a different key do not create another transition. Previously accepted responsibilities remain immutable in promotion history: replacements use different proposal/Task identities. Explicit withdrawal prevents later promotion of that same local proposal identity. This is not Worker reassignment on the same Task.
+
+### Transition and cancellation safety
+
+Schema v26 adds `replan_decisions`, `replan_transitions`, and `replan_signals`. The v25 → v26 migration is transactional, checks foreign keys, preserves existing identities and grants no permissions. Transition rows reference existing Delegations, Tasks and `task_control_operations`; they do not own Workers. Phases are `validated`, `stopping`, `blocked`, `recovery_required`, `applied`, `rejected`, and `canceled`. Decision provenance and original request bodies remain durable.
+
+An existing bounded live-event pass, or explicit backend `advance_replanning(task_id)`, advances independently safe items under existing Task/runtime locks. Application rechecks current authority and expected target state. Cancellation intent and the existing control-operation identity commit before process termination. An unconfirmed stop retains responsibility and resource claims, including across restart. Missing handles never prove termination. Only confirmed settlement allows retirement and replacement admission; existing promotion/materialization performs all normal fresh scope, resource, dependency, capacity, workspace and provider checks. Stop processing is restricted to the authorized target. Notifications/SSE follow committed state.
+
+Live descendants block retirement because arbitrary reparenting is unsupported. Active or completed consumers also block retirement; pending consumers retain existing dependency blockers when their prerequisite is canceled. Frozen promoted prerequisites are checked as well as real edges. Dependency adjustments are additive and restricted to unexecuted Children: they never silently remove old prerequisites or redirect a running consumer to a different interface. A blocked pre-control transition may be superseded by an explicit fresh decision, preserving required replacement relationships. Unknown stops require inspection rather than automatic retry.
+
+Task worktrees, partial changes, output, assignments, integrations and results are preserved. There is no reset, clean, file copying or automatic adoption from an obsolete workspace. Retiring completed work requires existing integration/result review. A `reuse` request without explicit compatibility attestation remains an inspectable candidate. The optional attestation below permits narrowly scoped retirement after independent backend validation; it never marks replacement work completed or transfers ownership.
+
+### Review signals, continuation and completion
+
+Material Child failures, canceled dependencies and durable responsibility conflicts produce coalesced review evidence with stable identities. Ordinary successful Child completion and temporary resource waiting do not independently request replanning. Signals do not invoke a model. An already-authorized, quiet Hybrid continuation may consume a bounded group once, using existing launch journals and coordination gates; it cannot inject into a live process. Unchanged evidence is not repeatedly delivered, and ambiguous resume retains the existing recovery barrier. No Worker starts on backend startup or dashboard reads.
+
+Parent independent work remains subject to existing non-overlap checks. Required unresolved transitions and replacement Delegations block Parent completion. Only safely applied retirement (including verified reuse retirement) settles an obsolete responsibility; applying a transition never completes the Parent Task. Child results still use direct-Parent delivery/integration and explicit acknowledgement. Work that cannot safely transition stays inspectable with a reason; a blocked transition is not success.
+
+These are backend capabilities verified with synthetic provider events, temporary SQLite databases and temporary Git workspaces. Real Codex replanning E2E is not claimed. Coordination depends on truthful structured scope declarations and does not prove semantic compatibility or detect all semantic oscillations. Stage 2I.4 owns dashboard/default-activation integration; Stage 2J owns generalized Worker reassignment.
+
+
+### Explicit compatible-result reuse
+
+Existing `control-center.replanning.v1` messages keep their meaning. A `reuse` change may additionally include exactly this optional `compatibility` object (unknown fields are rejected):
+
+```json
+{
+  "protocol": "control-center.reuse-attestation.v1",
+  "source_delegation_id": "<source Delegation UUID>",
+  "source_task_id": "<source Child Task UUID>",
+  "source_expected": "<backend source state token>",
+  "integration_id": "<existing integration UUID>",
+  "target_task_id": "<target Child Task UUID, or null if unmaterialized>",
+  "responsibility": "<backend target responsibility token>",
+  "required_deliverable": "The specific deliverable or interface the target requires",
+  "explanation": "Explain specifically how the accepted source result covers that deliverable and its scope."
+}
+```
+
+The enclosing change identifies the source `reuse_result_id` and target `delegation_id`/`expected`. Backend context supplies target responsibility hashes and bounded accepted-result references/source state tokens. The responsibility hash binds the immutable instruction and frozen promoted proposal; the expected state also binds current scope, resource and dependency declarations. `required_deliverable` is nonblank and at most 2,000 characters; `explanation` is 40–2,000 characters. This is a deliberate **Parent Agent semantic attestation**, not mathematical proof. Generic old `reason` text never becomes approval. No additional reviewer, permission prompt or paid confirmation turn is introduced.
+
+Only the existing successful final structured execution path may authorize reuse. Application rechecks direct-Parent/Project ownership, current assignment, generation/session, permissions, plan revision, both expected states, successful source completion and latest ended assignment, explicit result acceptance, and correct applied/noop integration. Source and Parent Task locks protect inspection through commit; source/destination snapshots and Parent freshness must still match. The backend verifies evidence and scope identities, not the truth of model-authored semantic reasoning.
+
+Successful reuse **retires an outstanding, unexecuted leaf responsibility** using existing cancellation/Delegation machinery. A materialized target becomes canceled, never completed. The transition becomes applied atomically with cancellation; its original JSON preserves the source result, Task, Delegation, integration, target, attestation and execution provenance, while phase/reason and control-operation reference record validation disposition. No Child execution, result, integration or file change is fabricated. Original source records remain unchanged.
+
+Targets with Worker history, unknown launches, descendants, downstream Task consumers, frozen promoted proposal consumers, active runtime resource ownership or coordination conflicts remain blocked. No dependency edge is redirected or automatically satisfied, even for an unstarted consumer. Executed targets must be settled separately; generalized reassignment is unsupported. Missing attestation, unaccepted/unintegrated results and stale evidence remain inspectable candidates with reasons.
+
+The extension uses existing schema v26 JSON journals; no new migration is needed. Exact replay is idempotent and conflicting replay fails. Existing per-target transition ownership prevents competing retirement. A failed transaction rolls back both cancellation and application; committed application is not repeated after a lost publication. Restart preserves unresolved evidence without starting Workers. Pending reuse blocks Parent completion; applied retirement removes only that obsolete responsibility, and normal Hybrid completion still decides the Parent outcome.

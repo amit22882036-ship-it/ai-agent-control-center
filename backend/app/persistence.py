@@ -12,7 +12,7 @@ from .agent_names import default_display_name, validate_display_color
 from .output_history import OUTPUT_PAGE_SIZE, OUTPUT_MAX_LIMIT
 from .project_domain import DEFAULT_ROOT, canonical_path, contains, project_name
 from . import delegation_orchestration, delegation_rounds, delegation_safety
-from . import planning, promotion
+from . import planning, promotion, replanning
 
 
 class AgentStore:
@@ -23,7 +23,7 @@ class AgentStore:
         self._lock = RLock()
         with self._connection() as db:
             version = db.execute('PRAGMA user_version').fetchone()[0]
-            if version not in range(26):
+            if version not in range(27):
                 raise RuntimeError(f'Unsupported control-center database schema version: {version}')
             if version < 18:
                 db.execute('PRAGMA foreign_keys = OFF')
@@ -247,6 +247,17 @@ class AgentStore:
                     if db.execute('PRAGMA foreign_key_check').fetchone():
                         raise sqlite3.IntegrityError('Invalid promotion migration references')
                     db.execute('PRAGMA user_version = 25')
+                    version = 25
+                if version == 25:
+                    if not db.in_transaction:
+                        db.execute('BEGIN IMMEDIATE')
+                    replanning.migrate(db)
+                    if db.execute('PRAGMA foreign_key_check').fetchone():
+                        raise sqlite3.IntegrityError('Invalid replanning migration references')
+                    db.execute('PRAGMA user_version = 26')
+                db.execute('SELECT decision_id FROM replan_decisions LIMIT 0')
+                db.execute('SELECT transition_id FROM replan_transitions LIMIT 0')
+                db.execute('SELECT event_key FROM replan_signals LIMIT 0')
                 db.execute('SELECT task_id,decision_key FROM promotion_decisions LIMIT 0')
                 db.execute('SELECT delegation_id,disposition FROM promotion_items LIMIT 0')
                 db.execute('SELECT planning_enabled FROM agents LIMIT 0')
@@ -761,6 +772,7 @@ class AgentStore:
         """
         with self._connection() as db:
             db.execute('BEGIN IMMEDIATE')
+            replanning.recover(db)
             delegation_materialization.recover(db)
             delegation_orchestration.recover(db)
             runtime_resources.recover(db)
@@ -844,6 +856,15 @@ class AgentStore:
             db.execute('BEGIN IMMEDIATE')
             return [planning.accept(db, origin, message, session_id=session_id, message_id=identifier)
                     for identifier, message in messages]
+
+    def accept_replanning_message(self, origin, message, *, session_id, message_id, plans=()):
+        if len(plans) > planning.MAX_DECISIONS:
+            raise ValueError('Too many planning decisions')
+        with self._connection() as db:
+            db.execute('BEGIN IMMEDIATE')
+            for identifier, text in plans:
+                planning.accept(db, origin, text, session_id=session_id, message_id=identifier)
+            return replanning.accept(db, origin, message, session_id=session_id, message_id=message_id)
 
     def accept_promotion_message(self, origin, message, *, session_id, message_id, plans=()):
         if len(plans) > planning.MAX_DECISIONS:
@@ -1150,6 +1171,12 @@ class AgentStore:
                             raise sqlite3.IntegrityError('Output sequence collision with different text')
             if completion_evidence:
                 delegation_orchestration.record_exit(db, record['agent_id'], completion_evidence)
+            if record['status'] in ('finished', 'stopped'):
+                for parent in db.execute("""SELECT DISTINCT d.parent_task_id FROM task_assignments a
+                    JOIN delegations d ON d.child_task_id=a.task_id WHERE a.agent_id=? AND a.ended_at IS NOT NULL""",(record['agent_id'],)):
+                    delegation_orchestration.collect(db,parent[0])
+                replanning.collect_signals(db)
+
 
     def name_history(self, agent_id):
         with self._connection() as db:

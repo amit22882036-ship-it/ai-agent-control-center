@@ -125,9 +125,12 @@ class CodexEvents:
             if not isinstance(text, str):
                 raise ValueError('invalid agent message')
             self.message, self.message_id = text, identifier
-            from . import promotion
+            from . import promotion, replanning
             if self.promotion_message is not None:
                 raise ValueError('Promotion must be the final assistant message')
+            if replanning.is_envelope(text):
+                replanning.validate(text)
+                self.promotion_message = identifier
             if promotion.is_envelope(text):
                 promotion.validate(text)
                 self.promotion_message = identifier
