@@ -4,13 +4,27 @@ Tasks represent durable work; Agents are workers linked through assignment histo
 
 `POST /tasks` creates work, `GET /tasks` and `GET /tasks/{task_id}` inspect it, `GET /tasks/{task_id}/assignments` exposes assignment history, and `POST /tasks/{task_id}/start-agent` starts a worker for eligible pending work. Explicit child creation uses `POST /agents/{parent_id}/children/start`; the current dashboard displays existing relationships but does not mount a child-creation form. Hierarchy does not automatically infer dependencies or decompose work.
 
-This reference preserves the Stage 2 design and migration details. Stage labels explain how the implementation evolved; later sections refine earlier behavior. The current database schema is v25; [Delegation records](delegations.md) add request provenance without replacing Task hierarchy or lifecycle.
+This reference preserves the Stage 2 design and migration details. Stage labels explain how the implementation evolved; later sections refine earlier behavior. The current database schema is v26; [Delegation records](delegations.md) add request provenance without replacing Task hierarchy or lifecycle. The [dashboard projection](dashboard.md) counts Tasks separately from Agents, marks ended assignments, and distinguishes Task cancellation from successful execution. Presentation reads grant no lifecycle authority.
 
 [Project overview and setup](../README.md) | [Task lifecycle](task-lifecycle.md) | [Workspaces](workspaces.md) | [Resource coordination](resource-coordination.md)
 
 ## Work lifecycle foundation (Stage 2F.1)
 
 Task work states are `pending`, `in_progress`, `waiting`, `blocked`, `paused`, `completed`, and `canceled`. Schema v11 transactionally migrates v10, preserving history and adding `control_intent` (`active`, `paused`, `canceled`) and nullable `resume_status`. Historical canceled work receives canceled intent; other existing work defaults to active. Task responses expose these fields. Blocked is system-managed; there is no public arbitrary block/status-setting endpoint.
+
+### Run outcomes
+
+How a worker's exit becomes Task state:
+
+| Worker exit | Agent status | Task status | Assignment ended |
+| --- | --- | --- | --- |
+| Codex, exit code 0, no waiting question | `finished` | `completed` (dependents unblock) | `completed` |
+| Codex, nonzero exit code, no waiting question | `stopped` | `pending` (dependents stay blocked) | `stopped` |
+| Codex, waiting question (any exit code) | `waiting` | `waiting` | assignment kept |
+
+A failed run also appends `--- Codex exited with code N; the Task was not completed ---` to the output and sends no "finished" notification. The Task can be started again.
+
+Structured (delegation) executions already stop on any unsuccessful turn, and delegated children record the failure as their result. Mock agents are unchanged: they finish regardless of exit code.
 
 Backend-only `POST /tasks/{task_id}/pause`, `/resume`, and `/cancel` accept no required body. Stage 2F.2 replaces the initial descendant guard with the subtree controls described below. Completed work rejects all three actions, canceled work rejects Pause/Resume, and repeated Pause/Cancel are safe. Resume requires a safely paused Task and never spawns a worker.
 
@@ -24,7 +38,7 @@ These controls do not refresh/reset/integrate workspaces or change canonical fil
 
 Schema v12 transactionally migrates v11. It preserves existing Tasks, assignments (including row order), Projects, workspaces, sessions, source context and integrations. It adds dependency edges, generic source-specific blockers and replanning reasons with resolved history, plus control operations and pause ownership. Existing independent pauses retain their ownership; migration fabricates no edges, blockers or replanning reasons. Newer unknown schemas are rejected.
 
-`B depends_on A` means B cannot proceed until A is **completed**. Edges are explicit, unique, within one resolved Project, and distinct from hierarchy. Self-links and arbitrary-depth cycles are rejected inside the same `BEGIN IMMEDIATE` transaction that inserts the edge, including concurrent inverse-link requests. Terminal dependent Tasks reject new edges.
+`B depends_on A` means B cannot proceed until A is **completed**. Edges are explicit, unique, within one resolved Project, and distinct from hierarchy. A Task cannot depend on its own ancestor: the ancestor cannot complete before its unfinished descendants, so that edge would deadlock the subtree. Sibling, Parent-on-Child and cross-root edges remain allowed, and removing an edge is never blocked. Self-links and arbitrary-depth cycles are rejected inside the same `BEGIN IMMEDIATE` transaction that inserts the edge, including concurrent inverse-link requests. Terminal dependent Tasks reject new edges.
 
 Backend APIs:
 

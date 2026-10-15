@@ -95,6 +95,22 @@ test('notification click selects the UUID, closes notification, and body stays s
   assert.equal(f.sent[0].closed, true)
 })
 
+test('coordination waits never request user input; later genuine question notifies once', () => {
+  const f = fixture()
+  f.observe([agent('running')])
+  for (const kind of ['dependency', 'delegation', 'coordination', 'continuation', 'unknown']) {
+    f.observe([{ ...agent('waiting'), waiting_context: { kind } }])
+  }
+  f.observe([{ ...agent('waiting'), waiting_context: null }])
+  assert.equal(f.sent.length, 0)
+  const question = { ...agent('waiting'), waiting_context: { kind: 'user' } }
+  f.observe([question]); f.observe([question])
+  assert.equal(f.sent.length, 1)
+  assert.equal(f.sent[0].title, 'Agent needs your input')
+  f.observe([{ ...agent('finished'), waiting_context: null }])
+  assert.equal(f.sent[1].title, 'Agent finished')
+})
+
 test('effect cleanup closes notifications without resetting transition baseline', () => {
   const f = fixture()
   f.observe([agent('running')])

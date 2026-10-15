@@ -5,9 +5,12 @@ import AgentOutput from './AgentOutput'
 import AgentNameEditor from './AgentNameEditor'
 import AgentColorPicker from './AgentColorPicker'
 import AgentNameHistory from './AgentNameHistory'
-import { agentName, statusLabels } from './agentPresentation.mjs'
+import AgentActivity from './AgentActivity'
+import HierarchyPreview from './HierarchyPreview'
+import { agentName, executionLabel } from './agentPresentation.mjs'
+import { apiFetch } from './apiClient.mjs'
 
-function AgentDetails({ agentId, onClose, onStopped, refreshVersion, agents, onSelect }) {
+function AgentDetails({ agentId, onClose, onStopped, refreshVersion, agents, onSelect, workspace }) {
   const [outputOpened, setOutputOpened] = useState(false)
   const panelRef = useRef(null)
   useEffect(() => {
@@ -18,6 +21,8 @@ function AgentDetails({ agentId, onClose, onStopped, refreshVersion, agents, onS
   const refreshRef = useRef(null)
   const [detailsVersion, setDetailsVersion] = useState(0)
   const [agent, setAgent] = useState(null)
+  const [activity, setActivity] = useState(null)
+  const [activityError, setActivityError] = useState('')
   const [error, setError] = useState('')
   const [stopping, setStopping] = useState(false)
   const [stopError, setStopError] = useState('')
@@ -43,7 +48,7 @@ function AgentDetails({ agentId, onClose, onStopped, refreshVersion, agents, onS
     setStoppingBranch(true)
     setBranchError('')
     try {
-      const response = await fetch(`http://127.0.0.1:8000/agents/${agentId}/stop-branch`, { method: 'POST' })
+      const response = await apiFetch(`http://127.0.0.1:8000/agents/${agentId}/stop-branch`, { method: 'POST' })
       const result = await response.json().catch(() => ({}))
       if (!response.ok) {
         throw new Error(typeof result.detail === 'string' ? result.detail : 'Unable to stop branch. Please try again.')
@@ -66,7 +71,7 @@ function AgentDetails({ agentId, onClose, onStopped, refreshVersion, agents, onS
     setSimilarAction(disable ? 'disabling' : 'enabling')
     setSimilarError('')
     try {
-      const response = await fetch(`http://127.0.0.1:8000/agents/${agentId}/decide-similar${disable ? '/disable' : ''}`, {
+      const response = await apiFetch(`http://127.0.0.1:8000/agents/${agentId}/decide-similar${disable ? '/disable' : ''}`, {
         method: 'POST',
       })
       const result = await response.json().catch(() => ({}))
@@ -92,7 +97,7 @@ function AgentDetails({ agentId, onClose, onStopped, refreshVersion, agents, onS
     setAlwaysAction(disable ? 'disabling' : 'enabling')
     setAlwaysError('')
     try {
-      const response = await fetch(`http://127.0.0.1:8000/agents/${agentId}/decide-always${disable ? '/disable' : ''}`, {
+      const response = await apiFetch(`http://127.0.0.1:8000/agents/${agentId}/decide-always${disable ? '/disable' : ''}`, {
         method: 'POST',
       })
       const result = await response.json().catch(() => ({}))
@@ -118,7 +123,7 @@ function AgentDetails({ agentId, onClose, onStopped, refreshVersion, agents, onS
     setDeciding(true)
     setDecideError('')
     try {
-      const response = await fetch(`http://127.0.0.1:8000/agents/${agentId}/decide`, {
+      const response = await apiFetch(`http://127.0.0.1:8000/agents/${agentId}/decide`, {
         method: 'POST',
       })
       if (!response.ok) {
@@ -145,7 +150,7 @@ function AgentDetails({ agentId, onClose, onStopped, refreshVersion, agents, onS
     setReplying(true)
     setReplyError('')
     try {
-      const response = await fetch(`http://127.0.0.1:8000/agents/${agentId}/reply`, {
+      const response = await apiFetch(`http://127.0.0.1:8000/agents/${agentId}/reply`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ answer }),
@@ -174,7 +179,7 @@ function AgentDetails({ agentId, onClose, onStopped, refreshVersion, agents, onS
     setRedirecting(true)
     setRedirectError('')
     try {
-      const response = await fetch(`http://127.0.0.1:8000/agents/${agentId}/redirect`, {
+      const response = await apiFetch(`http://127.0.0.1:8000/agents/${agentId}/redirect`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ instruction }),
@@ -200,7 +205,7 @@ function AgentDetails({ agentId, onClose, onStopped, refreshVersion, agents, onS
     setStopping(true)
     setStopError('')
     try {
-      const response = await fetch(`http://127.0.0.1:8000/agents/${agentId}/stop`, {
+      const response = await apiFetch(`http://127.0.0.1:8000/agents/${agentId}/stop`, {
         method: 'POST',
       })
       if (!response.ok) {
@@ -237,6 +242,15 @@ function AgentDetails({ agentId, onClose, onStopped, refreshVersion, agents, onS
           setAgent(data)
           setError('')
         }
+        try {
+          const activityResponse = await fetch(`http://127.0.0.1:8000/agents/${encodeURIComponent(agentId)}/activity`, { signal: controller.signal })
+          if (!activityResponse.ok) throw new Error('Unable to load work activity.')
+          const projection = await activityResponse.json()
+          if (!controller.signal.aborted) { setActivity(projection); setActivityError('') }
+        } catch {
+          if (!controller.signal.aborted) setActivityError('Work activity is temporarily unavailable. Existing controls remain available; retrying automatically.')
+          return false
+        }
       } catch (err) {
         if (!controller.signal.aborted) {
           setError(`${err.message} Retrying automatically.`)
@@ -262,7 +276,7 @@ function AgentDetails({ agentId, onClose, onStopped, refreshVersion, agents, onS
     <aside ref={panelRef} tabIndex={-1} onKeyDown={(event) => { if (event.key === 'Escape') onClose() }} className="agent-details" aria-labelledby="details-heading">
       <div className="details-header">
         <h2 id="details-heading">{agent ? agentName(agent) : 'Agent details'}</h2>
-        {agent && <span className={`status status-${agent.status}`}>{statusLabels[agent.status] || agent.status}</span>}
+        {agent && <span className={`status status-${agent.status}`}>{executionLabel(agent)}</span>}
         <div className="details-actions">
           <button className="close-button" type="button" onClick={onClose} aria-label="Close inspector" title="Close inspector"><Icon name="close" /></button>
         </div>
@@ -285,7 +299,7 @@ function AgentDetails({ agentId, onClose, onStopped, refreshVersion, agents, onS
           {error && <p>Showing last received details.</p>}
           <details className="detail-section overview-section" open><summary>Overview</summary>
           <details className="assignment-disclosure"><summary>Assignment</summary><p className="task">{agent.task}</p></details>
-          {agent.agent_type === 'codex' && agent.status === 'waiting' && (
+          {agent.agent_type === 'codex' && agent.status === 'waiting' && agent.waiting_context?.kind === 'user' && (
             <section className="waiting-panel" aria-labelledby="waiting-heading">
               <h3 id="waiting-heading">Waiting for you</h3>
               <p className="waiting-question">{agent.waiting_question}</p>
@@ -334,6 +348,10 @@ function AgentDetails({ agentId, onClose, onStopped, refreshVersion, agents, onS
             </section>
           )}
           </details>
+          {activityError && <p className="agent-type-note" role="status">{activityError}{activity ? ' Showing last received activity.' : ''}</p>}
+          {!activity && !activityError && <p className="agent-type-note">Loading work activity…</p>}
+          <HierarchyPreview agent={agent} refreshVersion={refreshVersion + detailsVersion} onSelect={onSelect} workspace={workspace} />
+          <AgentActivity activity={activity} onSelect={onSelect} />
           {(agent.parent_id || agent.child_ids?.length > 0) && <details className="detail-section"><summary>Relationships</summary>
             {agent.parent_id && <p>Parent <button onClick={() => onSelect(agent.parent_id)}>{agentName(agents.find((item) => item.agent_id === agent.parent_id))}</button></p>}
             {agent.child_ids?.map((id) => <button className="relationship-link" key={id} onClick={() => onSelect(id)}>{agentName(agents.find((item) => item.agent_id === id))}<span>Child agent <Icon name="arrow" size={12} /></span></button>)}

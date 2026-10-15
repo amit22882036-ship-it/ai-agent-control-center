@@ -103,6 +103,10 @@ class SimilarDecisionTests(unittest.TestCase):
         process.poll.return_value = 0
         return process
 
+    def watch(self, agent_id):
+        # Stands in for the process watcher, the only owner of automatic continuation.
+        manager._finalize_process(agent_id, manager.agents[agent_id])
+
     def test_defaults_isolation_and_one_time_actions(self):
         for action in (manager.decide_agent, lambda key: manager.reply_agent(key, 'Use x')):
             agent_id, _ = self.waiting_agent()
@@ -163,7 +167,7 @@ class SimilarDecisionTests(unittest.TestCase):
         self.resume(manager.decide_similar_agent, agent_id)
         self.finish(agent_id, 'Which other name?')
         with patch.object(manager.notifications, 'transition') as notify:
-            _, process = self.resume(manager.get_agent, agent_id)
+            _, process = self.resume(self.watch, agent_id)
             self.assertEqual(manager.agent_statuses[agent_id], 'running')
             notify.assert_not_called()
             self.assertIn('Which local variable name?', process.stdin.saved)
@@ -175,6 +179,7 @@ class SimilarDecisionTests(unittest.TestCase):
             self.finish(agent_id, 'Please choose another name?')
             with patch.object(manager, '_spawn_process') as spawn:
                 for _ in range(3):
+                    self.watch(agent_id)
                     self.assertEqual(manager.get_agent(agent_id)['status'], 'waiting')
                     manager.get_agents()
                 spawn.assert_not_called()
@@ -183,6 +188,7 @@ class SimilarDecisionTests(unittest.TestCase):
         self.resume(lambda key: manager.reply_agent(key, 'x'), agent_id)
         self.finish(agent_id, 'Which other name?')
         with patch.object(manager, '_spawn_process') as spawn:
+            self.watch(agent_id)
             self.assertEqual(manager.get_agent(agent_id)['status'], 'waiting')
             spawn.assert_not_called()
 
@@ -193,10 +199,11 @@ class SimilarDecisionTests(unittest.TestCase):
         question = 'Question B?'
         policy.attempted.add('Unrelated declined question')
         self.finish(agent_id, question)
-        self.resume(manager.get_agent, agent_id)
+        self.resume(self.watch, agent_id)
         self.finish(agent_id, question)
         with patch.object(manager, '_spawn_process') as spawn:
             for _ in range(3):
+                self.watch(agent_id)
                 self.assertEqual(manager.get_agent(agent_id)['status'], 'waiting')
                 manager.get_agents()
             spawn.assert_not_called()
@@ -223,11 +230,13 @@ class SimilarDecisionTests(unittest.TestCase):
              patch.object(manager, '_codex_command', return_value='fixed command'), \
              patch.object(manager, '_start_reader'):
             for _ in range(3):
+                self.watch(agent_id)
                 self.assertEqual(manager.get_agent(agent_id)['status'], 'running')
                 manager.get_agents()
             spawn.assert_called_once()
             self.finish(agent_id, question)
             for _ in range(3):
+                self.watch(agent_id)
                 self.assertEqual(manager.get_agent(agent_id)['status'], 'waiting')
                 manager.get_agents()
             spawn.assert_called_once()
@@ -238,13 +247,14 @@ class SimilarDecisionTests(unittest.TestCase):
         agent_id, _ = self.waiting_agent()
         self.resume(manager.decide_similar_agent, agent_id)
         self.finish(agent_id, 'Second question')
-        self.resume(manager.get_agent, agent_id)
+        self.resume(self.watch, agent_id)
         self.finish(agent_id, 'Third question', handled=True)
-        _, process = self.resume(manager.get_agent, agent_id)
+        _, process = self.resume(self.watch, agent_id)
         self.assertEqual(manager.agent_statuses[agent_id], 'running')
         self.assertIn('Third question', process.stdin.saved)
         self.finish(agent_id, handled=True)
         with patch.object(manager.notifications, 'transition') as notify:
+            self.watch(agent_id)
             self.assertEqual(manager.get_agent(agent_id)['status'], 'finished')
             notify.assert_called_once_with(agent_id, 'finished', 'Original task')
 
@@ -257,6 +267,7 @@ class SimilarDecisionTests(unittest.TestCase):
              patch.object(manager.notifications, 'transition') as notify, \
              self.assertLogs(manager.logger, level='ERROR'):
             for _ in range(2):
+                self.watch(agent_id)
                 detail = manager.get_agent(agent_id)
                 self.assertEqual(detail['status'], 'waiting')
                 self.assertEqual(detail['waiting_question'], 'Later question')
@@ -298,7 +309,7 @@ class SimilarDecisionTests(unittest.TestCase):
         agent_id, _ = self.waiting_agent()
         self.resume(manager.decide_similar_agent, agent_id)
         self.finish(agent_id, 'Later question')
-        _, process = self.resume(manager.get_agent, agent_id)
+        _, process = self.resume(self.watch, agent_id)
         with patch.object(manager, '_stop_windows_tree') as stop:
             self.assertFalse(disable_similar_codex_agent(agent_id)['similar_decisions_enabled'])
             stop.assert_not_called()
@@ -307,6 +318,7 @@ class SimilarDecisionTests(unittest.TestCase):
         self.assertEqual(manager.agent_similar_decisions[agent_id].examples, [])
         self.finish(agent_id, 'Another question')
         with patch.object(manager, '_spawn_process') as spawn:
+            self.watch(agent_id)
             self.assertEqual(manager.get_agent(agent_id)['status'], 'waiting')
             spawn.assert_not_called()
 
@@ -314,7 +326,7 @@ class SimilarDecisionTests(unittest.TestCase):
         agent_id, _ = self.waiting_agent()
         self.resume(manager.decide_similar_agent, agent_id)
         self.finish(agent_id, 'Later question')
-        _, automatic = self.resume(manager.get_agent, agent_id)
+        _, automatic = self.resume(self.watch, agent_id)
         with patch.object(manager, '_stop_windows_tree') as stop:
             _, redirected = self.resume(lambda key: manager.redirect_agent(key, 'Correction'), agent_id)
             stop.assert_called_once_with(automatic)

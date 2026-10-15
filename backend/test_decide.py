@@ -12,6 +12,7 @@ from fastapi import HTTPException
 from app import agent_manager as manager
 from app.main import decide_codex_agent
 import test_waiting
+from workspace_test_support import worker_output
 
 
 class DecideTests(unittest.TestCase):
@@ -57,7 +58,7 @@ class DecideTests(unittest.TestCase):
 
     def wait_for_lines(self, agent_id, count):
         deadline = time.monotonic() + 5
-        while len(manager.agent_outputs[agent_id]) < count:
+        while len(worker_output(manager.agent_outputs[agent_id])) < count:
             self.assertLess(time.monotonic(), deadline)
             time.sleep(0.01)
 
@@ -82,7 +83,7 @@ class DecideTests(unittest.TestCase):
                 for sandbox in ('read-only', 'workspace-write'):
                     agent_id = manager.start_agent('Original user task', 'codex', sandbox)
                     self.wait_until_waiting(agent_id)
-                    history = manager.agent_outputs[agent_id].copy()
+                    history = worker_output(manager.agent_outputs[agent_id])
                     original_process = manager.agents[agent_id]
                     with patch.object(manager.notifications, 'cancel', wraps=manager.notifications.cancel) as cancel:
                         result = decide_codex_agent(agent_id)
@@ -98,9 +99,9 @@ class DecideTests(unittest.TestCase):
                     self.assertEqual(detail['session_id'], session_id)
                     self.assertEqual(detail['sandbox'], sandbox)
                     self.assertEqual(detail['task'], 'Original user task')
-                    self.assertEqual(detail['output'][:len(history) + 2],
+                    self.assertEqual(worker_output(detail['output'])[:len(history) + 2],
                                      history + ['--- Delegated Decision ---', 'Decide for me this time'])
-                    payload = json.loads(detail['output'][len(history) + 3])
+                    payload = json.loads(worker_output(detail['output'])[len(history) + 3])
                     self.assertEqual(payload['args'], ['exec', '--sandbox', sandbox, '--color', 'never',
                                                      '--skip-git-repo-check', 'resume', session_id, '-'])
                     self.assertEqual(Path(payload['cwd']), self.workspace_path)

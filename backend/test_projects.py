@@ -32,7 +32,7 @@ class ProjectTests(unittest.TestCase):
         return root
 
     def test_project_api_roundtrip_and_validation(self):
-        root = self.directory('shop')
+        root = make_repository(self.directory('shop'))
         result = self.request('/projects', {'name': ' Shop ', 'root_path': str(root)})
         UUID(result['project_id'])
         self.assertEqual(result['name'], 'Shop')
@@ -230,7 +230,8 @@ class ProjectTests(unittest.TestCase):
         self.assertEqual(manager._store.list_task_assignments(task['task_id']), [])
 
     def test_recovery_and_worker_restart_preserve_project(self):
-        key, _ = self.create(kind='mock')
+        with patch.object(manager.process_supervision, 'job_of', return_value=object()):  # supervised launch
+            key, _ = self.create(kind='mock')
         task = self.task_for(key)
         self.recover()
         self.assertEqual(manager._store.get_task(task['task_id'])['project_id'], task['project_id'])

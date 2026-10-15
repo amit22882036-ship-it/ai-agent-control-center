@@ -12,6 +12,7 @@ class HierarchyTests(unittest.TestCase):
     from workspace_test_support import process_test_setup as setUp
     replacement = test_similar_decisions.SimilarDecisionTests.replacement
     resume = test_similar_decisions.SimilarDecisionTests.resume
+    watch = test_similar_decisions.SimilarDecisionTests.watch
     finish = test_similar_decisions.SimilarDecisionTests.finish
     tearDown = test_similar_decisions.SimilarDecisionTests.tearDown
 
@@ -113,10 +114,10 @@ class HierarchyTests(unittest.TestCase):
             self.assertEqual(manager.get_agent(child)['parent_id'], parent)
             self.assertEqual(manager.get_agent(parent)['child_ids'], [child])
         self.finish(child, 'Next question')
-        self.resume(manager.get_agent, child)  # Automatic Always resume.
+        self.resume(self.watch, child)  # Automatic Always resume (watcher).
         manager.disable_always_agent(child)
         self.finish(child, 'Different question')
-        self.resume(manager.get_agent, child)  # Automatic Similar resume.
+        self.resume(self.watch, child)  # Automatic Similar resume (watcher).
         self.assertEqual(manager.get_agent(child)['parent_id'], parent)
         self.assertEqual(manager.get_agent(child)['session_id'], child)
 

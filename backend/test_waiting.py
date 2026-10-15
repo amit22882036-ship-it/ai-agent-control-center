@@ -14,6 +14,7 @@ from pydantic import ValidationError
 from app import agent_manager as manager
 from app.main import ReplyAgentRequest, reply_codex_agent
 import test_redirect
+from workspace_test_support import worker_output
 
 
 class WaitingTests(unittest.TestCase):
@@ -167,12 +168,12 @@ class WaitingTests(unittest.TestCase):
                 for sandbox in ('read-only', 'workspace-write'):
                     agent_id = manager.start_agent('Original user task', 'codex', sandbox)
                     self.wait_until_waiting(agent_id)
-                    initial = json.loads(manager.agent_outputs[agent_id][1])
+                    initial = json.loads(worker_output(manager.agent_outputs[agent_id])[1])
                     self.assertIn('User request:\nOriginal user task', initial['prompt'])
                     self.assertIn('CONTROL_CENTER_WAITING: <your question>', initial['prompt'])
                     self.assertIn('Do not use this marker if you can reasonably continue without user input.', initial['prompt'])
                     for answer in ('Inspect auth "please" & echo literal\nOnly auth.', 'Now inspect tests.'):
-                        history = manager.agent_outputs[agent_id].copy()
+                        history = worker_output(manager.agent_outputs[agent_id])
                         old = manager.agents[agent_id]
                         result = reply_codex_agent(agent_id, ReplyAgentRequest(answer=answer))
                         self.assertEqual(result, {'agent_id': agent_id, 'status': 'running'})
@@ -187,8 +188,8 @@ class WaitingTests(unittest.TestCase):
                         self.assertEqual(detail['task'], 'Original user task')
                         self.assertEqual(detail['sandbox'], sandbox)
                         self.assertEqual(detail['waiting_question'], 'Which module next?')
-                        self.assertEqual(detail['output'][:len(history) + 2], history + ['--- User Reply ---', answer])
-                        payload = json.loads(detail['output'][len(history) + 3])
+                        self.assertEqual(worker_output(detail['output'])[:len(history) + 2], history + ['--- User Reply ---', answer])
+                        payload = json.loads(worker_output(detail['output'])[len(history) + 3])
                         self.assertEqual(payload['args'], ['exec', '--sandbox', sandbox, '--color', 'never',
                                                          '--skip-git-repo-check', 'resume', session_id, '-'])
                         self.assertNotIn(answer, payload['args'])

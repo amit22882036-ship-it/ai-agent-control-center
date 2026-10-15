@@ -33,7 +33,9 @@ DEFAULT_LIMITS = Limits()
 
 
 def configured_limits():
-    return replace(DEFAULT_LIMITS, depth=delegation_safety.maximum_depth())
+    return replace(DEFAULT_LIMITS, depth=delegation_safety.maximum_depth(),
+                   children_per_parent=delegation_safety.maximum_children_per_parent(),
+                   concurrent_children=delegation_safety.maximum_concurrent_children())
 
 
 def migrate(db):

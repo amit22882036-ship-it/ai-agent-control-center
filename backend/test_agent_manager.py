@@ -16,6 +16,8 @@ from pydantic import ValidationError
 
 from app import agent_manager as manager
 from app.main import app, StartAgentRequest, start_mock_agent, stop_mock_agent
+from api_test_support import request_headers
+from workspace_test_support import worker_output
 
 
 class AgentTests(unittest.TestCase):
@@ -59,7 +61,7 @@ class AgentTests(unittest.TestCase):
                 messages.append(message)
             await app({"type": "http", "asgi": {"version": "3.0"}, "http_version": "1.1",
                        "method": method, "scheme": "http", "path": path, "raw_path": path.encode(),
-                       "query_string": b"", "headers": [(b"content-type", b"application/json")],
+                       "query_string": b"", "headers": request_headers(method),
                        "client": ("127.0.0.1", 1234), "server": ("localhost", 8000), "root_path": ""},
                       receive, send)
             self.assertEqual(messages[0]["status"], status)
@@ -113,7 +115,7 @@ class AgentTests(unittest.TestCase):
 
     def wait_for_output(self, agent_id):
         deadline = time.monotonic() + 5
-        while not manager.agent_outputs[agent_id]:
+        while not worker_output(manager.agent_outputs[agent_id]):
             self.assertLess(time.monotonic(), deadline)
             time.sleep(0.02)
 
@@ -124,7 +126,7 @@ class AgentTests(unittest.TestCase):
         self.assertEqual(result["agent_type"], "mock")
         self.assertIsNone(result["sandbox"])
         self.wait_for_output(agent_id)
-        self.assertEqual(manager.get_agent(agent_id)["output"][0], "Agent started")
+        self.assertEqual(worker_output(manager.get_agent(agent_id)["output"])[0], "Agent started")
         self.assertEqual(manager.get_agents()[0]["task"], request.task)
         self.assertEqual(stop_mock_agent(agent_id)["status"], "stopped")
         self.assertEqual(manager.get_agent(agent_id)["status"], "stopped")
@@ -155,7 +157,7 @@ class AgentTests(unittest.TestCase):
         self.assertIsNone(result["sandbox"])
         self.assertIsNone(manager.get_agent(agent_id)["sandbox"])
         self.assertIsNone(manager.get_agents()[0]["sandbox"])
-        self.assertEqual(manager.get_agent(agent_id)["output"][0], "Agent started")
+        self.assertEqual(worker_output(manager.get_agent(agent_id)["output"])[0], "Agent started")
 
     @unittest.skipUnless(os.name == "nt", "Windows launcher integration")
     def test_missing_cli(self):
@@ -203,18 +205,21 @@ class AgentTests(unittest.TestCase):
                     while not manager.agents[agent_id].stdout.closed:
                         self.assertLess(time.monotonic(), deadline)
                         time.sleep(0.02)
+                    # The watcher, not the read, owns finalization.
+                    manager.agents[agent_id]._control_center_watcher.join(5)
                     detail = manager.get_agent(agent_id)
                     self.assertEqual(detail["status"], "finished")
+                    self.assertEqual(detail["output"][0], manager.process_supervision.MARKER)
                     self.assertEqual(detail["agent_type"], "codex")
                     self.assertEqual(detail["task"], task)
                     self.assertEqual(detail["sandbox"], sandbox)
                     listed = next(item for item in manager.get_agents() if item["agent_id"] == agent_id)
                     self.assertEqual(listed["sandbox"], sandbox)
-                    self.assertEqual(json.loads(detail["output"][0]), [
+                    self.assertEqual(json.loads(worker_output(detail["output"])[0]), [
                         "exec", "--sandbox", sandbox, "--color", "never",
                         "--skip-git-repo-check", "-"])
-                    self.assertEqual(json.loads(detail["output"][1]), manager._codex_prompt(task))
-                    self.assertEqual(detail["output"][2:], ["stderr captured"])
+                    self.assertEqual(json.loads(worker_output(detail["output"])[1]), manager._codex_prompt(task))
+                    self.assertEqual(worker_output(detail["output"])[2:], ["stderr captured"])
 
     @unittest.skipUnless(os.name == "nt", "Windows process tree integration")
     def test_tree_stop(self):
@@ -229,7 +234,7 @@ class AgentTests(unittest.TestCase):
                 agent_id = manager.start_agent("Review", "codex")
                 self.assertEqual(manager.get_agent(agent_id)["sandbox"], "read-only")
                 self.wait_for_output(agent_id)
-                child_pid = int(manager.agent_outputs[agent_id][0])
+                child_pid = int(worker_output(manager.agent_outputs[agent_id])[0])
                 self.assertEqual(manager.stop_agent(agent_id)["status"], "stopped")
                 # tasklist is read-only and confirms the grandchild is gone.
                 result = subprocess.run([

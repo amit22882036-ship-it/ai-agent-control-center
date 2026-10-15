@@ -14,6 +14,7 @@ from pydantic import ValidationError
 from app import agent_manager as manager
 from app.main import RedirectAgentRequest, redirect_codex_agent
 import test_agent_manager
+from workspace_test_support import worker_output
 
 
 class RedirectTests(unittest.TestCase):
@@ -114,11 +115,11 @@ class RedirectTests(unittest.TestCase):
                 for sandbox in ("read-only", "workspace-write"):
                     agent_id = manager.start_agent("Original task", "codex", sandbox)
                     deadline = time.monotonic() + 5
-                    while len(manager.agent_outputs[agent_id]) < 2:
+                    while len(worker_output(manager.agent_outputs[agent_id])) < 2:
                         self.assertLess(time.monotonic(), deadline)
                         time.sleep(0.02)
                     old = manager.agents[agent_id]
-                    history = manager.agent_outputs[agent_id].copy()
+                    history = worker_output(manager.agent_outputs[agent_id])
                     result = redirect_codex_agent(agent_id, RedirectAgentRequest(instruction=instruction))
                     self.assertEqual(result, {"agent_id": agent_id, "status": "running"})
                     replacement = manager.agents[agent_id]
@@ -127,15 +128,15 @@ class RedirectTests(unittest.TestCase):
                     self.assertIsNone(replacement.poll())
                     self.assertTrue(replacement.stdin.closed)
                     deadline = time.monotonic() + 5
-                    while len(manager.agent_outputs[agent_id]) < 6:
+                    while len(worker_output(manager.agent_outputs[agent_id])) < 6:
                         self.assertLess(time.monotonic(), deadline)
                         time.sleep(0.02)
                     detail = manager.get_agent(agent_id)
                     self.assertEqual(detail["task"], "Original task")
                     self.assertEqual(detail["sandbox"], sandbox)
                     self.assertEqual(detail["session_id"], session_id)
-                    self.assertEqual(detail["output"][:4], history + ["--- Redirect ---", instruction])
-                    resumed = json.loads(detail["output"][5])
+                    self.assertEqual(worker_output(detail["output"])[:4], history + ["--- Redirect ---", instruction])
+                    resumed = json.loads(worker_output(detail["output"])[5])
                     self.assertEqual(resumed["args"], ["exec", "--sandbox", sandbox, "--color", "never",
                                                      "--skip-git-repo-check", "resume", session_id, "-"])
                     self.assertEqual(resumed["prompt"], manager._codex_prompt(instruction))

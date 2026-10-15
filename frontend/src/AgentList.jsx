@@ -29,6 +29,17 @@ export default function AgentList({ agents, selectedAgentId, onSelect, loading, 
     })
   }
 
+  function revealSelected() {
+    // An explicit navigation action may expand this path; filtering never mutates it.
+    const parentsById = new Map(agents.map((agent) => [agent.agent_id, agent.parent_id]))
+    setCollapsed((current) => {
+      const next = new Set(current), seen = new Set()
+      let id = parentsById.get(selectedAgentId)
+      while (id && !seen.has(id)) { seen.add(id); next.delete(id); id = parentsById.get(id) }
+      return next
+    })
+  }
+
   return (
     <section aria-label="Agents">
       <div className="team-heading">
@@ -39,7 +50,7 @@ export default function AgentList({ agents, selectedAgentId, onSelect, loading, 
             <fieldset className="choice-group"><legend>Show agents</legend>
               {viewFilters.map((value) => <label className="choice" key={value}>
                 <span>{({ active: 'Active', history: 'History', all: 'All agents', ...statusLabels })[value]}</span>
-                <span className="choice-count">{value === 'active' ? counts.running + counts.waiting : value === 'history' ? counts.finished + counts.stopped : counts[value]}</span>
+                <span className="choice-count">{counts[value]}</span>
                 <input type="radio" name="agent-view" value={value} checked={status === value} onChange={() => setStatus(value)} />
               </label>)}
             </fieldset>
@@ -52,13 +63,13 @@ export default function AgentList({ agents, selectedAgentId, onSelect, loading, 
         </div>
       </div>
       {selectedAgentId !== null && !visible.has(selectedAgentId) && (
-        <p className="agent-type-note" role="status">Selected agent is outside this view. Details remain open.</p>
+        <p className="agent-type-note" role="status">Selected agent is outside this view. Details remain open. {!filtering && visibleAgentIds(filtered, new Set()).has(selectedAgentId) && <button onClick={revealSelected}>Reveal selected branch</button>}</p>
       )}
       {!loading && !unavailable && emptyMessage && <div className="workspace-empty" role="status"><span className="empty-symbol"><Icon name="agent" size={28} /></span><h3>{agents.length ? 'Room for what comes next' : 'Your next idea starts here'}</h3><p>{emptyMessage}</p><button className="start-button" onClick={onStart}><Icon name="plus" />New agent</button></div>}
       {unavailable && agents.length > 0 && <p className="agent-type-note">Showing the last received agents.</p>}
       <AgentTree nodes={filtered} collapsed={effectiveCollapsed} onToggle={filtering ? undefined : toggleBranch}
         selectedAgentId={selectedAgentId} onSelect={onSelect} />
-      {(counts.finished + counts.stopped > 0) && <div className="history-access"><Icon name="history" /><div><strong>Past work</strong><span>{counts.finished + counts.stopped} agents · assignments and output retained</span></div><button onClick={() => setStatus(status === 'history' ? 'active' : 'history')}>{status === 'history' ? 'Back to active' : 'View history'}<Icon name="arrow" size={16} /></button></div>}
+      {(counts.history > 0) && <div className="history-access"><Icon name="history" /><div><strong>Past work</strong><span>{counts.history} agents · assignments and output retained</span></div><button onClick={() => setStatus(status === 'history' ? 'active' : 'history')}>{status === 'history' ? 'Back to active' : 'View history'}<Icon name="arrow" size={16} /></button></div>}
     </section>
   )
 }

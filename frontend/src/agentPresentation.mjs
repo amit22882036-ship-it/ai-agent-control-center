@@ -1,6 +1,11 @@
-export const statusLabels = { running: 'Working', waiting: 'Needs you', finished: 'Finished', stopped: 'Stopped' }
+export const statusLabels = { running: 'Working', waiting: 'Waiting', finished: 'Finished', stopped: 'Stopped' }
+export function executionLabel(agent) {
+  return agent.waiting_context?.label || (agent.status === 'waiting' ? 'Waiting' : statusLabels[agent.status] || agent.status)
+}
 export function agentName(agent) { return agent?.display_name || 'Untitled agent' }
-export function attentionAgents(agents) { return agents.filter((agent) => agent.status === 'waiting') }
+export function attentionAgents(agents) { return agents.filter((agent) => agent.waiting_context
+  ? ['user', 'recovery'].includes(agent.waiting_context.kind)
+  : !('waiting_context' in agent) && agent.status === 'waiting') }
 
 export function agentContext(agent) {
   const text = (agent.task || '').replace(/\s+/g, ' ').trim()

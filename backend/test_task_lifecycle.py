@@ -10,6 +10,7 @@ from app import agent_manager as manager
 from app.main import app
 from app.persistence import AgentStore
 import test_persistence
+from api_test_support import request_headers
 
 
 class TaskLifecycleTests(unittest.TestCase):
@@ -30,7 +31,7 @@ class TaskLifecycleTests(unittest.TestCase):
                 messages.append(message)
             await app({'type': 'http', 'asgi': {'version': '3.0'}, 'http_version': '1.1',
                        'method': 'POST' if body is not None else 'GET', 'scheme': 'http', 'path': path,
-                       'raw_path': path.encode(), 'query_string': b'', 'headers': [(b'content-type', b'application/json')],
+                       'raw_path': path.encode(), 'query_string': b'', 'headers': request_headers('POST' if body is not None else 'GET'),
                        'root_path': '', 'client': ('127.0.0.1', 1234), 'server': ('localhost', 8000)}, receive, send)
             self.assertEqual(messages[0]['status'], expected, messages)
             return json.loads(b''.join(item.get('body', b'') for item in messages))
@@ -137,7 +138,7 @@ class TaskLifecycleTests(unittest.TestCase):
             self.resume(key, manager.decide_similar_agent if mode == 'similar' else manager.decide_always_agent)
             self.output(key, 'CONTROL_CENTER_WAITING: New question\n')
             manager.agents[key].poll.return_value = 0
-            self.resume(key, manager.get_agent)
+            self.resume(key, lambda key: manager._finalize_process(key, manager.agents[key]))  # watcher-owned continuation
             self.assertEqual(self.task_for(key)['status'], 'in_progress')
             self.assertEqual(manager._store.get_active_assignment_for_agent(key), assignment)
             self.assertEqual(self.task_for(key)['project_id'], project_id)
@@ -183,7 +184,9 @@ class TaskLifecycleTests(unittest.TestCase):
         self.assertEqual(manager._store.get_task(task_id)['status'], 'in_progress')
 
     def test_recovery_waiting_and_running_tasks(self):
-        running, _ = self.create()
+        # A supervised running execution (Phase 1.5 evidence); unsupervised ones are blocked (test_recovery_actions).
+        with patch.object(manager.process_supervision, 'job_of', return_value=object()):
+            running, _ = self.create()
         waiting, _ = self.create()
         self.output(waiting, f'session id: {waiting}\nCONTROL_CENTER_WAITING: Question\n', True)
         assignment = manager._store.get_active_assignment_for_agent(waiting)

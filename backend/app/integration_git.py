@@ -77,12 +77,24 @@ def build_candidate(root, base, source, destination, area):
     return gitops.git(root, 'write-tree', extra_env=env).decode().strip(), []
 
 
-def prepare_apply(root, before, result, area):
+def ignored_not_deleted(root, base, source):
+    """Paths the source snapshot dropped while the file still exists in the source workspace.
+
+    Snapshots omit ignored and excluded files, so a file that merely became
+    ignored looks deleted. Only removing it from disk is an intentional deletion.
+    """
+    dropped = tree_entries(root, base).keys() - tree_entries(root, source).keys()
+    return frozenset(name for name in dropped if Path(root).joinpath(*PurePosixPath(name).parts).exists())
+
+
+def prepare_apply(root, before, result, area, retain=frozenset()):
     old, new = tree_entries(root, before), tree_entries(root, result)
     plan = []
     for name in sorted(old.keys() | new.keys()):
         if old.get(name) == new.get(name):
             continue
+        if name in retain and old.get(name) and not new.get(name):
+            continue  # Becoming ignored in the source never deletes destination content.
         target = safe_path(root, name)
         if not old.get(name) and (target.exists() or target.is_symlink()):
             raise ValueError('Integration would overwrite an excluded or unmanaged destination path')

@@ -1,7 +1,9 @@
+import { apiFetch } from './apiClient.mjs'
+
 export const HEARTBEAT_INTERVAL_MS = 2000
 export const RECENT_POLL_MS = 4000
 
-export async function syncSystemNotifications({ enabled, browserActive, signal }, request = fetch) {
+export async function syncSystemNotifications({ enabled, browserActive, signal }, request = apiFetch) {
   const preference = await request('http://127.0.0.1:8000/notifications/preferences', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },

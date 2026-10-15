@@ -4,15 +4,18 @@ from fastapi import FastAPI, HTTPException, Query
 from typing import Annotated, Literal
 import sqlite3
 from fastapi.middleware.cors import CORSMiddleware
-from starlette.responses import StreamingResponse
+from fastapi.openapi.utils import get_openapi
+from starlette.responses import JSONResponse, StreamingResponse
+from . import security
+from . import process_supervision
 from .realtime import changes
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, ConfigDict, StrictBool, field_validator, model_validator
 from .system_notifications import notifications
 from .agent_manager import initialize_persistence, shutdown_agents
 from .agent_manager import get_agent_output
 from .output_history import OUTPUT_PAGE_SIZE, OUTPUT_MAX_LIMIT
 from . import agent_manager as manager
-from .task_domain import normalize_task_title, normalize_task_description
+from .task_domain import TASK_DESCRIPTION_LIMIT, normalize_task_title, normalize_task_description
 from .project_domain import project_name
 
 from .agent_manager import rename_agent, set_agent_color, get_name_history
@@ -22,7 +25,10 @@ from .agent_manager import AgentType, CodexSandbox, decide_always_agent, disable
 
 @asynccontextmanager
 async def lifespan(app):
+    # Harmless supervised probe; each execution is still verified individually.
+    process_supervision.self_test()
     initialize_persistence()
+    manager.start_recovery_sweep()
     try:
         yield
     finally:
@@ -30,12 +36,41 @@ async def lifespan(app):
 
 
 app = FastAPI(title="AI Agent Control Center", lifespan=lifespan)
+# In memory only and new per backend process; never persisted or logged.
+app.state.csrf_token = security.new_csrf_token()
+# Added innermost first: HostGuard -> CORS -> RequestGuard -> application.
+app.add_middleware(security.RequestGuard, token=app.state.csrf_token)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
-    allow_methods=["GET", "POST"],
-    allow_headers=["Content-Type"],
+    allow_origins=list(security.allowed_origins()),
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
+    allow_headers=["Content-Type", security.CSRF_HEADER],
 )
+app.add_middleware(security.HostGuard)
+
+
+@app.get(security.TOKEN_PATH)
+def csrf_token():
+    return JSONResponse({"csrf_token": app.state.csrf_token},
+                        headers={"Cache-Control": "no-store"})
+
+
+def _openapi():
+    """Document the CSRF header so /docs can send it after Authorize."""
+    if app.openapi_schema is None:
+        schema = get_openapi(title=app.title, version=app.version, routes=app.routes)
+        schema.setdefault("components", {})["securitySchemes"] = {
+            "csrfToken": {"type": "apiKey", "in": "header", "name": security.CSRF_HEADER,
+                          "description": f"Value from GET {security.TOKEN_PATH}"}}
+        for operations in schema.get("paths", {}).values():
+            for method, operation in operations.items():
+                if method.upper() not in security.SAFE_METHODS:
+                    operation["security"] = [{"csrfToken": []}]
+        app.openapi_schema = schema
+    return app.openapi_schema
+
+
+app.openapi = _openapi
 
 
 class NotificationPreference(BaseModel):
@@ -55,9 +90,26 @@ def notification_heartbeat():
 
 
 class StartAgentRequest(BaseModel):
+    model_config = ConfigDict(extra='forbid')
     task: str
     agent_type: AgentType = "mock"
     sandbox: CodexSandbox = "read-only"
+    autonomous: StrictBool = False
+    project_id: str | None = None
+
+    @field_validator('task')
+    @classmethod
+    def valid_task(cls, value):
+        # The task text becomes the Task description: same rules as POST /tasks.
+        return normalize_task_description(value)
+
+    @model_validator(mode='after')
+    def eligible_autonomy(self):
+        if 'project_id' in self.model_fields_set and (self.project_id is None or not self.project_id.strip()):
+            raise ValueError('Select a valid Project or omit project_id for legacy creation.')
+        if self.autonomous and self.agent_type != 'codex':
+            raise ValueError('Autonomous mode requires Codex.')
+        return self
 
 
 class RedirectAgentRequest(BaseModel):
@@ -68,6 +120,8 @@ class RedirectAgentRequest(BaseModel):
     def instruction_not_blank(cls, value: str) -> str:
         if not value.strip():
             raise ValueError("Redirect instruction must not be blank.")
+        if len(value) > TASK_DESCRIPTION_LIMIT:
+            raise ValueError(f"Redirect instruction must contain at most {TASK_DESCRIPTION_LIMIT} characters.")
         return value
 
 
@@ -79,12 +133,20 @@ class ReplyAgentRequest(BaseModel):
     def answer_not_blank(cls, value: str) -> str:
         if not value.strip():
             raise ValueError("Reply answer must not be blank.")
+        if len(value) > TASK_DESCRIPTION_LIMIT:
+            raise ValueError(f"Reply answer must contain at most {TASK_DESCRIPTION_LIMIT} characters.")
         return value
 
 
 @app.get("/health")
 def health():
     return {"status": "ok"}
+
+
+@app.get("/system/process-supervision")
+def process_supervision_status():
+    """supervised | unavailable (with reason) | not_applicable; read-only, never probes."""
+    return process_supervision.status()
 
 
 @app.post("/agents/start")
@@ -99,8 +161,16 @@ def start_child_agent(parent_id: str, request: StartAgentRequest):
 
 def _start_agent_response(request: StartAgentRequest, parent_id: str | None = None):
     try:
+        if request.project_id is not None and parent_id is not None:
+            raise ValueError('Child agents inherit their parent Task Project; do not supply project_id.')
+        if request.autonomous and parent_id is not None:
+            raise ValueError('Autonomous mode is available only when creating a new root agent.')
+        capabilities = {key: True for key in (
+            'planning_enabled', 'delegation_protocol_enabled', 'child_materialization_enabled',
+            'hybrid_delegation_enabled', 'recursive_delegation_enabled')} if request.autonomous else {}
         if parent_id is None:
-            agent_id = start_agent(request.task, request.agent_type, request.sandbox)
+            agent_id = start_agent(request.task, request.agent_type, request.sandbox,
+                                   **({'project_id': request.project_id} if request.project_id is not None else {}), **capabilities)
         else:
             agent_id = start_agent(request.task, request.agent_type, request.sandbox, parent_id=parent_id)
     except LookupError as exc:
@@ -119,6 +189,24 @@ def _start_agent_response(request: StartAgentRequest, parent_id: str | None = No
         "agent_type": request.agent_type,
         "sandbox": request.sandbox if request.agent_type == "codex" else None,
     }
+
+
+@app.get('/workspace')
+def workspace_view(limit: int = Query(500, ge=1, le=500), after: int = Query(0, ge=0)):
+    from .presentation import workspace
+    return _task_action(lambda: workspace(manager._task_store(), limit=limit, after=after))
+
+
+@app.get('/agents/{agent_id}/activity')
+def agent_activity(agent_id: str):
+    from .presentation import activity
+    return _task_action(lambda: activity(manager._task_store(), agent_id))
+
+
+@app.get('/agents/{agent_id}/hierarchy')
+def agent_hierarchy(agent_id: str):
+    from .presentation import hierarchy
+    return _task_action(lambda: hierarchy(manager._task_store(), agent_id))
 
 
 @app.get("/agents")
@@ -154,6 +242,7 @@ class CreateTaskRequest(BaseModel):
 
 
 class StartTaskAgentRequest(BaseModel):
+    model_config = ConfigDict(extra='forbid')
     agent_type: AgentType = 'mock'
     sandbox: CodexSandbox = 'read-only'
 
@@ -197,7 +286,11 @@ def _project_action(action):
 
 @app.post('/projects')
 def create_project_route(request: CreateProjectRequest):
-    return _project_action(lambda: manager._task_store().create_project(request.name, request.root_path))
+    def register():
+        from .workspace_git import repository
+        repository(request.root_path)
+        return manager._task_store().create_project(request.name, request.root_path)
+    return _project_action(register)
 
 
 @app.get('/projects')
@@ -230,6 +323,46 @@ def get_task_route(task_id: str):
 def task_assignments_route(task_id: str):
     """Assignment history, oldest first (insertion order resolves timestamp ties)."""
     return {'assignments': _task_action(lambda: manager.get_task_assignments(task_id))}
+
+
+class RecoveryConfirmation(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    confirm_ended: StrictBool
+
+
+@app.post('/tasks/{task_id}/process-ownership/confirm-stopped')
+def confirm_process_ownership_route(task_id: str, request: RecoveryConfirmation):
+    return _task_action(lambda: manager.confirm_process_ownership_stopped(task_id, request.confirm_ended))
+
+
+@app.post('/delegations/{delegation_id}/recovery/resolve-launch')
+def resolve_launch_route(delegation_id: str, request: RecoveryConfirmation):
+    return _task_action(lambda: manager.resolve_launch(delegation_id, request.confirm_ended))
+
+
+@app.post('/tasks/{task_id}/recovery/rearm')
+def rearm_continuation_route(task_id: str, request: RecoveryConfirmation):
+    return _task_action(lambda: manager.rearm_continuation(task_id, request.confirm_ended))
+
+
+@app.post('/tasks/{task_id}/recovery/reverify')
+def reverify_transitions_route(task_id: str, request: RecoveryConfirmation):
+    return _task_action(lambda: manager.reverify_transitions(task_id, request.confirm_ended))
+
+
+@app.post('/tasks/{task_id}/orchestration/wake', status_code=202)
+def wake_task_orchestration_route(task_id: str):
+    """Explicit operator wake (for example after a restart); only queues one bounded pass."""
+    def wake():
+        if manager._task_store().get_task(task_id) is None:
+            raise LookupError('Task not found')
+        return {'task_id': task_id, 'wake': manager.wake_orchestration(task_id, reason='operator')}
+    return _task_action(wake)
+
+
+@app.get('/tasks/{task_id}/orchestration')
+def task_orchestration_route(task_id: str):
+    return _task_action(lambda: manager.orchestration_status(task_id))
 
 
 @app.get('/tasks/{task_id}/workspace')
@@ -351,6 +484,20 @@ def disable_always_codex_agent(agent_id: str):
         result = disable_always_agent(agent_id)
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+    if result is None:
+        raise HTTPException(status_code=404, detail="Agent not found")
+    return result
+
+
+@app.post("/agents/{agent_id}/recovery/handoff")
+def recover_lost_watcher_route(agent_id: str):
+    """Explicit recovery of an execution whose watcher was lost; runs its finalization once."""
+    try:
+        result = manager.recover_lost_watcher(agent_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except (OSError, RuntimeError, sqlite3.Error) as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
     if result is None:
         raise HTTPException(status_code=404, detail="Agent not found")
     return result

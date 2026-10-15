@@ -377,14 +377,16 @@ class TransitionService:
     """Bounded deterministic pass; caller owns Parent/runtime locks. Never startup."""
     def __init__(self, store, stop, quiet, publish):
         self.store, self.stop, self.quiet, self.publish = store, stop, quiet, publish
+        self.busy = False
 
     def run(self, task_id):
-        from .task_workspaces import task_lock
+        from .task_workspaces import TaskBusy, task_lock
         with self.store._connection() as db:
             rows = inspect(db,task_id)
-        for row in [r for r in rows if r['phase'] not in TERMINAL][:16]:
-            if row['phase'] in TERMINAL or row['phase'] == 'recovery_required':
-                continue
+        # Inspection-only rows never advance here, so they must not occupy the
+        # bounded batch ahead of eligible transitions.
+        eligible = [r for r in rows if r['phase'] not in TERMINAL and r['phase'] != 'recovery_required']
+        for row in eligible[:16]:
             try:
                 # Existing Task lock also excludes workspace integration/replacement.
                 with task_lock(self.store,row['task_id'] or task_id,blocking=False):
@@ -393,6 +395,10 @@ class TransitionService:
                     else:
                         self._advance(row)
                 self.publish(None)
+            except TaskBusy:
+                # A busy lock is not a verdict on the transition: leave it
+                # eligible for the next pass instead of blocking it.
+                self.busy = True
             except (ValueError, LookupError, RuntimeError) as exc:
                 with self.store._connection() as db:
                     db.execute('BEGIN IMMEDIATE')

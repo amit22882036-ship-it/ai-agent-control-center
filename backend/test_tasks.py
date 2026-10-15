@@ -145,7 +145,9 @@ class TaskTests(unittest.TestCase):
                 spawn.assert_not_called()
                 manager.initialize_persistence(self.path)
         self.assertEqual([t['task_id'] for t in store.list_tasks()], identities)
-        self.assertEqual([t['status'] for t in store.list_tasks()], ['pending', 'waiting'])
+        # Legacy (pre-supervision) running work has no process evidence: fail closed until confirmed.
+        self.assertEqual([t['status'] for t in store.list_tasks()], ['blocked', 'waiting'])
+        self.assertEqual([b['reason_code'] for b in store.get_task(identities[0])['active_blockers']], ['process_ownership_unknown'])
         self.assertIsNone(store.get_active_assignment_for_agent(running))
         self.assertIsNotNone(store.get_active_assignment_for_agent(waiting))
         self.assertEqual(store.list_task_assignments(identities[0])[0]['ended_reason'], 'stopped')

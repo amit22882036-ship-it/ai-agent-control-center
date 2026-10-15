@@ -15,15 +15,27 @@ def migrate(db):
         db.execute('ALTER TABLE delegations ADD COLUMN admission_error TEXT')
 
 
-def maximum_depth():
-    value = os.environ.get('CONTROL_CENTER_DELEGATION_DEPTH', '4')
+def _positive_setting(name, default):
+    value = os.environ.get(name, str(default))
     try:
-        depth = int(value)
+        number = int(value)
     except (ValueError, TypeError) as exc:
-        raise ValueError('CONTROL_CENTER_DELEGATION_DEPTH must be a positive integer') from exc
-    if depth < 1:
-        raise ValueError('CONTROL_CENTER_DELEGATION_DEPTH must be a positive integer')
-    return depth
+        raise ValueError(f'{name} must be a positive integer') from exc
+    if number < 1:
+        raise ValueError(f'{name} must be a positive integer')
+    return number
+
+
+def maximum_depth():
+    return _positive_setting('CONTROL_CENTER_DELEGATION_DEPTH', 4)
+
+
+def maximum_children_per_parent():
+    return _positive_setting('CONTROL_CENTER_DELEGATION_CHILDREN_PER_PARENT', 16)
+
+
+def maximum_concurrent_children():
+    return _positive_setting('CONTROL_CENTER_DELEGATION_CONCURRENT_CHILDREN', 4)
 
 
 def check_depth(db, task_id, *, child=False, limit=None):
@@ -75,7 +87,8 @@ def occupied(db):
             AND c.phase IN ('launching','recovery_required')))''')}
 
 
-def require_capacity(db, task_id, maximum=4):
+def require_capacity(db, task_id, maximum=None):
+    maximum = maximum_concurrent_children() if maximum is None else maximum
     if len(occupied(db) - {task_id}) >= maximum:
         raise ValueError('Child concurrency capacity reached; pending work retained')
 

@@ -11,6 +11,8 @@ export function matchesSearch(agent, search) {
 export function countStatuses(agents) {
   const counts = Object.fromEntries(statuses.map((status) => [status, 0]))
   counts.all = agents.length
+  counts.active = agents.filter((agent) => matchesStatus(agent, 'active')).length
+  counts.history = agents.filter((agent) => matchesStatus(agent, 'history')).length
   for (const agent of agents) {
     if (agent.status !== 'all' && agent.status in counts) counts[agent.status]++
   }
@@ -24,8 +26,9 @@ export function shouldExpandFilteredPaths(search, status, selectedColors = new S
 }
 
 export function matchesStatus(agent, status) {
-  if (status === 'active') return agent.status === 'running' || agent.status === 'waiting'
-  if (status === 'history') return agent.status === 'finished' || agent.status === 'stopped'
+  const currentCoordination = Boolean(agent.waiting_context)
+  if (status === 'active') return agent.status === 'running' || agent.status === 'waiting' || currentCoordination
+  if (status === 'history') return !currentCoordination && (agent.status === 'finished' || agent.status === 'stopped')
   return status === 'all' || agent.status === status
 }
 

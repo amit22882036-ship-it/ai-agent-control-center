@@ -32,3 +32,9 @@ def process_test_setup(test):
         mock = patch.object(manager, name, return_value=test.workspace_path) if value is None else patch.object(manager, name, value)
         mock.start()
         test.addCleanup(mock.stop)
+
+
+def worker_output(lines):
+    """Worker output without per-execution supervision markers (asserted separately)."""
+    from app.process_supervision import MARKER
+    return [line for line in lines if line != MARKER]

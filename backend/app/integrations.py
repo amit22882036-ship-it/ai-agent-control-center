@@ -102,7 +102,8 @@ def integrate(store, task_id, assert_quiet):
                            gitops.snapshot_commit(source, result))
                 paths, remaining = changed_files(source, upstream, result)
                 # Journal keeps the complete raw relative paths; public summaries are bounded.
-                plan = applygit.prepare_apply(destination, upstream, result, directory)
+                plan = applygit.prepare_apply(destination, upstream, result, directory,
+                                              retain=applygit.ignored_not_deleted(source, base, local))
                 store.update_integration(integration_id, 'ready', result_snapshot=result, changed_paths=paths, changed_paths_remaining=remaining, plan=plan)
                 current_ws, current_source, current_dest, current_kind, current_id = resolve(store, task_id)
                 assert_quiet(task_id)

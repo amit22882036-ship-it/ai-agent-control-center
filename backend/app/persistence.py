@@ -776,12 +776,24 @@ class AgentStore:
             delegation_materialization.recover(db)
             delegation_orchestration.recover(db)
             runtime_resources.recover(db)
+            from .recovery_actions import OWNERSHIP_BLOCKER, supervised_last_execution
+            unknown_ownership = []
             for agent in db.execute("SELECT agent_id FROM agents WHERE status='running'").fetchall():
                 key = agent['agent_id']
+                lines = [r[0] for r in db.execute('SELECT line FROM output WHERE agent_id=? ORDER BY sequence', (key,))]
+                supervised = supervised_last_execution(lines)
                 db.execute("UPDATE agents SET status='stopped' WHERE agent_id=?", (key,))
                 seq = db.execute('SELECT COALESCE(MAX(sequence)+1,0) FROM output WHERE agent_id=?', (key,)).fetchone()[0]
                 marker = ['--- Backend Restart ---',
                           'Agent was running when the backend stopped and cannot be safely reattached. Marked stopped.']
+                if not supervised:
+                    # No supervision evidence for the last execution: its process tree
+                    # may have survived. Fail closed until an operator confirms it ended.
+                    marker[1] = ('Agent was running when the backend stopped. Its last execution has no process-supervision '
+                                 'evidence, so its process may still be running. Task blocked (process_ownership_unknown) '
+                                 'until an operator confirms it ended.')
+                    unknown_ownership += [row[0] for row in db.execute(
+                        'SELECT task_id FROM task_assignments WHERE agent_id=? AND ended_at IS NULL', (key,))]
                 db.executemany('INSERT INTO output(agent_id,sequence,line) VALUES (?,?,?)',
                                [(key, seq + i, line) for i, line in enumerate(marker)])
             rows = db.execute('''SELECT a.assignment_id, a.task_id, a.agent_id, g.status, t.status AS task_status FROM task_assignments a
@@ -802,6 +814,10 @@ class AgentStore:
                 WHERE control_intent='active' AND status IN ('in_progress','waiting') AND NOT EXISTS
                 (SELECT 1 FROM task_assignments a WHERE a.task_id=tasks.task_id AND a.ended_at IS NULL)""")
 
+            # Blocked only after assignments settle, so clearing it restores normal status.
+            for task_id in unknown_ownership:
+                db.execute('''INSERT OR IGNORE INTO task_blockers(id,task_id,blocker_type,reason_code,active,hard)
+                    VALUES (?,?,?,?,1,1)''', (str(uuid4()), task_id, *OWNERSHIP_BLOCKER))
             dependencies.reconcile(db)
             dependencies.finish_operations(db)
             for row in db.execute('SELECT task_id FROM delegation_continuations').fetchall():

@@ -2,18 +2,21 @@
 
 A local workspace for supervising AI coding agents: see what is running, follow output, answer questions, and intervene without juggling separate terminal sessions.
 
-**Active work in progress.** Stage 2 development is building durable task ownership, isolated workspaces, and coordination beneath the dashboard. Backend opt-in planning and coordinated delegation are available; dashboard orchestration and multiple providers remain future work.
+**Active work in progress.** Stage 2 adds durable task ownership, isolated workspaces, and coordinated delegation. The dashboard now connects autonomous Codex creation to these foundations, with an interactive hierarchy and recorded work activity. Multiple providers remain future work.
 
-> **Local use only:** the backend currently has no authentication. Do not expose it to untrusted networks or operate it as a production-ready hosted service. Task prompts, agent output, and workspace metadata can contain private information.
+> **Local use only:** the backend currently has no authentication; [local API guards](docs/api-security.md) block cross-site and DNS-rebinding requests from other websites, not other local programs. Do not expose it to untrusted networks or operate it as a production-ready hosted service. Task prompts, agent output, and workspace metadata can contain private information.
 
 ## What works today
 
 ### In the dashboard
 
+- Register an existing local Git repository and select its Project in New Agent; the repository path is shown before starting.
 - Start Mock or Codex agents; choose `read-only` (default) or `workspace-write` for Codex. Mock agents simulate progress and do not execute the supplied task.
+- Autonomous mode defaults on for a new Codex root; Mock remains the initial provider. You can turn autonomy off before creation. Autonomous work may create additional agents and consume additional provider usage; existing agents are never upgraded automatically.
 - Follow live status through Server-Sent Events (SSE), with polling fallback, and browse paginated output history.
 - Stop an agent or an existing agent subtree, reply to waiting Codex agents, redirect a running session, or respond to explicit agent decision requests.
-- Navigate existing parent/child relationships; search and filter by status and color; edit agent names and inspect name history.
+- Browse the workspace list, then explore an agent’s family from its inspector. The three-pane explorer combines tree-local Agent navigation, a vertical hierarchy and recorded-work details, with zoom, pan, branch collapse and an accessible tree list. Search and filter the workspace by status and color; edit agent names and inspect name history.
+- Inspect Task state separately from worker execution, planning revisions, admission outcomes, delegated results, integration evidence, and recent recorded activity. Coordination waits are distinct from requests for your input.
 - Use an attention panel, light/dark/system themes, a resizable inspector, and opt-in browser/Windows notifications.
 - Retain agent metadata and output in SQLite across backend restarts. Recovery does not automatically restart workers.
 
@@ -29,7 +32,7 @@ A local workspace for supervising AI coding agents: see what is running, follow 
 | Planning and replanning | Backend opt-in planning, coordinated promotion and explicit safe responsibility transitions, with bounded recursive inheritance; see [planning](docs/planning.md). |
 | Delegation requests | Backend opt-in recursive requests, bounded Child execution, safely admitted Parent continuation, direct-Parent result integration/delivery, and explicit review. |
 
-These foundations include API and backend-only capabilities, with no dedicated Project, Task-lifecycle, integration, resource, or work-intent editors in the current UI. The dashboard uses workspaces when launching agents; it does not yet provide an orchestration interface.
+These foundations include API-only controls, with no dedicated Project, Task-lifecycle, integration, resource, or work-intent editors in the UI. The dashboard offers creation-time autonomy and read-only execution context; it does not replace the existing orchestration safety gates. See [dashboard behavior and verification](docs/dashboard.md).
 
 ## Architecture
 
@@ -70,7 +73,7 @@ cd .\frontend
 npm ci
 ```
 
-For an existing clone, skip cloning and begin from its repository root. The commands use the virtual environment directly; activation is not required. Backend dependencies are currently unpinned, while `npm ci` uses the frontend lockfile.
+For an existing clone, skip cloning and begin from its repository root. The commands use the virtual environment directly; activation is not required. Backend dependencies are pinned in `backend/requirements.txt`, and `npm ci` uses the frontend lockfile.
 
 ### Start both components
 
@@ -90,7 +93,7 @@ cd .\ai-agent-control-center\frontend
 npm run dev -- --host 127.0.0.1 --port 5173 --strictPort
 ```
 
-Keep both windows running. Open the [dashboard](http://127.0.0.1:5173), check [backend health](http://127.0.0.1:8000/health), or inspect the [local API documentation](http://127.0.0.1:8000/docs). These links point to your machine, not a hosted demo. The frontend targets port 8000; CORS permits frontend origins `localhost:5173` and `127.0.0.1:5173`.
+Keep both windows running. Open the [dashboard](http://127.0.0.1:5173), check [backend health](http://127.0.0.1:8000/health), or inspect the [local API documentation](http://127.0.0.1:8000/docs). These links point to your machine, not a hosted demo. The frontend targets port 8000; only the Vite origins `localhost:5173` and `127.0.0.1:5173` and the backend's own `/docs` are allowed (`CONTROL_CENTER_ALLOWED_ORIGINS` overrides this). State-changing requests, including from `/docs` and scripts, need the CSRF token; see [local API security](docs/api-security.md).
 
 Choose **New agent**, select **Mock**, and enter a sample assignment to explore the UI. Mock runs simulate progress only. Codex runs use the authenticated CLI and the selected sandbox mode.
 
@@ -132,4 +135,6 @@ Backend tests cover lifecycle, persistence, coordination, and workspace behavior
 - [Delegations and request protocol](docs/delegations.md) — request provenance, opt-in Codex JSONL, atomic Parent handoff, and recovery.
 - [Projects, workspaces, and integration](docs/workspaces.md) — snapshots, staleness, conflict handling, and canonical-file protection.
 - [Resource coordination and work intents](docs/resource-coordination.md) — fairness, deadlocks, runtime evidence, and responsibility scopes.
+- [Local API security](docs/api-security.md) — Host/Origin checks, CSRF token, JSON-only bodies, scripting the API, and read-only GET behavior.
+- [Process supervision](docs/process-supervision.md) — Windows Job Object containment of every agent execution, failure handling and status.
 - [AGENTS.md](AGENTS.md) — repository-wide security, documentation, and development rules for Codex.

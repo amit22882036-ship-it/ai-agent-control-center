@@ -148,7 +148,9 @@ class PersistenceTests(unittest.TestCase):
         self.assertEqual(waiting['waiting_question'], 'Which file?')
 
     def test_hierarchy_recovery_children_and_processless_stop_branch(self):
-        root, _ = self.create(kind='mock')
+        # The still-running root is a supervised execution (Phase 1.5 evidence), as every real launch is.
+        with patch.object(manager.process_supervision, 'job_of', return_value=object()):
+            root, _ = self.create(kind='mock')
         child, _ = self.create(root)
         grandchild, _ = self.create(child)
         unrelated, _ = self.create()
@@ -240,7 +242,8 @@ class PersistenceTests(unittest.TestCase):
         self.resume(key, lambda key: manager.reply_agent(key, 'Answer'))
         self.output(key, 'CONTROL_CENTER_WAITING: New choice\n')
         manager.agents[key].poll.return_value = 0
-        self.resume(key, manager.get_agent)
+        # The process watcher, not a read, owns automatic continuation.
+        self.resume(key, lambda key: manager._finalize_process(key, manager.agents[key]))
         self.assertEqual(manager.agent_statuses[key], 'running')
         self.assertIn('--- Automatic Always Decision ---', manager.agent_outputs[key])
         manager.disable_always_agent(key)

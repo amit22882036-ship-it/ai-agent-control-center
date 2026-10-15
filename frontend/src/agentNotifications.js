@@ -8,10 +8,13 @@ export function createAgentNotifications(onSelect, onError) {
     observe(agents, enabled, NotificationAPI = globalThis.Notification) {
       for (const agent of agents) {
         const previous = statuses.get(agent.agent_id)
+        const waitingKind = 'waiting_context' in agent ? agent.waiting_context?.kind : 'user'
+        const state = agent.status === 'waiting' ? `waiting:${waitingKind || 'unknown'}` : agent.status
         // Record even when disabled or delivery fails; never replay old events.
-        statuses.set(agent.agent_id, agent.status)
-        if (!initialized || previous === agent.status || !enabled) continue
+        statuses.set(agent.agent_id, state)
+        if (!initialized || previous === state || !enabled) continue
         if (agent.status !== 'waiting' && agent.status !== 'finished') continue
+        if (agent.status === 'waiting' && waitingKind !== 'user') continue
         try {
           if (!NotificationAPI || NotificationAPI.permission !== 'granted') continue
           const notification = new NotificationAPI(

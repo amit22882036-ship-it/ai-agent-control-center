@@ -1,6 +1,6 @@
 # Delegations, Agent requests and Child materialization (Stage 2H.1–2H.5)
 
-Delegations record why a Parent Task requested a unit of work and which Worker assignment originated it. They are provider-independent durable metadata, separate from Task hierarchy, dependencies, work intents and resource claims. Stage 2H.2 adds an opt-in structured request protocol and durable Parent handoff. Stage 2H.3 adds separately activated Child Task/workspace materialization and bounded execution. Stage 2H.4 adds separately activated Hybrid Parent continuation, incremental result integration/delivery and explicit acknowledgement. No new frontend controls are introduced.
+Delegations record why a Parent Task requested a unit of work and which Worker assignment originated it. They are provider-independent durable metadata, separate from Task hierarchy, dependencies, work intents and resource claims. Stage 2H.2 adds an opt-in structured request protocol and durable Parent handoff. Stage 2H.3 adds separately activated Child Task/workspace materialization and bounded execution. Stage 2H.4 adds separately activated Hybrid Parent continuation, incremental result integration/delivery and explicit acknowledgement. Stage 2I.4 combines these existing permissions in an explicit creation-time Autonomous mode and adds read-only [dashboard context](dashboard.md). No existing Agent permissions are changed.
 
 ## Schema and recovery
 
@@ -240,13 +240,68 @@ Recursive execution is a separate backend opt-in: pass `recursive_delegation_ena
 
 Capability is saved with the Agent and assignment in one transaction before prompt delivery. Children inherit the exact provider and sandbox, reusing JSONL, sessions, generations and Hybrid services. Capability permits explicit requests; it does not perform automatic decomposition. Task ancestry, Delegations and TaskAssignments remain authoritative, without a second ownership tree.
 
+### Orchestration wake-ups
+
+Live events (a Child ending, a structured handoff, an acknowledgement) wake their Parent through one in-process waker (`backend/app/orchestration_waker.py`). A wake requests one bounded pass of the existing steps (replanning, materialization, delivery/continuation). Each step is isolated, so one failure cannot skip the others. Admission gates, journals and limits are unchanged.
+
+- **Coalescing:** wakes for the same Parent merge, and at most one pass runs per Parent. A wake that arrives during a pass schedules exactly one follow-up.
+- **Busy Task locks:** a pass that only failed because a lock was held (`TaskBusy`) is retried after 1, 2, 5, 10 and 30 seconds (six attempts in total). Exhaustion is logged and recorded in `delegation_continuations.last_error`. A busy replanning target stays eligible instead of becoming `blocked`.
+- **Not retried:** domain refusals keep their existing recorded reasons, and unexpected errors are recorded without retry.
+- **Not a scheduler:** the waker never scans for new work and never runs at startup.
+
+After a restart, an operator can explicitly queue one pass:
+
+- `POST /tasks/{task_id}/orchestration/wake` (CSRF-protected, `202`) queues the pass.
+- `GET /tasks/{task_id}/orchestration` is read-only and shows the continuation phase and `last_error`, the materialization phases and the wake state.
+
+Retried passes reuse the existing launch journals, so a started or uncertain Child launch is never repeated.
+
+### Explicit recovery actions
+
+Nothing moves to a failed state automatically at startup. Each recovery action is a CSRF-protected `POST` with body `{"confirm_ended": true}`.
+
+**Preconditions for every action:**
+
+- There is no live execution handle in this backend.
+- A read-only `Get-CimInstance Win32_Process` scan finds no Codex execution that is not a descendant of a process this backend supervises. A Codex execution is a `node`/`codex`/`cmd` process whose command line contains the Codex launcher and an `exec` argument.
+
+If unsupervised Codex processes are found, the action is refused and their PIDs are listed. If the scan fails, the action is refused; there is no fallback. A clean scan is a precondition, not proof.
+
+No action launches, stops or resumes anything, and every action uses only the existing phases.
+
+**`POST /delegations/{delegation_id}/recovery/resolve-launch`** settles an uncertain Child launch (`recovery_required`):
+
+- If the launch Agent has an assignment for the Child, the launch happened and its process ended. The phase becomes `started`, and existing result collection takes over.
+- Otherwise the phase becomes `workspace_ready`, with preparation attempts exhausted. In that state no wake pass and no follow-up can launch the Child, and it does not occupy capacity.
+
+Relaunching a parked Child requires a separate explicit operator action. Today that is the backend function `materialize_delegations(…, retry=True)`; it has no HTTP endpoint.
+
+**`POST /tasks/{task_id}/recovery/rearm`** returns a `recovery_required` or `stopped` continuation to `waiting`:
+
+- `stopped` covers, for example, a user Stop, a prose reply, an invalid acknowledgement or a rate-limit exit.
+- The Task's work control must be active, and no Child launch may be in progress.
+- Deliveries in `recovery_required` return to `prepared`, unless one already marked results `delivered`; in that case the action is refused.
+- The Parent continues only through `POST /tasks/{task_id}/orchestration/wake`.
+
+**`POST /tasks/{task_id}/recovery/reverify`** re-checks replanning transitions in `recovery_required`:
+
+- If the target Child is canceled, settled and unassigned, the transition returns to `stopping`, and the next replanning pass completes it through the existing checks.
+- Otherwise it stays in `recovery_required` with an updated reason.
+
 ### Depth and operational bounds
 
 `CONTROL_CENTER_DELEGATION_DEPTH` is a positive integer, default **4**. It counts Task-parent edges from root depth zero, allowing five Task levels. Set it before launching the backend; normal Tasks need no configuration. Internal materialization `Limits.depth` may impose a stricter bound. Requests, attachment, admission and launch recheck ancestry; cycles and cross-Project paths fail closed.
 
 Lowering depth retains historical Tasks, requests, workspaces and results. New prohibited requests are rejected. Previously accepted requests retain a durable `admission_error` in Delegation reads when preparation is prevented. An explicit later pass can clear that reason when policy permits. Uncertain launch admission remains inspectable; lowering policy neither deletes work nor starts a model retry loop.
 
-Defaults retain 16 unfinished direct Children, 16 requests per batch and four concurrent delegated Workers globally. Dormant orchestration Parents do not consume running capacity; running/waiting Workers and uncertain launches do. Nested Parent resume checks capacity again. Unknown launch ownership also reserves scope and prevents filesystem integration.
+Defaults retain 16 unfinished direct Children, 16 requests per batch and four concurrent delegated Workers globally. Two positive-integer variables, read when work is admitted and validated like the depth, override these defaults:
+
+- `CONTROL_CENTER_DELEGATION_CHILDREN_PER_PARENT` (default **16**)
+- `CONTROL_CENTER_DELEGATION_CONCURRENT_CHILDREN` (default **4**)
+
+An invalid value fails closed with an error naming the variable. The concurrency value also governs the capacity rechecked when a nested Parent resumes.
+
+For a strict 1/1/1 experiment, set all three variables (including the depth) to `1` before starting the backend. Dormant orchestration Parents do not consume running capacity; running/waiting Workers and uncertain launches do. Nested Parent resume checks capacity again. Unknown launch ownership also reserves scope and prevents filesystem integration.
 
 The durable round journal reserves per-Parent slots (four fresh rounds per 60 seconds) and aggregate root-tree slots (eight per 60 seconds). Internal `delegation_rounds.Policy.tree_burst` controls the aggregate burst. Slots commit atomically with each accepted batch, including concurrent descendant requests. Excess work retains `not_before`; there is no timer or model retry at the deadline. There is no lifetime round limit, lifetime tree-size cap or mandatory financial/token budget. Completed historical Children do not consume unfinished capacity. These bounds do not detect semantic infinite loops.
 

@@ -170,6 +170,15 @@ def change_edge(db, task_id, source_id, remove=False):
             raise ValueError('Terminal work cannot acquire dependencies')
         if not dependent['project_id'] or dependent['project_id'] != source['project_id']:
             raise ValueError('Dependencies require the same resolved Project')
+        # An ancestor cannot complete before its unfinished descendants, so
+        # waiting on one's own ancestor would deadlock the subtree.
+        ancestor, visited = dependent['parent_task_id'], {task_id}
+        while ancestor and ancestor not in visited:
+            if ancestor == source_id:
+                raise ValueError('A Task cannot depend on its own ancestor')
+            visited.add(ancestor)
+            row = db.execute('SELECT parent_task_id FROM tasks WHERE task_id=?', (ancestor,)).fetchone()
+            ancestor = row[0] if row else None
         seen, pending = set(), [source_id]
         graph = {}
         for edge in db.execute('SELECT task_id,depends_on_task_id FROM task_dependencies'):
