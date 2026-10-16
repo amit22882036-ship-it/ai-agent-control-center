@@ -1,6 +1,7 @@
 from . import runtime_resources, dependencies
 from .codex_events import StructuredCommand, Execution
 from . import delegation_protocol
+from . import managed_orchestration
 from . import planning, promotion, replanning
 from .work_control import require_active, require_ancestors
 import os
@@ -418,7 +419,21 @@ def _codex_command(sandbox: CodexSandbox = "read-only", session_id: str | None =
     cmd = Path(os.environ["SystemRoot"]) / "System32" / "cmd.exe"
     # Only validated CLI options enter cmd.exe; the prompt is sent through stdin.
     prompt_args = f"resume {UUID(session_id)} -" if session_id else "-"
-    command = f'"{launcher}" exec --sandbox {sandbox} --color never --skip-git-repo-check {"--json " if structured else ""}{prompt_args}'
+    # Restrict overrides to single CMD-safe tokens, including through npm's
+    # second parsing pass. Never interpolate arbitrary environment text.
+    model = os.environ.get("CONTROL_CENTER_CODEX_MODEL", "").strip()
+    effort = os.environ.get("CONTROL_CENTER_CODEX_REASONING_EFFORT", "").strip()
+    if model and not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*", model):
+        raise ValueError("CONTROL_CENTER_CODEX_MODEL must be a model identifier containing only letters, digits, '.', '_' or '-'.")
+    if effort and effort not in ("none", "minimal", "low", "medium", "high", "xhigh"):
+        raise ValueError("CONTROL_CENTER_CODEX_REASONING_EFFORT must be none, minimal, low, medium, high or xhigh.")
+    overrides = f"--model {model} " if model else ""
+    if effort:
+        # Codex accepts bare string config values; no nested CMD quoting needed.
+        overrides += f"-c model_reasoning_effort={effort} "
+    if structured:
+        overrides += managed_orchestration.CLI_OVERRIDE
+    command = f'"{launcher}" exec {overrides}--sandbox {sandbox} --color never --skip-git-repo-check {"--json " if structured else ""}{prompt_args}'
     # cmd /s /c strips the outer quotes, preserving the quoted launcher path.
     result = f'"{cmd}" /d /s /v:off /c "{command}"'
     return StructuredCommand(result) if structured else result
@@ -432,6 +447,7 @@ def _structured(process):
 def _bind_execution(agent_id, process):
     context = _structured(process)
     if context:
+        context.events.native_collaboration_prohibited = True
         context.events.planning_enabled = _task_store().planning_enabled(agent_id)
         context.events.expected_session = agent_sessions[agent_id]
         context.origin = _task_store().begin_delegation_execution(agent_id, str(uuid4()))
@@ -544,7 +560,8 @@ def _read_stderr(agent_id, process):
                         _save_agent(agent_id)
     except (OSError, ValueError):
         with _data_lock:
-            _structured(process).events.error = 'Codex stderr stream was interrupted'
+            events = _structured(process).events
+            events.error = events.error or 'Codex stderr stream was interrupted'
         logger.exception('Could not finish reading Codex stderr')
 
 
@@ -563,8 +580,14 @@ def _read_output(agent_id: str, process: subprocess.Popen) -> None:
                         if context.events.session_id and not context.events.error:
                             agent_sessions[agent_id] = context.events.session_id
                         _save_agent(agent_id)
+                    if (context.events.native_collaboration_prohibited
+                            and context.events.native_collaboration_seen
+                            and not context.policy_stop_requested):
+                        context.policy_stop_requested = True
+                        # Stop/Redirect may join this reader under the state lock.
+                        Thread(target=_stop_policy_violation, args=(agent_id, process), daemon=True).start()
         except (OSError, ValueError):
-            context.events.error = 'Codex event stream was interrupted'
+            context.events.error = context.events.error or 'Codex event stream was interrupted'
             logger.exception('Could not finish reading Codex events')
         finally:
             stderr_reader.join()
@@ -635,6 +658,7 @@ def _spawn_process(command: str | list[str], agent_type: AgentType, *, cwd) -> s
     )
     if structured:
         process._control_center_execution = Execution()
+        process._control_center_execution.events.native_collaboration_prohibited = True
     return process
 
 
@@ -906,11 +930,23 @@ def _launch_prepared_agent(task, parent_id, task_id, parent_task, command, agent
     if agent_type == "codex":
         try:
             with process.stdin:
-                process.stdin.write(_planning_prompt(agent_id) + _codex_prompt(provider_task))
+                process.stdin.write(_execution_prompt(agent_id, provider_task, process))
         except (OSError, ValueError, LookupError, sqlite3.Error):
             stop_agent(agent_id)
             raise
     return agent_id
+
+
+def _execution_prompt(agent_id, text, process):
+    policy = ''
+    if _structured(process):
+        with _task_store()._connection() as db:
+            settings = db.execute('SELECT * FROM agents WHERE agent_id=?', (agent_id,)).fetchone()
+        can_promote = bool(settings and all(settings[k] for k in (
+            'planning_enabled', 'delegation_protocol_enabled',
+            'child_materialization_enabled', 'hybrid_delegation_enabled')))
+        policy = managed_orchestration.instruction(can_promote)
+    return policy + _planning_prompt(agent_id) + _codex_prompt(text)
 
 
 def _planning_prompt(agent_id):
@@ -1563,6 +1599,36 @@ def get_agent_output(agent_id: str, limit: int = OUTPUT_PAGE_SIZE,
 
 
 @_synchronized
+def _stop_policy_violation(agent_id, process):
+    """Stop only the offending current execution, never its replacement."""
+    context = _structured(process)
+    if (agents.get(agent_id) is not process or not context
+            or not context.events.native_collaboration_prohibited
+            or not context.events.native_collaboration_seen
+            or (context.origin and not _task_store().execution_is_current(context.origin))):
+        return
+    agent_outputs[agent_id].append(managed_orchestration.VIOLATION)
+    _save_agent(agent_id)
+    stop_agent(agent_id)
+
+
+def _require_managed_resume(agent_id):
+    if not _store or not _store.execution_settings(agent_id):
+        return
+    context = _structured(agents.get(agent_id))
+    seen = bool(context and context.events.native_collaboration_seen)
+    # Historical provider activity is not adopted as managed work. Query only
+    # candidate wire records, then parse their structure (not prose keywords).
+    with _store._connection() as db:
+        lines = db.execute("SELECT line FROM output WHERE agent_id=? AND instr(line, 'collab_tool_call')>0",
+                           (agent_id,))
+        seen = seen or any(managed_orchestration.collaboration_event(r[0]) for r in lines)
+    if seen:
+        raise ValueError('Cannot resume this managed session: prior native Codex collaboration '
+                         'requires explicit inspection; no provider Children are adopted or resumed.')
+
+
+@_synchronized
 def stop_agent(agent_id: str) -> dict[str, str] | None:
     if agent_id not in agents:
         return None
@@ -1659,6 +1725,7 @@ def redirect_agent(agent_id: str, instruction: str) -> dict[str, str] | None:
     if not session_id:
         raise ValueError("Redirect will be available once the Codex session starts.")
     # Resolve and validate before interrupting the current process.
+    _require_managed_resume(agent_id)
     command = _codex_command(agent_sandboxes[agent_id], session_id)
     cwd = _resume_cwd(agent_id)
     task_id = _agent_task_id(agent_id)
@@ -1804,6 +1871,7 @@ def _waiting_resume_command(agent_id: str) -> str | None:
     session_id = agent_sessions[agent_id]
     if not session_id:
         raise ValueError("The Codex session ID is not available.")
+    _require_managed_resume(agent_id)
     return _codex_command(agent_sandboxes[agent_id], session_id)
 
 
@@ -1826,6 +1894,7 @@ def _resume_agent(agent_id: str, command: str, text: str, marker: str,
         reader.join(timeout=3)
         if reader.is_alive():
             raise RuntimeError("Old process output has not closed; resume was not started.")
+    _require_managed_resume(agent_id)
     previous = (agents[agent_id], agent_statuses[agent_id], agent_waiting_questions[agent_id],
                 agent_sessions[agent_id], agent_outputs[agent_id])
     cwd = cwd if cwd is not None else _resume_cwd(agent_id)
@@ -1872,7 +1941,7 @@ def _resume_agent(agent_id: str, command: str, text: str, marker: str,
         finally:
             _start_reader(agent_id, replacement)
         with replacement.stdin:
-            prompt = invalidation + _planning_prompt(agent_id) + _codex_prompt(text)
+            prompt = invalidation + _execution_prompt(agent_id, text, replacement)
             if not always_decision and always.configured:
                 setting = "enabled" if always.enabled else "disabled"
                 prompt += (f"\n\nCurrent control-center setting: Always Decide is {setting}. "
