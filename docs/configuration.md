@@ -89,6 +89,10 @@ Run `codex login status` in a normal PowerShell window. If the error mentions th
 
 The path must be the root of an existing Git working tree with at least one commit. It must not overlap another registered Project or the workspace root.
 
+### "Task Workspace Git operation failed"
+
+Check that the Project is still a valid Git repository with a commit. On Windows, this error also appears when the combined path is too long: each Task worktree lives at `<workspace root>\<Project ID>\<Task ID>`, which adds about 75 characters. During verification, a 150-character workspace root failed with Git's `Filename too long`, while the default `%LOCALAPPDATA%` location worked. Keep `CONTROL_CENTER_WORKSPACE_ROOT` and Project paths short.
+
 ### Agent launches are refused with a supervision error
 
 `GET http://127.0.0.1:8000/system/process-supervision` should return `supervised` on Windows. If Job Object supervision cannot be established, launches fail closed rather than running unsupervised. See [process supervision](process-supervision.md).
