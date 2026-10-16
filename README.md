@@ -4,7 +4,7 @@ A local dashboard for running and supervising AI coding agents on your own machi
 
 In autonomous mode, a Codex agent can split a request into separate responsibilities. The Control Center then admits **Child agents** under explicit limits and gives each one its own workspace. It integrates their results back into the Parent's workspace, and the Parent must review and accept each result before it can finish.
 
-> **Status:** an actively developed personal engineering project, not a production service. It runs locally on Windows and supports one real provider, the [OpenAI Codex CLI](https://github.com/openai/codex), plus a Mock provider for exploring the UI without model usage. See [limitations](#security-and-limitations).
+> **Status:** an open-source, actively developed engineering project that you run locally. It is not a production service. It runs locally on Windows and supports one real provider, the [OpenAI Codex CLI](https://github.com/openai/codex), plus a Mock provider for exploring the UI without model usage. See [limitations](#security-and-limitations).
 
 ## Why it exists
 
@@ -264,3 +264,7 @@ The full backend suite takes about 20 minutes on Windows. It uses temporary data
 | [Process supervision](docs/process-supervision.md) | Windows Job Object containment and Stop semantics |
 | [Local API security](docs/api-security.md) | Host and Origin checks, CSRF token and scripting the API |
 | [Project history](docs/history/stage1-handoff.md) | The Stage 1 technical checkpoint and earlier design decisions |
+
+## License
+
+Released under the [MIT License](LICENSE). The software is provided as is, without warranty. Using real agents also falls under your own Codex and OpenAI terms.
