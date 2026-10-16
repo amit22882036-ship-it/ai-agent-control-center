@@ -152,8 +152,10 @@ def activity(store, agent_id):
         events = []
         def add(kind, identifier, label, at):
             events.append({'id': kind + ':' + str(identifier), 'kind': kind, 'label': label, 'at': at})
-        for r in db.execute('SELECT revision,accepted_at FROM planning_revisions WHERE task_id=? ORDER BY revision DESC LIMIT 30', (task_id,)):
-            add('plan', r[0], f'Plan revision {r[0]} accepted', r[1])
+        # Only the validated decision enum is projected, never the provider's rationale prose.
+        for r in db.execute('''SELECT revision,accepted_at,json_extract(content,'$.decision') FROM planning_revisions
+            WHERE task_id=? ORDER BY revision DESC LIMIT 30''', (task_id,)):
+            add('plan', r[0], f'Plan revision {r[0]} accepted: {r[2]}', r[1])
         for r in db.execute('SELECT decision_key,created_at FROM promotion_decisions WHERE task_id=? ORDER BY rowid DESC LIMIT 30', (task_id,)):
             add('promotion', r[0], 'Work promotion accepted', r[1])
         for r in db.execute('SELECT decision_id,created_at FROM replan_decisions WHERE task_id=? ORDER BY rowid DESC LIMIT 30', (task_id,)):

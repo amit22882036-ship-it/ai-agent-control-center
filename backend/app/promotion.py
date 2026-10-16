@@ -444,7 +444,7 @@ def history(db, task_id):
 
 def instruction(task_id):
     return f'''\nOptional explicit promotion ({PROTOCOL}) for Task {task_id}.
-Planning alone never executes work. Only when useful and independently authorized, select accepted
+Planning alone never executes work. Only when useful and authorized for this execution, select accepted
 proposal IDs by emitting a FINAL standalone JSON object with exactly protocol, task_id, revision,
 decision_key (stable ASCII key), items (1-16), continuation.
 Each item has exactly proposal_id, scope, resources, depends_on_task_ids, reuse_task_id.

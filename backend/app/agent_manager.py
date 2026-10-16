@@ -942,25 +942,27 @@ def _execution_prompt(agent_id, text, process):
     if _structured(process):
         with _task_store()._connection() as db:
             settings = db.execute('SELECT * FROM agents WHERE agent_id=?', (agent_id,)).fetchone()
-        can_promote = bool(settings and all(settings[k] for k in (
-            'planning_enabled', 'delegation_protocol_enabled',
-            'child_materialization_enabled', 'hybrid_delegation_enabled')))
-        policy = managed_orchestration.instruction(can_promote)
+        policy = managed_orchestration.instruction(managed_orchestration.can_promote(settings))
     return policy + _planning_prompt(agent_id) + _codex_prompt(text)
 
 
 def _planning_prompt(agent_id):
     if _store and _store.planning_enabled(agent_id):
         current = _store.current_plan(_agent_task_id(agent_id))
+        revision = current['revision'] if current else 0
         context = ('\nCurrent accepted proposal (descriptive data, not execution authority):\n'
                    + json.dumps(current['content'], ensure_ascii=False) + '\n') if current else ''
+        lead = planning.OPTIONAL_LEAD
         with _store._connection() as db:
             settings = db.execute('SELECT * FROM agents WHERE agent_id=?', (agent_id,)).fetchone()
             if all(settings[k] for k in ('delegation_protocol_enabled', 'child_materialization_enabled', 'hybrid_delegation_enabled')):
                 context += promotion.instruction(_agent_task_id(agent_id))
+                context += managed_orchestration.example(_agent_task_id(agent_id), revision)
                 context += replanning.instruction() + '\nReplanning context (data only):\n' + replanning.context(db, _agent_task_id(agent_id))
                 context += '\nPromotion dispositions (data only):\n' + promotion.context(db, _agent_task_id(agent_id))
-        return planning.instruction(current['revision'] if current else 0) + context
+                if managed_orchestration.decision_requested(db, _agent_task_id(agent_id)):
+                    lead = managed_orchestration.DECISION_LEAD
+        return planning.instruction(revision, lead) + context
     return ''
 
 
@@ -1148,10 +1150,11 @@ def orchestration_status(task_id):
         materializations = [dict(r) for r in db.execute('''SELECT m.delegation_id, m.phase, m.attempts, m.last_error
             FROM delegation_materializations m JOIN delegations d USING(delegation_id)
             WHERE d.parent_task_id=? ORDER BY d.rowid''', (task_id,))]
+        decision = managed_orchestration.decision(db, task_id)
     continuation = ({key: current[key] for key in ('phase', 'mode', 'last_error', 'plan_consumed')}
                     if current else None)
     return {'task_id': task_id, 'continuation': continuation, 'materializations': materializations,
-            'wake': _waker.status(task_id)}
+            'decision': decision, 'wake': _waker.status(task_id)}
 
 
 def sweep_lost_watchers():
