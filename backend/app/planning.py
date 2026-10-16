@@ -164,11 +164,15 @@ def accept(db, origin, message, *, session_id, message_id):
     return current(db, task['task_id'])
 
 
-def instruction(revision):
-    return f'''\n\nOptional planning metadata ({PROTOCOL}); current accepted revision: {revision}.
-Planning is optional; continue ordinary work. Consider independent deliverables, dependencies,
+OPTIONAL_LEAD = '''Planning is optional; continue ordinary work. Consider independent deliverables, dependencies,
 parallel benefit and coordination cost. Do not delegate merely because a task is long.
-If useful, emit a complete standalone assistant JSON message with exactly:
+If useful, emit'''
+
+
+def instruction(revision, lead=OPTIONAL_LEAD):
+    title = 'Optional planning metadata' if lead == OPTIONAL_LEAD else 'Planning metadata'
+    return f'''\n\n{title} ({PROTOCOL}); current accepted revision: {revision}.
+{lead} a complete standalone assistant JSON message with exactly:
 protocol, decision_key (stable ASCII key), base_revision ({revision}), decision (independent or propose),
 rationale (nonblank, <=2000 characters), items, references.
 Independent decisions have items=[]; propose has 1-16 items with exactly proposal_id (stable ASCII key),

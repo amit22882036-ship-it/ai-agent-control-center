@@ -13,6 +13,10 @@ _guard = Lock()
 _locks = {}
 
 
+class TaskBusy(ValueError):
+    """A non-blocking Task lock was held by another operation; safe to retry later."""
+
+
 @contextmanager
 def task_lock(store, task_id, *, blocking=True):
     key = (canonical_path(store.path)[1], task_id)
@@ -22,7 +26,7 @@ def task_lock(store, task_id, *, blocking=True):
     try:
         acquired = lock.acquire(blocking=blocking)
         if not acquired:
-            raise ValueError("Task Workspace operation already in progress; retry shortly")
+            raise TaskBusy("Task Workspace operation already in progress; retry shortly")
         try:
             yield
         finally:

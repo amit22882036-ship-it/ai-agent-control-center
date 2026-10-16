@@ -10,6 +10,7 @@ from app.main import app
 from app.output_history import RECENT_OUTPUT_LIMIT, OUTPUT_PAGE_SIZE, OUTPUT_MAX_LIMIT
 from app.persistence import AgentStore
 import test_persistence
+from api_test_support import request_headers
 
 
 class OutputHistoryTests(unittest.TestCase):
@@ -35,7 +36,7 @@ class OutputHistoryTests(unittest.TestCase):
                 messages.append(message)
             await app({'type': 'http', 'asgi': {'version': '3.0'}, 'http_version': '1.1',
                        'method': 'GET', 'scheme': 'http', 'path': path, 'raw_path': path.encode(),
-                       'query_string': query.encode(), 'headers': [], 'root_path': '',
+                       'query_string': query.encode(), 'headers': request_headers('GET', content_type=False), 'root_path': '',
                        'client': ('127.0.0.1', 1234), 'server': ('localhost', 8000)}, receive, send)
             self.assertEqual(messages[0]['status'], expected)
             return json.loads(b''.join(item.get('body', b'') for item in messages))

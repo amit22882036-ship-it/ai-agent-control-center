@@ -10,11 +10,12 @@ from uuid import UUID
 
 from .delegation_protocol import decode, is_envelope
 from . import planning
+from .managed_orchestration import VIOLATION
 
 MAX_EVENT = 1048576
 MAX_ITEMS = 4096
 ITEM_TYPES = {'agent_message', 'reasoning', 'command_execution', 'file_change',
-              'mcp_tool_call', 'web_search', 'todo_list'}
+              'mcp_tool_call', 'web_search', 'todo_list', 'collab_tool_call'}
 
 
 class StructuredCommand(str):
@@ -27,10 +28,13 @@ class Execution:
     origin: object = None
     revoked: bool = False
     processed: bool = False
+    policy_stop_requested: bool = False
 
 
 @dataclass
 class CodexEvents:
+    native_collaboration_prohibited: bool = False
+    native_collaboration_seen: bool = False
     planning_enabled: bool = False
     plans: list = field(default_factory=list)
     expected_session: str | None = None
@@ -105,6 +109,11 @@ class CodexEvents:
         if (not isinstance(item, dict) or item.get('type') not in ITEM_TYPES
                 or not isinstance(item.get('id'), str) or not 1 <= len(item['id']) <= 128):
             raise ValueError('invalid item')
+        if item['type'] == 'collab_tool_call':
+            self.native_collaboration_seen = True
+            if self.native_collaboration_prohibited:
+                # Valid provider event, never authority to delegate here.
+                self.error = self.error or VIOLATION
         fingerprint = sha256(line.strip().encode()).hexdigest()
         identifier = item['id']
         if identifier in self.items:

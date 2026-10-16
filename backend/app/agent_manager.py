@@ -1,6 +1,7 @@
 from . import runtime_resources, dependencies
 from .codex_events import StructuredCommand, Execution
 from . import delegation_protocol
+from . import managed_orchestration
 from . import planning, promotion, replanning
 from .work_control import require_active, require_ancestors
 import os
@@ -14,14 +15,17 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from functools import wraps
 from contextlib import nullcontext, contextmanager, ExitStack
-from threading import RLock, Thread, Timer
+from threading import RLock, Thread, Timer, local
+from threading import Thread as _RealThread  # identity check for watcher ownership
+_RealPopen = subprocess.Popen  # tests replace Popen with doubles that cannot be supervised
 from typing import Literal
 from uuid import UUID, uuid4
 
 from .agent_names import default_display_name, validate_display_name, validate_display_color
 from .system_notifications import notifications
 from .persistence import AgentStore
-from .task_workspaces import provision_task_workspace, task_lock
+from .task_workspaces import TaskBusy, provision_task_workspace, task_lock
+from . import orchestration_waker
 from .workspace_freshness import evaluate_workspace_freshness, ensure_workspace_current, reject_divergence, session_context
 from .project_domain import canonical_path
 from .realtime import changes
@@ -30,6 +34,8 @@ from . import delegation_safety
 from . import delegation_materialization
 from . import delegation_continuation, delegation_orchestration
 from .delegation_delivery import DeliveryService
+from . import process_supervision
+from . import recovery_actions
 
 logger = logging.getLogger(__name__)
 
@@ -68,6 +74,13 @@ class AlwaysDecisions:
 
 
 agent_always_decisions: dict[str, AlwaysDecisions] = {}
+# Executions whose watcher ended without finalizing them (Phase 2.2A): visible,
+# in-memory recovery condition; only an explicit operator action proceeds.
+agent_watcher_lost: dict[str, str] = {}
+WATCHER_LOST_MARKER = '--- Process watcher lost; explicit recovery required ---'
+WATCHER_LOST_REASON = 'Process watcher ended without finalizing the exited execution; explicit recovery required'
+SWEEP_INTERVAL_SECONDS = 30
+_wake_suppression = local()
 _always_handled_marker = "CONTROL_CENTER_ALWAYS_HANDLED"
 agent_similar_decisions: dict[str, SimilarDecisions] = {}
 _similar_handled_marker = "CONTROL_CENTER_SIMILAR_HANDLED"
@@ -103,7 +116,59 @@ def _refresh_status(agent_id: str, allow_auto: bool = True) -> None:
     _finalize_process(agent_id, agents[agent_id], allow_auto)
 
 
-def _finalize_process(agent_id: str, process: subprocess.Popen | None, allow_auto: bool = True) -> None:
+def _watcher_owns(process) -> bool:
+    watcher = getattr(process, '_control_center_watcher', None)
+    return isinstance(watcher, _RealThread) and (watcher.ident is None or watcher.is_alive())
+
+
+def _auto_continuation_due(agent_id: str) -> bool:
+    question = agent_waiting_questions[agent_id]
+    if not (question and agent_sessions[agent_id] and agent_types[agent_id] == "codex"):
+        return False
+    always = agent_always_decisions[agent_id]
+    if always.enabled:
+        return not always.automatic_attempt or always.handled
+    policy = agent_similar_decisions[agent_id]
+    return bool(policy.enabled and policy.examples and question.strip() not in policy.attempted)
+
+
+def _watcher_lost(process) -> bool:
+    watcher = getattr(process, '_control_center_watcher', None)
+    return isinstance(watcher, _RealThread) and watcher.ident is not None and not watcher.is_alive()
+
+
+def _refresh_status_for_read(agent_id: str) -> None:
+    """Read paths (GET) observe state and never launch work.
+
+    A live watcher owns finalization, including Always/Similar continuation and
+    delegation scheduling. Only an unwatched exit is settled here, and then
+    without automatic continuation or scheduling; work that would start an
+    execution is left untouched rather than consumed.
+
+    A watcher that ended without finalizing an exited process has failed. No
+    owner remains, so the failure is logged once and the visible status is
+    settled without automatic continuation; the user can then reply or decide.
+    Structured executions are only reported: their durable handoff needs the
+    Phase 2 recovery work and must not run from a read.
+    """
+    process = agents[agent_id]
+    if process is None or _watcher_owns(process):
+        return
+    if _watcher_lost(process):
+        exited = process.poll() is not None and agent_statuses[agent_id] == 'running'
+        if exited and getattr(process, '_control_center_watcher_failure_logged', False) is not True:
+            process._control_center_watcher_failure_logged = True
+            logger.error('Process watcher for agent %s ended without finalizing its exited process', agent_id)
+        if not _structured(process):
+            _finalize_process(agent_id, process, allow_auto=False, schedule=False)
+        return
+    if _structured(process) or _auto_continuation_due(agent_id):
+        return
+    _finalize_process(agent_id, process, allow_auto=False, schedule=False)
+
+
+def _finalize_process(agent_id: str, process: subprocess.Popen | None, allow_auto: bool = True,
+                      schedule: bool = True) -> None:
     # The reader must finish parsing buffered output before deciding the exit state.
     with _state_lock:
         if (process is None or agents.get(agent_id) is not process or agent_statuses[agent_id] != "running"
@@ -172,13 +237,24 @@ def _finalize_process(agent_id: str, process: subprocess.Popen | None, allow_aut
                 with _store._connection() as db:
                     if db.execute('SELECT 1 FROM delegations WHERE child_task_id=?', (task_id,)).fetchone():
                         status = 'stopped'
+        returncode = process.poll()
+        if status == 'finished' and agent_types[agent_id] == 'codex' and returncode != 0:
+            # A failed Codex run is not completion evidence: keep the Task
+            # incomplete (and its dependents blocked) instead of finishing it.
+            status = 'stopped'
+            agent_outputs[agent_id].append(f'--- Codex exited with code {returncode}; the Task was not completed ---')
         agent_statuses[agent_id] = status
         _save_agent(agent_id)
         _settle_coordination()
-        _wake_delegation_siblings(agent_id)
-        _schedule_hybrid_for_agent(agent_id)
+        if schedule:
+            _wake_delegation_siblings(agent_id)
+            _schedule_hybrid_for_agent(agent_id)
         try:
-            notifications.transition(agent_id, agent_statuses[agent_id], agent_tasks[agent_id])
+            context = _waiting_context(agent_id) if agent_statuses[agent_id] == 'waiting' else None
+            if agent_statuses[agent_id] != 'waiting' or (context and context['kind'] == 'user'):
+                notifications.transition(agent_id, agent_statuses[agent_id], agent_tasks[agent_id])
+            else:
+                notifications.cancel(agent_id)
         except Exception:
             logger.exception("Could not schedule native notification")
 
@@ -186,6 +262,12 @@ def _finalize_process(agent_id: str, process: subprocess.Popen | None, allow_aut
 def _watch_process(agent_id: str, process: subprocess.Popen, reader: Thread) -> None:
     # Separate from the reader: Redirect/Stop can join the reader while holding
     # the state lock without deadlocking this finalizer.
+    job = process_supervision.job_of(process)
+    if job is not None:
+        # The execution ends with its main process: closing the Job ends any
+        # remaining descendants, which also releases inherited output pipes.
+        process.wait()
+        job.close()
     reader.join()
     process.wait()
     _finalize_process(agent_id, process)
@@ -264,7 +346,7 @@ def _save_agent(agent_id: str, emit=True, *, activation=None) -> bool:
 @_synchronized
 def initialize_persistence(path=None) -> None:
     """Explicit startup only. Restored logical agents have no attached processes."""
-    global _store, _shutting_down
+    global _store, _shutting_down, _waker
     if any(process is not None for process in agents.values()):
         raise RuntimeError("Cannot reload persistence while managed processes are attached")
     store = AgentStore(path)
@@ -275,10 +357,11 @@ def initialize_persistence(path=None) -> None:
     with _data_lock:
         for registry in (agents, agent_parents, agent_statuses, agent_outputs, agent_tasks, agent_names, agent_colors, agent_types,
                          agent_sandboxes, agent_sessions, agent_waiting_questions, agent_readers,
-                         agent_similar_decisions, agent_always_decisions):
+                         agent_similar_decisions, agent_always_decisions, agent_watcher_lost):
             registry.clear()
         _store = store
         _shutting_down = False
+        _waker = _new_waker(store)
         for record in records:
             key = record['agent_id']
             agents[key] = None
@@ -336,7 +419,21 @@ def _codex_command(sandbox: CodexSandbox = "read-only", session_id: str | None =
     cmd = Path(os.environ["SystemRoot"]) / "System32" / "cmd.exe"
     # Only validated CLI options enter cmd.exe; the prompt is sent through stdin.
     prompt_args = f"resume {UUID(session_id)} -" if session_id else "-"
-    command = f'"{launcher}" exec --sandbox {sandbox} --color never --skip-git-repo-check {"--json " if structured else ""}{prompt_args}'
+    # Restrict overrides to single CMD-safe tokens, including through npm's
+    # second parsing pass. Never interpolate arbitrary environment text.
+    model = os.environ.get("CONTROL_CENTER_CODEX_MODEL", "").strip()
+    effort = os.environ.get("CONTROL_CENTER_CODEX_REASONING_EFFORT", "").strip()
+    if model and not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*", model):
+        raise ValueError("CONTROL_CENTER_CODEX_MODEL must be a model identifier containing only letters, digits, '.', '_' or '-'.")
+    if effort and effort not in ("none", "minimal", "low", "medium", "high", "xhigh"):
+        raise ValueError("CONTROL_CENTER_CODEX_REASONING_EFFORT must be none, minimal, low, medium, high or xhigh.")
+    overrides = f"--model {model} " if model else ""
+    if effort:
+        # Codex accepts bare string config values; no nested CMD quoting needed.
+        overrides += f"-c model_reasoning_effort={effort} "
+    if structured:
+        overrides += managed_orchestration.CLI_OVERRIDE
+    command = f'"{launcher}" exec {overrides}--sandbox {sandbox} --color never --skip-git-repo-check {"--json " if structured else ""}{prompt_args}'
     # cmd /s /c strips the outer quotes, preserving the quoted launcher path.
     result = f'"{cmd}" /d /s /v:off /c "{command}"'
     return StructuredCommand(result) if structured else result
@@ -350,6 +447,7 @@ def _structured(process):
 def _bind_execution(agent_id, process):
     context = _structured(process)
     if context:
+        context.events.native_collaboration_prohibited = True
         context.events.planning_enabled = _task_store().planning_enabled(agent_id)
         context.events.expected_session = agent_sessions[agent_id]
         context.origin = _task_store().begin_delegation_execution(agent_id, str(uuid4()))
@@ -462,7 +560,8 @@ def _read_stderr(agent_id, process):
                         _save_agent(agent_id)
     except (OSError, ValueError):
         with _data_lock:
-            _structured(process).events.error = 'Codex stderr stream was interrupted'
+            events = _structured(process).events
+            events.error = events.error or 'Codex stderr stream was interrupted'
         logger.exception('Could not finish reading Codex stderr')
 
 
@@ -481,8 +580,14 @@ def _read_output(agent_id: str, process: subprocess.Popen) -> None:
                         if context.events.session_id and not context.events.error:
                             agent_sessions[agent_id] = context.events.session_id
                         _save_agent(agent_id)
+                    if (context.events.native_collaboration_prohibited
+                            and context.events.native_collaboration_seen
+                            and not context.policy_stop_requested):
+                        context.policy_stop_requested = True
+                        # Stop/Redirect may join this reader under the state lock.
+                        Thread(target=_stop_policy_violation, args=(agent_id, process), daemon=True).start()
         except (OSError, ValueError):
-            context.events.error = 'Codex event stream was interrupted'
+            context.events.error = context.events.error or 'Codex event stream was interrupted'
             logger.exception('Could not finish reading Codex events')
         finally:
             stderr_reader.join()
@@ -529,12 +634,17 @@ def _start_reader(agent_id: str, process: subprocess.Popen) -> None:
     reader = Thread(target=_read_output, args=(agent_id, process), daemon=True)
     agent_readers[agent_id] = reader
     reader.start()
-    Thread(target=_watch_process, args=(agent_id, process, reader), daemon=True).start()
+    watcher = Thread(target=_watch_process, args=(agent_id, process, reader), daemon=True)
+    process._control_center_watcher = watcher
+    watcher.start()
 
 
 def _spawn_process(command: str | list[str], agent_type: AgentType, *, cwd) -> subprocess.Popen:
     structured = isinstance(command, StructuredCommand)
-    process = subprocess.Popen(
+    # Windows: every real worker runs under its own verified Job Object; a
+    # supervision failure refuses the launch (SupervisionError is an OSError).
+    supervised = os.name == 'nt' and subprocess.Popen is _RealPopen
+    process = (process_supervision.popen if supervised else subprocess.Popen)(
         command,
         stdin=subprocess.PIPE if agent_type == "codex" else None,
         stdout=subprocess.PIPE,
@@ -548,6 +658,7 @@ def _spawn_process(command: str | list[str], agent_type: AgentType, *, cwd) -> s
     )
     if structured:
         process._control_center_execution = Execution()
+        process._control_center_execution.events.native_collaboration_prohibited = True
     return process
 
 
@@ -623,10 +734,14 @@ def _workspace_session(action):
 
 
 def start_agent(task: str, agent_type: AgentType = "mock", sandbox: CodexSandbox = "read-only",
-                parent_id: str | None = None, *, task_id: str | None = None,
+                parent_id: str | None = None, *, task_id: str | None = None, project_id: str | None = None,
                 delegation_protocol_enabled: bool = False,
                 child_materialization_enabled: bool = False, hybrid_delegation_enabled: bool = False,
                 recursive_delegation_enabled: bool = False, planning_enabled: bool = False, _materialization=None) -> str:
+    if project_id is not None and (parent_id is not None or task_id is not None):
+        raise ValueError('Project selection is only available for new root Tasks')
+    if project_id is not None and _store is None:
+        raise RuntimeError('Project persistence is unavailable')
     if planning_enabled and (agent_type != 'codex' or _store is None):
         raise ValueError('Planning requires a persistent Codex agent')
     if recursive_delegation_enabled and not hybrid_delegation_enabled:
@@ -637,7 +752,7 @@ def start_agent(task: str, agent_type: AgentType = "mock", sandbox: CodexSandbox
         raise ValueError('Child materialization requires explicit delegation protocol activation')
     if delegation_protocol_enabled and (agent_type != 'codex' or _store is None):
         raise ValueError('Delegation protocol requires a persistent Codex agent')
-    prepared = _prepare_agent_start(task, agent_type, sandbox, parent_id, task_id=task_id)
+    prepared = _prepare_agent_start(task, agent_type, sandbox, parent_id, task_id=task_id, project_id=project_id)
     if delegation_protocol_enabled or planning_enabled:
         prepared = (*prepared[:4], _codex_command(sandbox, structured=True), prepared[5])
     elif _store and agent_type == 'codex':
@@ -670,7 +785,7 @@ def start_agent(task: str, agent_type: AgentType = "mock", sandbox: CodexSandbox
 
 @_synchronized
 def _prepare_agent_start(task: str, agent_type: AgentType, sandbox: CodexSandbox,
-                         parent_id: str | None, *, task_id: str | None):
+                         parent_id: str | None, *, task_id: str | None, project_id: str | None = None):
     if _shutting_down:
         raise RuntimeError('Backend is shutting down; agent start was not performed')
     origin = 'project_snapshot' if task_id is None else 'legacy_project_snapshot'
@@ -686,6 +801,16 @@ def _prepare_agent_start(task: str, agent_type: AgentType, sandbox: CodexSandbox
     parent_task = None
     if _store is not None:
         if task_id is None:
+            if project_id is not None:
+                project = _store.get_project(project_id)
+                if project is None:
+                    raise LookupError('Selected Project not found. Refresh the Project list.')
+                root_path = Path(canonical_path(project['root_path'], require_directory=True)[0])
+                resolved = _store.resolve_project_for_path(root_path)
+                if resolved is None or resolved['project_id'] != project_id:
+                    raise ValueError('Selected Project root has changed; register the correct repository.')
+                from .workspace_git import repository
+                repository(root_path)
             if parent_id is not None:
                 # Ended workers retain their actual assignment history too.
                 assignment = _store.get_active_assignment_for_agent(parent_id)
@@ -699,7 +824,7 @@ def _prepare_agent_start(task: str, agent_type: AgentType, sandbox: CodexSandbox
                 origin = 'parent_task_snapshot'
             task_record = _store.create_task(task, parent_task_id=parent_task['task_id'] if parent_task else None,
                                              root_path=root_path,
-                                             project_id=(_store.resolve_project_for_path(cwd) or {}).get('project_id')
+                                             project_id=project_id if project_id is not None else (_store.resolve_project_for_path(cwd) or {}).get('project_id')
                                              if parent_task is None else None)
         else:
             task_record = _store.get_task(task_id)
@@ -763,6 +888,8 @@ def _launch_prepared_agent(task, parent_id, task_id, parent_task, command, agent
     agent_parents[agent_id] = parent_id
     agent_outputs[agent_id] = OutputCache()
     agent_outputs[agent_id].assignment_task_id = task_id
+    if process_supervision.job_of(process):
+        agent_outputs[agent_id].append(process_supervision.MARKER)
     agent_tasks[agent_id] = task
     agent_names[agent_id] = default_display_name(task)
     agent_colors[agent_id] = "neutral"
@@ -803,25 +930,39 @@ def _launch_prepared_agent(task, parent_id, task_id, parent_task, command, agent
     if agent_type == "codex":
         try:
             with process.stdin:
-                process.stdin.write(_planning_prompt(agent_id) + _codex_prompt(provider_task))
+                process.stdin.write(_execution_prompt(agent_id, provider_task, process))
         except (OSError, ValueError, LookupError, sqlite3.Error):
             stop_agent(agent_id)
             raise
     return agent_id
 
 
+def _execution_prompt(agent_id, text, process):
+    policy = ''
+    if _structured(process):
+        with _task_store()._connection() as db:
+            settings = db.execute('SELECT * FROM agents WHERE agent_id=?', (agent_id,)).fetchone()
+        policy = managed_orchestration.instruction(managed_orchestration.can_promote(settings))
+    return policy + _planning_prompt(agent_id) + _codex_prompt(text)
+
+
 def _planning_prompt(agent_id):
     if _store and _store.planning_enabled(agent_id):
         current = _store.current_plan(_agent_task_id(agent_id))
+        revision = current['revision'] if current else 0
         context = ('\nCurrent accepted proposal (descriptive data, not execution authority):\n'
                    + json.dumps(current['content'], ensure_ascii=False) + '\n') if current else ''
+        lead = planning.OPTIONAL_LEAD
         with _store._connection() as db:
             settings = db.execute('SELECT * FROM agents WHERE agent_id=?', (agent_id,)).fetchone()
             if all(settings[k] for k in ('delegation_protocol_enabled', 'child_materialization_enabled', 'hybrid_delegation_enabled')):
                 context += promotion.instruction(_agent_task_id(agent_id))
+                context += managed_orchestration.example(_agent_task_id(agent_id), revision)
                 context += replanning.instruction() + '\nReplanning context (data only):\n' + replanning.context(db, _agent_task_id(agent_id))
                 context += '\nPromotion dispositions (data only):\n' + promotion.context(db, _agent_task_id(agent_id))
-        return planning.instruction(current['revision'] if current else 0) + context
+                if managed_orchestration.decision_requested(db, _agent_task_id(agent_id)):
+                    lead = managed_orchestration.DECISION_LEAD
+        return planning.instruction(revision, lead) + context
     return ''
 
 
@@ -928,29 +1069,321 @@ def materialize_delegations(parent_task_id, *, limits=None, retry=False):
                 results.append(service.run(record['delegation_id']))
         except (ValueError, LookupError, OSError, sqlite3.Error) as exc:
             logger.info('Delegation preparation deferred: %s', exc)
-            results.append({'delegation_id': record['delegation_id'], 'last_error': str(exc)})
+            results.append({'delegation_id': record['delegation_id'], 'last_error': str(exc),
+                            'busy': isinstance(exc, TaskBusy)})
     return results
 
 
-def _schedule_materialization(parent_task_id):
-    # Bounded daemon pass, outside the reader/finalizer and lifecycle lock.
-    # No automatic scheduling during initialization or recovery.
-    store = _store
-    def run(attempt=0):
-        if store is not _store or _shutting_down:
-            return
+def _orchestration_pass(task_id, steps):
+    """One bounded pass; each step is isolated so one failure cannot skip the others."""
+    outcome = orchestration_waker.PassOutcome()
+    if 'replanning' in steps:
         try:
-            advance_replanning(parent_task_id)
-            results = materialize_delegations(parent_task_id)
-            advance_delegations(parent_task_id)
-            delays = delegation_materialization.DEFAULT_LIMITS.retry_seconds
-            if attempt < len(delays) and any(r.get('phase') in ('attached', 'workspace_ready') for r in results):
-                timer = Timer(delays[attempt], run, (attempt + 1,))
-                timer.daemon = True
-                timer.start()
+            advance_replanning(task_id, report_busy=True)
+        except TaskBusy:
+            outcome.busy = True
+        except Exception:
+            logger.exception('Replanning pass requires inspection')
+    if 'materialize' in steps:
+        try:
+            results = materialize_delegations(task_id)
+            outcome.busy |= any(r.get('busy') for r in results)
+            outcome.pending |= any(r.get('phase') in ('attached', 'workspace_ready') for r in results)
+        except TaskBusy:
+            outcome.busy = True
         except Exception:
             logger.exception('Delegation materialization requires inspection')
-    Thread(target=run, daemon=True).start()
+    if 'advance' in steps:
+        try:
+            advance_delegations(task_id)
+        except TaskBusy:
+            outcome.busy = True
+        except Exception:
+            logger.exception('Hybrid continuation requires inspection')  # recorded in last_error
+    return outcome
+
+
+def _record_wake_exhausted(task_id, reason):
+    if _store is None:
+        return
+    with _store._connection() as db:
+        db.execute('BEGIN IMMEDIATE')
+        if delegation_orchestration.state(db, task_id):
+            db.execute("UPDATE delegation_continuations SET last_error=? WHERE task_id=? AND (phase='waiting' OR last_error IS NULL)",
+                       (reason[:500], task_id))
+    _emit_agent_change(None)
+
+
+def _start_timer(delay, function):
+    timer = Timer(delay, function)
+    timer.daemon = True
+    timer.start()
+
+
+def _new_waker(store):
+    # Thread/Timer are resolved at call time, as the previous per-event threads were.
+    return orchestration_waker.OrchestrationWaker(
+        _orchestration_pass, thread_factory=lambda target: Thread(target=target, daemon=True).start(),
+        timer_factory=_start_timer, on_exhausted=_record_wake_exhausted,
+        is_active=lambda: store is not None and store is _store and not _shutting_down)
+
+
+_waker = _new_waker(None)
+
+
+def wake_orchestration(task_id, steps=orchestration_waker.STEPS, reason='event'):
+    if _store is None or _shutting_down:
+        return {'state': 'idle'}
+    if getattr(_wake_suppression, 'active', False) and reason != 'operator':
+        logger.info('Wake for Task %s suppressed during explicit recovery; use the orchestration wake action', task_id)
+        return {'state': 'suppressed'}
+    return _waker.wake(task_id, steps, reason)
+
+
+def orchestration_status(task_id):
+    """Read-only: durable orchestration evidence plus this process's wake state."""
+    store = _task_store()
+    if store.get_task(task_id) is None:
+        raise LookupError('Task not found')
+    with store._connection() as db:
+        current = delegation_orchestration.state(db, task_id)
+        materializations = [dict(r) for r in db.execute('''SELECT m.delegation_id, m.phase, m.attempts, m.last_error
+            FROM delegation_materializations m JOIN delegations d USING(delegation_id)
+            WHERE d.parent_task_id=? ORDER BY d.rowid''', (task_id,))]
+        decision = managed_orchestration.decision(db, task_id)
+    continuation = ({key: current[key] for key in ('phase', 'mode', 'last_error', 'plan_consumed')}
+                    if current else None)
+    return {'task_id': task_id, 'continuation': continuation, 'materializations': materializations,
+            'decision': decision, 'wake': _waker.status(task_id)}
+
+
+def sweep_lost_watchers():
+    """Detect and mark only: never finalizes, hands off, launches or wakes anything."""
+    marked = []
+    for agent_id, process in list(agents.items()):
+        if (process is None or agent_id in agent_watcher_lost or not _watcher_lost(process)
+                or agent_statuses.get(agent_id) != 'running' or process.poll() is None):
+            continue
+        with _data_lock:
+            agent_watcher_lost[agent_id] = WATCHER_LOST_REASON
+            agent_outputs[agent_id].append(WATCHER_LOST_MARKER)
+            _save_agent(agent_id)
+        logger.error('Agent %s: %s', agent_id, WATCHER_LOST_REASON)
+        task_id = _agent_task_id(agent_id)
+        if _store is not None and task_id:
+            with _store._connection() as db:
+                db.execute('BEGIN IMMEDIATE')
+                db.execute("""UPDATE delegation_continuations SET phase='recovery_required',last_error=?
+                    WHERE task_id=? AND phase NOT IN ('completed','stopped','recovery_required')""",
+                           (WATCHER_LOST_REASON, task_id))
+            _emit_agent_change(agent_id)
+        marked.append(agent_id)
+    return marked
+
+
+def start_recovery_sweep(interval=SWEEP_INTERVAL_SECONDS):
+    """Backend lifespan only (never reads or tests): periodic detect-and-mark sweep."""
+    store = _store
+
+    def tick():
+        if store is None or store is not _store or _shutting_down:
+            return
+        try:
+            sweep_lost_watchers()
+        except Exception:
+            logger.exception('Lost-watcher sweep failed; it will run again')
+        _start_timer(interval, tick)
+    _start_timer(interval, tick)
+
+
+@_synchronized
+def recover_lost_watcher(agent_id):
+    """Explicit operator action: run a lost watcher's finalization (incl. structured handoff) once.
+
+    No automatic Always/Similar continuation and no wakes: the Parent continues
+    only through an explicit orchestration wake.
+    """
+    if agent_id not in agents:
+        return None
+    process = agents[agent_id]
+    if (process is None or not _watcher_lost(process) or agent_statuses[agent_id] != 'running'
+            or process.poll() is None):
+        raise ValueError('Recovery applies only to an exited execution whose watcher was lost')
+    if not process.stdout.closed or (_structured(process) and not process.stderr.closed):
+        raise ValueError('Execution output is still being read; retry shortly')
+    if getattr(process, '_control_center_recovery_attempted', False) is True:
+        raise ValueError('Recovery was already attempted for this execution; inspect it before acting')
+    process._control_center_recovery_attempted = True
+    _wake_suppression.active = True
+    try:
+        _finalize_process(agent_id, process, allow_auto=False, schedule=False)
+        failure = None if agent_statuses[agent_id] != 'running' else 'Recovery did not settle the execution'
+    except Exception as exc:
+        logger.exception('Explicit recovery of agent %s failed', agent_id)
+        failure = f'Recovery failed ({type(exc).__name__}): {exc}'
+    finally:
+        _wake_suppression.active = False
+    if failure:
+        # Fail closed and inspectable: never leave it appearing to run.
+        agent_statuses[agent_id] = 'stopped'
+        agent_waiting_questions[agent_id] = None
+        notifications.cancel(agent_id)
+        agent_outputs[agent_id].append('--- Explicit recovery failed; execution stopped for inspection ---')
+        _save_agent(agent_id)
+        agent_watcher_lost[agent_id] = failure[:500]
+        raise RuntimeError(failure[:500])
+    agent_watcher_lost.pop(agent_id, None)
+    return {'agent_id': agent_id, 'status': agent_statuses[agent_id]}
+
+
+def _supervised_roots():
+    return [p.pid for p in agents.values()
+            if p is not None and process_supervision.job_of(p) is not None and p.poll() is None]
+
+
+def _refuse_live(task_ids):
+    store = _task_store()
+    for task_id in task_ids:
+        for assignment in store.list_task_assignments(task_id):
+            process = agents.get(assignment['agent_id'])
+            if process is not None and process.poll() is None:
+                raise recovery_actions.RecoveryRefused('A live execution handle exists; stop it before recovery')
+
+
+def _clean_host(confirm_ended):
+    recovery_actions.require_clean_host(confirm_ended, _supervised_roots(), scan=recovery_actions.scan_processes)
+
+
+def confirm_process_ownership_stopped(task_id, confirm_ended):
+    """Explicit: clear process_ownership_unknown after confirmation and a clean scan."""
+    store = _task_store()
+    if store.get_task(task_id) is None:
+        raise LookupError('Task not found')
+    _refuse_live([task_id])
+    _clean_host(confirm_ended)
+    blocker_type, reason = recovery_actions.OWNERSHIP_BLOCKER
+    with _state_lock, store._connection() as db:
+        db.execute('BEGIN IMMEDIATE')
+        cleared = db.execute(f"""UPDATE task_blockers SET active=0,resolved_at={delegation_materialization.NOW}
+            WHERE task_id=? AND blocker_type=? AND reason_code=? AND active=1""", (task_id, blocker_type, reason)).rowcount
+        if not cleared:
+            raise recovery_actions.RecoveryRefused('This Task has no process-ownership block')
+        dependencies.reconcile(db)
+    _emit_agent_change(None)
+    return {'task_id': task_id, 'process_ownership': 'confirmed_stopped'}
+
+
+def resolve_launch(delegation_id, confirm_ended):
+    """Explicit: settle an uncertain Child launch; never launches anything."""
+    store = _task_store()
+    with store._connection() as db:
+        row = db.execute('''SELECT m.*, d.child_task_id FROM delegation_materializations m JOIN delegations d USING(delegation_id)
+            WHERE m.delegation_id=?''', (delegation_id,)).fetchone()
+    if row is None:
+        raise LookupError('Delegation launch not found')
+    if row['phase'] != 'recovery_required':
+        raise recovery_actions.RecoveryRefused('Only a launch in recovery_required can be resolved')
+    process = agents.get(row['launch_agent_id']) if row['launch_agent_id'] else None
+    if process is not None and process.poll() is None:
+        raise recovery_actions.RecoveryRefused('A live execution handle exists for this launch')
+    _refuse_live([row['child_task_id']])
+    _clean_host(confirm_ended)
+    parked = delegation_materialization.configured_limits().preparation_attempts
+    with _state_lock, store._connection() as db:
+        db.execute('BEGIN IMMEDIATE')
+        current = db.execute('SELECT * FROM delegation_materializations WHERE delegation_id=?', (delegation_id,)).fetchone()
+        if current['phase'] != 'recovery_required':
+            raise recovery_actions.RecoveryRefused('Launch state changed; inspect it again')
+        launched = current['launch_agent_id'] and db.execute(
+            'SELECT 1 FROM task_assignments WHERE agent_id=? AND task_id=?', (current['launch_agent_id'], row['child_task_id'])).fetchone()
+        if launched:
+            phase, reason = 'started', 'Resolved by operator: the launch occurred and its process ended'
+            db.execute(f"UPDATE delegation_materializations SET phase='started',last_error=?,updated_at={delegation_materialization.NOW} WHERE delegation_id=?",
+                       (reason, delegation_id))
+        else:
+            # Parked with existing phases: attempts exhausted, so neither a wake pass
+            # nor the follow-up can launch it; relaunch needs an explicit operator action.
+            phase, reason = 'workspace_ready', ('Resolved by operator: no launch evidence. Parked; relaunch requires an '
+                                                'explicit operator action')
+            db.execute(f"""UPDATE delegation_materializations SET phase='workspace_ready',attempts=?,last_error=?,
+                launch_agent_id=NULL,updated_at={delegation_materialization.NOW} WHERE delegation_id=?""", (parked, reason, delegation_id))
+    _emit_agent_change(None)
+    return {'delegation_id': delegation_id, 'phase': phase, 'last_error': reason}
+
+
+def rearm_continuation(task_id, confirm_ended):
+    """Explicit: return a recovery_required/stopped continuation to waiting; never resumes it."""
+    store = _task_store()
+    task = store.get_task(task_id)
+    if task is None:
+        raise LookupError('Task not found')
+    with store._connection() as db:
+        current = delegation_orchestration.state(db, task_id)
+        launching = db.execute("""SELECT 1 FROM delegation_materializations m JOIN delegations d USING(delegation_id)
+            WHERE d.parent_task_id=? AND m.phase='launching'""", (task_id,)).fetchone()
+    if current is None or current['phase'] not in ('recovery_required', 'stopped'):
+        raise recovery_actions.RecoveryRefused('Only a recovery_required or stopped continuation can be rearmed')
+    if task['control_intent'] != 'active':
+        raise recovery_actions.RecoveryRefused('Task work control is not active; resume it first')
+    if launching:
+        raise recovery_actions.RecoveryRefused('A Child launch is in progress for this Parent')
+    _refuse_live([task_id])
+    _clean_host(confirm_ended)
+    with _state_lock, store._connection() as db:
+        db.execute('BEGIN IMMEDIATE')
+        current = delegation_orchestration.state(db, task_id)
+        if current['phase'] not in ('recovery_required', 'stopped'):
+            raise recovery_actions.RecoveryRefused('Continuation state changed; inspect it again')
+        deliveries = db.execute("SELECT delivery_id,result_ids FROM delegation_deliveries WHERE task_id=? AND status='recovery_required'",
+                                (task_id,)).fetchall()
+        for delivery in deliveries:
+            ids = json.loads(delivery['result_ids'])
+            if ids and db.execute(f"SELECT 1 FROM delegation_results WHERE phase='delivered' AND result_id IN ({','.join('?' * len(ids))})",
+                                  ids).fetchone():
+                raise recovery_actions.RecoveryRefused('A delivery in recovery_required already marked results delivered; inspect it')
+        db.execute("UPDATE delegation_deliveries SET status='prepared' WHERE task_id=? AND status='recovery_required'", (task_id,))
+        db.execute(f"""UPDATE delegation_continuations SET phase='waiting',mode=NULL,launch_id=NULL,delivery_id=NULL,
+            last_error=NULL,updated_at={delegation_materialization.NOW} WHERE task_id=?""", (task_id,))
+        dependencies.reconcile(db)
+    _emit_agent_change(None)
+    return {'task_id': task_id, 'continuation': 'waiting', 'next': 'POST /tasks/{task_id}/orchestration/wake'}
+
+
+def reverify_transitions(task_id, confirm_ended):
+    """Explicit: re-check recovery_required replanning transitions; never stops or launches."""
+    store = _task_store()
+    if store.get_task(task_id) is None:
+        raise LookupError('Task not found')
+    with store._connection() as db:
+        rows = [dict(r) for r in db.execute('''SELECT t.* FROM replan_transitions t JOIN replan_decisions d USING(decision_id)
+            WHERE d.task_id=? AND t.phase='recovery_required' ORDER BY t.rowid''', (task_id,))] if replanning.exists(db) else []
+    if not rows:
+        raise recovery_actions.RecoveryRefused('No replanning transition requires recovery')
+    targets = [r['task_id'] for r in rows if r['task_id']]
+    _refuse_live(targets)
+    _clean_host(confirm_ended)
+    results = []
+    with _state_lock, store._connection() as db:
+        db.execute('BEGIN IMMEDIATE')
+        for row in rows:
+            child = dependencies.task(db, row['task_id']) if row['task_id'] else None
+            open_assignment = child is not None and db.execute(
+                'SELECT 1 FROM task_assignments WHERE task_id=? AND ended_at IS NULL', (child['task_id'],)).fetchone()
+            if child is None or (child['status'] == 'canceled' and not child['stop_required'] and not open_assignment):
+                phase, reason = 'stopping', 'Operator reverified termination; the next replanning pass completes it'
+            else:
+                phase, reason = 'recovery_required', 'Reverify: termination not confirmed (Child not canceled, unsettled or assigned)'
+            db.execute('UPDATE replan_transitions SET phase=?,reason=? WHERE transition_id=? AND phase=?',
+                       (phase, reason, row['transition_id'], 'recovery_required'))
+            results.append({'transition_id': row['transition_id'], 'phase': phase, 'reason': reason})
+    _emit_agent_change(None)
+    return {'task_id': task_id, 'transitions': results}
+
+
+def _schedule_materialization(parent_task_id):
+    # Coalesced, bounded pass outside the reader/finalizer and lifecycle lock.
+    # No automatic scheduling during initialization or recovery.
+    wake_orchestration(parent_task_id, reason='materialization')
 
 
 def _wake_delegation_siblings(agent_id):
@@ -979,14 +1412,7 @@ def _schedule_hybrid_for_agent(agent_id):
     with _store._connection() as db:
         current = delegation_orchestration.state(db, task_id)
     if current:
-        store = _store
-        def run():
-            if store is _store and not _shutting_down:
-                try:
-                    advance_delegations(task_id)
-                except Exception:
-                    logger.exception('Hybrid continuation requires inspection')
-        Thread(target=run, daemon=True).start()
+        wake_orchestration(task_id, ('advance',), reason='hybrid')
 
 
 def _notify_hybrid_child_end(agent_id):
@@ -999,7 +1425,7 @@ def _notify_hybrid_child_end(agent_id):
         _wake_delegation_siblings(agent_id)
 
 
-def advance_replanning(task_id):
+def advance_replanning(task_id, *, report_busy=False):
     """Explicit/live-event deterministic pass. Never called by startup or GET."""
     store = _task_store()
     with task_lock(store, task_id, blocking=False), _state_lock:
@@ -1013,7 +1439,11 @@ def advance_replanning(task_id):
                 process = agents.get(assignment['agent_id'])
                 if process is not None and (process.poll() is None or not process.stdout.closed):
                     raise ValueError('Child process/output remains active')
-        return replanning.TransitionService(store, stop, quiet, _emit_agent_change).run(task_id)
+        service = replanning.TransitionService(store, stop, quiet, _emit_agent_change)
+        rows = service.run(task_id)
+    if report_busy and service.busy:
+        raise TaskBusy('Replanning transition target busy; retry shortly')
+    return rows
 
 
 def advance_delegations(task_id):
@@ -1055,18 +1485,33 @@ def advance_delegations(task_id):
         try:
             return service.run(task_id)
         except (ValueError, LookupError) as exc:
+            if isinstance(exc, TaskBusy):
+                raise  # Not a verdict: the waker retries a busy pass.
             with store._connection() as db:
                 db.execute('BEGIN IMMEDIATE')
                 db.execute("UPDATE delegation_continuations SET last_error=? WHERE task_id=? AND phase='waiting'", (str(exc)[:500], task_id))
             _emit_agent_change(None)
             return None
+        except Exception as exc:
+            # A defect, not a domain refusal: make it visible without hiding it.
+            # Never retried here; an existing inspection reason is not replaced.
+            reason = f'Unexpected continuation error ({type(exc).__name__}): {exc}'[:500]
+            try:
+                with store._connection() as db:
+                    db.execute('BEGIN IMMEDIATE')
+                    db.execute("UPDATE delegation_continuations SET last_error=? WHERE task_id=? AND (phase='waiting' OR last_error IS NULL)",
+                               (reason, task_id))
+                _emit_agent_change(None)
+            except (sqlite3.Error, OSError):
+                logger.exception('Could not record continuation error for Task %s', task_id)
+            raise
 
 
 @_synchronized
 def get_agents() -> list[dict[str, str | None]]:
     result = []
     for agent_id in list(agents):
-        _refresh_status(agent_id)
+        _refresh_status_for_read(agent_id)
         if agent_outputs[agent_id].dirty:
             _save_agent(agent_id)
         result.append({
@@ -1087,7 +1532,7 @@ def get_agents() -> list[dict[str, str | None]]:
 def get_agent(agent_id: str, include_output: bool = True) -> dict[str, str | bool | list[str] | None] | None:
     if agent_id not in agents:
         return None
-    _refresh_status(agent_id)
+    _refresh_status_for_read(agent_id)
     with _data_lock:
         cache = agent_outputs[agent_id]
         if cache.dirty:
@@ -1111,11 +1556,23 @@ def get_agent(agent_id: str, include_output: bool = True) -> dict[str, str | boo
         "child_ids": [child for child, parent in agent_parents.items() if parent == agent_id],
         "session_id": agent_sessions[agent_id],
         "waiting_question": agent_waiting_questions[agent_id],
+        "waiting_context": _waiting_context(agent_id),
         "similar_decisions_enabled": agent_similar_decisions[agent_id].enabled,
         "always_decide_enabled": agent_always_decisions[agent_id].enabled,
+        "watcher_lost": agent_watcher_lost.get(agent_id),
         "task_ids": _store.agent_task_ids(agent_id) if _store else [],
         **output,
     }
+
+
+def _waiting_context(agent_id):
+    if _store:
+        from .presentation import agent_context
+        context = agent_context(_store, agent_id)
+        return context['waiting_context'] if context and context['status'] == agent_statuses[agent_id] else None
+    if agent_statuses[agent_id] == 'waiting' and agent_waiting_questions[agent_id]:
+        return {'kind': 'user', 'label': 'Waiting for you'}
+    return None
 
 
 @_synchronized
@@ -1142,6 +1599,36 @@ def get_agent_output(agent_id: str, limit: int = OUTPUT_PAGE_SIZE,
         return {'agent_id': agent_id, 'items': items,
                 'has_older': bool(items and entries and items[0]['seq'] > entries[0]['seq']),
                 'has_newer': bool(items and entries and items[-1]['seq'] < entries[-1]['seq'])}
+
+
+@_synchronized
+def _stop_policy_violation(agent_id, process):
+    """Stop only the offending current execution, never its replacement."""
+    context = _structured(process)
+    if (agents.get(agent_id) is not process or not context
+            or not context.events.native_collaboration_prohibited
+            or not context.events.native_collaboration_seen
+            or (context.origin and not _task_store().execution_is_current(context.origin))):
+        return
+    agent_outputs[agent_id].append(managed_orchestration.VIOLATION)
+    _save_agent(agent_id)
+    stop_agent(agent_id)
+
+
+def _require_managed_resume(agent_id):
+    if not _store or not _store.execution_settings(agent_id):
+        return
+    context = _structured(agents.get(agent_id))
+    seen = bool(context and context.events.native_collaboration_seen)
+    # Historical provider activity is not adopted as managed work. Query only
+    # candidate wire records, then parse their structure (not prose keywords).
+    with _store._connection() as db:
+        lines = db.execute("SELECT line FROM output WHERE agent_id=? AND instr(line, 'collab_tool_call')>0",
+                           (agent_id,))
+        seen = seen or any(managed_orchestration.collaboration_event(r[0]) for r in lines)
+    if seen:
+        raise ValueError('Cannot resume this managed session: prior native Codex collaboration '
+                         'requires explicit inspection; no provider Children are adopted or resumed.')
 
 
 @_synchronized
@@ -1172,7 +1659,7 @@ def stop_agent(agent_id: str) -> dict[str, str] | None:
         _notify_hybrid_child_end(agent_id)
         return {"agent_id": agent_id, "status": agent_statuses[agent_id]}
 
-    if agent_types[agent_id] == "codex" and os.name == "nt":
+    if (agent_types[agent_id] == "codex" and os.name == "nt") or process_supervision.job_of(process):
         _stop_windows_tree(process)
     else:
         process.terminate()
@@ -1241,6 +1728,7 @@ def redirect_agent(agent_id: str, instruction: str) -> dict[str, str] | None:
     if not session_id:
         raise ValueError("Redirect will be available once the Codex session starts.")
     # Resolve and validate before interrupting the current process.
+    _require_managed_resume(agent_id)
     command = _codex_command(agent_sandboxes[agent_id], session_id)
     cwd = _resume_cwd(agent_id)
     task_id = _agent_task_id(agent_id)
@@ -1386,6 +1874,7 @@ def _waiting_resume_command(agent_id: str) -> str | None:
     session_id = agent_sessions[agent_id]
     if not session_id:
         raise ValueError("The Codex session ID is not available.")
+    _require_managed_resume(agent_id)
     return _codex_command(agent_sandboxes[agent_id], session_id)
 
 
@@ -1408,6 +1897,7 @@ def _resume_agent(agent_id: str, command: str, text: str, marker: str,
         reader.join(timeout=3)
         if reader.is_alive():
             raise RuntimeError("Old process output has not closed; resume was not started.")
+    _require_managed_resume(agent_id)
     previous = (agents[agent_id], agent_statuses[agent_id], agent_waiting_questions[agent_id],
                 agent_sessions[agent_id], agent_outputs[agent_id])
     cwd = cwd if cwd is not None else _resume_cwd(agent_id)
@@ -1420,6 +1910,8 @@ def _resume_agent(agent_id: str, command: str, text: str, marker: str,
         command = _codex_command(agent_sandboxes[agent_id], agent_sessions[agent_id], structured=True)
     replacement = _spawn_with_resources(task_id, agent_id, command, "codex", cwd)
     history = [marker, text if history_text is None else history_text]
+    if process_supervision.job_of(replacement):
+        history.append(process_supervision.MARKER)
     with _data_lock:
         if always_decision:
             # Stage tentative output while a reader drains the replacement pipe.
@@ -1452,7 +1944,7 @@ def _resume_agent(agent_id: str, command: str, text: str, marker: str,
         finally:
             _start_reader(agent_id, replacement)
         with replacement.stdin:
-            prompt = invalidation + _planning_prompt(agent_id) + _codex_prompt(text)
+            prompt = invalidation + _execution_prompt(agent_id, text, replacement)
             if not always_decision and always.configured:
                 setting = "enabled" if always.enabled else "disabled"
                 prompt += (f"\n\nCurrent control-center setting: Always Decide is {setting}. "
@@ -1505,6 +1997,16 @@ def _resume_agent(agent_id: str, command: str, text: str, marker: str,
 
 
 def _stop_windows_tree(process: subprocess.Popen) -> None:
+    job = process_supervision.job_of(process)
+    if job is not None:
+        # The Job contains every descendant, including orphans taskkill /T misses.
+        try:
+            job.terminate()
+            process.wait(timeout=2)
+        except (OSError, subprocess.TimeoutExpired):
+            raise RuntimeError("Could not terminate the Codex process tree; stop was not confirmed.") from None
+        job.close()
+        return
     taskkill = str(Path(os.environ["SystemRoot"]) / "System32" / "taskkill.exe")
     for force in (False, True):
         command = [taskkill, "/PID", str(process.pid), "/T"]
@@ -1569,6 +2071,10 @@ def integrate_task(task_id):
         with _state_lock:
             with store._connection() as db:
                 delegation_safety.require_known_ownership(db, current_task_id)
+                blocker_type, reason = recovery_actions.OWNERSHIP_BLOCKER
+                if db.execute('SELECT 1 FROM task_blockers WHERE task_id=? AND blocker_type=? AND reason_code=? AND active=1',
+                              (current_task_id, blocker_type, reason)).fetchone():
+                    raise ValueError('Integration refuses a Task whose process ownership is unknown; confirm it stopped first')
             for assignment in store.list_task_assignments(current_task_id):
                 key = assignment['agent_id']
                 process = agents.get(key)
@@ -1613,7 +2119,7 @@ def _settle_tasks(task_ids, *, cascade=True):
                     preserve_wait = False
                 if not preserve_wait:
                     if process is not None and process.poll() is None:
-                        if agent_types[key] == 'codex' and os.name == 'nt':
+                        if (agent_types[key] == 'codex' and os.name == 'nt') or process_supervision.job_of(process):
                             _stop_windows_tree(process)
                         else:
                             process.terminate()

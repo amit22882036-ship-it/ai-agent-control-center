@@ -8,12 +8,14 @@ from unittest.mock import patch
 from app import agent_manager as manager
 from app.main import app
 import test_agent_hierarchy
+from api_test_support import request_headers
 
 
 class StopBranchTests(unittest.TestCase):
     from workspace_test_support import process_test_setup as setUp
     replacement = test_agent_hierarchy.HierarchyTests.replacement
     resume = test_agent_hierarchy.HierarchyTests.resume
+    watch = test_agent_hierarchy.HierarchyTests.watch
     finish = test_agent_hierarchy.HierarchyTests.finish
     tearDown = test_agent_hierarchy.HierarchyTests.tearDown
 
@@ -136,7 +138,7 @@ class StopBranchTests(unittest.TestCase):
         manager.agent_statuses[child] = 'waiting'
         self.resume(manager.decide_always_agent, child)
         self.finish(child, 'Choice')
-        _, current = self.resume(manager.get_agent, child)
+        _, current = self.resume(self.watch, child)
         with patch.object(manager, '_stop_windows_tree') as stop:
             result = manager.stop_branch(root)
             stop.assert_called_once_with(current)
@@ -201,7 +203,7 @@ class StopBranchTests(unittest.TestCase):
             path = f'/agents/{key}/stop-branch'
             await app({'type': 'http', 'asgi': {'version': '3.0'}, 'http_version': '1.1',
                        'method': 'POST', 'scheme': 'http', 'path': path, 'raw_path': path.encode(),
-                       'query_string': b'', 'headers': [], 'client': ('127.0.0.1', 1234),
+                       'query_string': b'', 'headers': request_headers('POST', content_type=False), 'client': ('127.0.0.1', 1234),
                        'server': ('localhost', 8000), 'root_path': ''}, receive, send)
             return messages[0]['status'], json.loads(b''.join(item.get('body', b'') for item in messages))
 

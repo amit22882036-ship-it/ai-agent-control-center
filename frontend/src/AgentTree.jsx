@@ -1,6 +1,6 @@
 import Icon from './Icon'
 import { displayColor } from './agentIdentity.mjs'
-import { agentName, agentContext, statusLabels } from './agentPresentation.mjs'
+import { agentName, agentContext, executionLabel } from './agentPresentation.mjs'
 function Branches({ nodes, selectedAgentId, onSelect, collapsed, onToggle, depth = 0 }) {
   return (
     <ul className={`agent-tree${depth > 0 && depth <= 4 ? ' agent-children' : ''}`}>
@@ -19,7 +19,7 @@ function Branches({ nodes, selectedAgentId, onSelect, collapsed, onToggle, depth
               <button className="agent-select" type="button" aria-pressed={selectedAgentId === agent.agent_id}
                 onClick={() => onSelect(agent.agent_id)}><span className="agent-name">{agentName(agent)}</span>{agentContext(agent) && <span className="task-preview">{agentContext(agent)}</span>}</button>
             </h2>
-            <span className={`status status-${agent.status}`}>{statusLabels[agent.status] || agent.status}</span>
+              <span className={`status status-${agent.status}`}>{executionLabel(agent)}</span>
             {depth > 4 && <span className="relationship" title={`Nesting level ${depth}`}><Icon name="chevron" size={12} />{depth}</span>}
             {contextOnly && <span className="sr-only">Ancestor of a matching agent</span>}
 

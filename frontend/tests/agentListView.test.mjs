@@ -149,8 +149,8 @@ test('clearing color filtering restores collapse state and keeps hidden selectio
 })
 
 test('counts derive from full snapshot including empty input', () => {
-  assert.deepEqual(countStatuses(agents), { all: 5, running: 2, waiting: 1, finished: 1, stopped: 1 })
-  assert.deepEqual(countStatuses([]), { all: 0, running: 0, waiting: 0, finished: 0, stopped: 0 })
+  assert.deepEqual(countStatuses(agents), { all: 5, running: 2, waiting: 1, finished: 1, stopped: 1, active: 3, history: 2 })
+  assert.deepEqual(countStatuses([]), { all: 0, running: 0, waiting: 0, finished: 0, stopped: 0, active: 0, history: 0 })
 })
 
 test('collapsing a root hides descendants without modifying state or tree', () => {

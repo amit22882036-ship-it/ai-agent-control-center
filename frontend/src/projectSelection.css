@@ -1,0 +1,9 @@
+/* Repository selection stays inside the existing compact composer. */
+.project-selection { grid-column:1/-1; min-width:0; }
+.project-selection-row { display:flex; align-items:center; flex-wrap:wrap; gap:8px; }
+.project-selection-row select { flex:1; min-width:180px; }
+.project-selection-row button { font-size:12px; }
+.project-path { overflow-wrap:anywhere; margin:8px 0 0; }
+.project-registration { margin:12px 0 0; padding:12px; border:1px solid var(--line); border-radius:10px; background:var(--surface-subtle); }
+.project-registration legend { color:var(--muted); font-size:12px; }
+.project-registration input { margin-bottom:8px; }

@@ -1,2 +1,7 @@
-fastapi
-uvicorn
+# Exact versions verified with the local API guards (see docs/api-security.md).
+# FastAPI strict_content_type and Starlette CORS behaviour are covered by
+# backend/test_api_security.py; re-run it when upgrading.
+fastapi==0.141.1
+starlette==1.6.0
+pydantic==2.13.5
+uvicorn==0.53.0

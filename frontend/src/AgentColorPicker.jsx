@@ -1,6 +1,7 @@
 import { useId, useState } from 'react'
 import Popover from './Popover'
 import { displayColor, displayColors } from './agentIdentity.mjs'
+import { apiFetch } from './apiClient.mjs'
 
 export default function AgentColorPicker({ agent, onSaved }) {
   const id = useId()
@@ -12,7 +13,7 @@ export default function AgentColorPicker({ agent, onSaved }) {
     setSaving(true)
     setError('')
     try {
-      const response = await fetch(`http://127.0.0.1:8000/agents/${encodeURIComponent(agent.agent_id)}/color`, {
+      const response = await apiFetch(`http://127.0.0.1:8000/agents/${encodeURIComponent(agent.agent_id)}/color`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ display_color: value }),
       })

@@ -1,0 +1,89 @@
+# Autonomous workspace dashboard
+
+Stage 2I.4 connects the existing planning, promotion, replanning and delegation backend to the Agent-centric dashboard. It adds no scheduler, ownership registry, schema migration, provider or automatic restart. SQLite schema remains **v26**. The application is unauthenticated and intended for local use only.
+
+## Creation and permissions
+
+The integrated composer still initially selects Mock. Autonomous mode is unavailable for Mock and defaults on when creating a new Codex root. Turning it off persists across provider changes within that form. It is a creation-time choice, not a live revocation switch. The warning explains possible additional Agents and provider usage; no cost, token budget or completion percentage is estimated.
+
+`POST /agents/start` accepts the optional strict boolean `autonomous` (API default false). True maps to the existing `planning_enabled`, `delegation_protocol_enabled`, `child_materialization_enabled`, `hybrid_delegation_enabled`, and `recursive_delegation_enabled` arguments. Unknown individual capability fields are rejected. Mock, unsupported providers, manually created Children and existing-Task replacement starts cannot use this root-creation shortcut. Existing responses remain compatible. Historical rows are unchanged. Automatically materialized Codex Children inherit only through the existing fresh-authority checks, including provider/sandbox, assignment/generation, depth, ancestor control, scope and resource admission.
+
+## Managed execution policy
+
+Users describe the desired result in natural language. Managed autonomous Codex workers receive
+internal planning/promotion guidance: simple work may finish independently, while delegated work
+must use Control Center admission, isolated Child workspaces, integration and explicit result review.
+Structured managed executions (including opted-in protocol workers, managed Children and session
+continuations) use the process-local `-c features.multi_agent=false` override. Ordinary non-autonomous
+Codex and Mock behavior is unchanged; global and project Codex configuration files are not edited.
+CLI 0.154.0 accepts this setting. In the recorded Stage 2I.4 live run, neither the Parent's three
+supervised executions nor the two Children emitted a native collaboration event. Recheck this after CLI upgrades.
+
+A native collaboration JSONL item remains valid provider output, but is a policy violation in a
+managed execution: the current worker is stopped without accepting completion or control messages.
+Known native-collaboration history prevents session resume pending explicit inspection; provider
+subagents and prose claims of acknowledgement are never imported as Control Center records.
+Historical output lacks channel provenance, so an exact saved collaboration wire event is treated
+conservatively, including one reproduced verbatim in output. Ordinary prose mentioning tools is not.
+
+Eligible autonomous roots are asked, within their existing turn, to record one orchestration decision
+(`independent` or `propose`). A missing decision is nonfatal and triggers no extra continuation.
+`GET /tasks/{task_id}/orchestration` reports it as a read-only `decision`; see
+[orchestration decisions](planning.md#orchestration-decisions).
+
+## Choosing a repository
+
+New Agent loads registered Projects from `GET /projects`. Select a Project explicitly; its canonical repository path is displayed before Start. This applies to Mock and Codex roots, including Autonomous mode. There is no automatic first-Project selection. Loading failures, missing selections and registration errors cannot silently select the application's repository. Refresh clears the selection so it can be confirmed again.
+
+Use **Add existing project** inside the composer, enter a name and an existing local Git repository path, then choose **Register project**. `POST /projects` validates a Git working-tree root with a usable initial commit, followed by the existing canonical-path, duplicate and overlap checks. It does not initialize or reset repositories. A duplicate receives a conflict; refresh and select the existing record. Successful registration refreshes the authoritative list and selects that record.
+
+`POST /agents/start` accepts optional `project_id` for new roots. An explicit ID must resolve to an accessible, unchanged registered root meeting the existing Git workspace requirements. It is written to the new Task before workspace provisioning; the provider launches in that Task's isolated linked worktree, never in a client-supplied execution path. Child creation rejects a Project override: manual children and autonomous materializations inherit ownership through their parent Task, including deeper descendants. Existing sandbox, admission, snapshot, rollback and integration rules remain in force. Provisioning or spawn failure may retain a pending Task for diagnosis, but does not report a running Agent or active assignment.
+
+Legacy API callers that omit `project_id` retain the existing server-root resolution. Explicit null, blank, unknown or invalid selections fail rather than using that legacy fallback. The dashboard always sends the selected ID for roots. Child and existing-Task forms retain their inherited ownership. Reloading the browser does not replay a creation request; if a response was lost, inspect the Agent list before starting again.
+
+For isolated live E2E preparation, register a separate disposable repository with an initial commit, select it, verify the displayed path, then choose Codex and Autonomous mode. This prepares the request only; real execution still requires separate approval. No per-Agent model configuration or global Codex configuration changes are included.
+
+## Read models
+
+- `GET /workspace?limit=500&after=0`: up to 500 Agents, newest creation first, with `next_after` as an opaque numeric creation-order cursor for older records. Each node includes its latest assignment's Task identity/status, ended-assignment indication, authorized capability combination, latest recorded plan revision and normalized waiting context. Summary counts span the full durable workspace, not just the loaded page: active assigned Agents, completed Tasks, waiting/blocked Tasks, actual input requests and pending Delegations. Task counts never count replacement Workers twice. Completed Task counts are not integration counts.
+- `GET /agents/{agent_id}/activity`: current assigned Task context, up to 20 distinct blocker codes, 30 recent delegated responsibilities, latest own result/integration state and up to 30 recorded activity entries. Planning, promotion, replanning, assignments, results and transitions are queried from existing tables. A transition phase without a persisted timestamp remains undated; it is not an invented historical timestamp. The inspector explicitly separates current Task state from recorded activity and past assignments.
+- `GET /agents/{agent_id}/hierarchy`: a read-only snapshot of up to 500 connected logical Agents, including the selected Agent, ancestors and descendants. This family lookup is independent of workspace pagination and excludes unrelated roots. `truncated` and `incomplete_ancestry` explicitly identify bounded or missing context. Recursive deduplication terminates cyclic historical links; unknown IDs return 404.
+- `GET /agents/{agent_id}` additionally includes `waiting_context`, so existing controls do not depend on a successful activity request.
+
+Projection queries use a single read transaction and explicit public fields. They do not reconcile state, spawn Workers, advance orchestration, read worktrees or expose filesystem paths, provider protocol payloads, raw result excerpts or unrelated Task activity. Task-owned result queries are Project-scoped. Activity is a bounded recent view, not a complete audit export. Raw output remains available only through the existing output interface. Missing historical relationships are not fabricated.
+
+Waiting context distinguishes input requests, dependencies, delegated results, ordinary coordination, pending Parent continuation, paused work and recovery. Unknown waits remain generic. Input notifications require a user-input wait, while ordinary coordination does not trigger a request for user attention. Existing completion notifications and browser/native delivery coordination remain unchanged.
+
+## Hierarchy and inspector
+
+The workspace remains list-first. Its existing inspector includes a compact parent/self/children preview and an Explore Hierarchy action. The preview uses the existing detail child IDs and loaded names; it performs no family request while closed. Missing names are explicit. The bounded family projection loads only when Explorer opens. The expanded explorer has three panes: a compact tree-local Agent navigator, a vertical family graph, and a structured focused inspector. It opens on that exact Agent within its own family, without drawing connections to unrelated roots. Orphans and cycles are disclosed; replacement Workers are not merged by Task identity. Single-Agent families have an explicit empty-children state.
+
+Explorer selection is local: selecting a navigator row or a graph node synchronizes the row, halo, camera and focused inspector. View full details explicitly changes the underlying inspector. Navigation reuses the authoritative family projection, including ancestors, siblings and descendants; unrelated roots and workspace pagination never populate the navigator. The left pane shows known count, partial-context disclosure, indented names, concise statuses and branch controls. Search is local and retains matching ancestors, temporarily revealing paths without mutating saved collapse choices. A hidden-selection action clears search and reveals the selected path. Back to workspace closes Explorer without changing the original workspace selection, search or filters; choose another Agent there to change trees. Graph and Tree list share that local selection, search and collapse state. Toolbar buttons provide zoom, pan, fit and focus; dragging empty canvas pans. Up/Down navigate to Parent/first Child (Down expands a collapsed branch); Left/Right navigate siblings. Enter/Space selects. Each complete card is a native selection button containing its visible content; branch toggles are separate sibling buttons. Hover backgrounds therefore remain behind text rather than overlaying it. Scoped hover styling leaves global buttons unchanged. Deterministic leaf ordering places siblings horizontally and depth vertically, with Parents centered over their child subtrees and downward curved connectors. Tab brings offscreen nodes into view. Search reveals paths without changing saved collapse choices. Status-only SSE updates preserve geometry and camera; a new selection smoothly supersedes the current camera target. A single colored outline and restrained static halo identify the selected node, separately from hover and keyboard focus.
+
+The focused inspector uses one continuous surface with subtle section separators: identity and execution status, a concise current/last assignment (or Assigned responsibility when timing is unknown), Task and relationship context, recorded work, confirmed remaining work, recent activity and optional technical identifiers. Full assignment instructions are disclosed on demand. Canceled Tasks do not present old blockers or pending delegations as active remaining work. It uses existing recorded activity and authoritative waiting context. It separates Task state, Child outcomes and integration, and shows a truthful fallback when no next step is recorded. It does not generate summaries, infer progress or call a model. Activity failures remain isolated. The native modal keeps keyboard focus inside the explorer while open; Escape/Back restores the launching control and original inspector. Tablet layouts retain a readable graph/details pair with switches to Agent navigation or focused Details. Mobile layouts show one pane at a time through Agents/Hierarchy/Details controls, preserving the same selected identity.
+
+Light, dark and automatic themes use shared tokens. Node text, status labels and focus indicators do not rely on color. Native controls preserve keyboard and screen-reader semantics; reduced-motion CSS removes camera, selection and surface animations. Normal camera transitions last 300ms and card transitions 240ms; dragging remains direct. The resizable inspector retains its existing layout preferences. Activity failure shows its own error and does not disable Stop, Reply, Redirect, identity editing or output controls.
+
+One existing SSE connection invalidates the shared workspace snapshot, selected details and open projections; polling remains the fallback. There is no stream or polling loop per node. Aborted requests cannot populate a different selection, and failed projections retry through the existing refresh queue. Workspace pages load sequentially, 500 records at a time, with explicit Load more for older history. Counts cover all records, while workspace search/filtering applies to loaded records. The separate family snapshot supplies explorer ancestry even when workspace pages are incomplete. Multiple workspace pages may span different committed snapshots, but immutable creation cursors prevent duplicate identities. No view opening authorizes model execution.
+
+## Verification
+
+The deterministic product scenario uses real temporary SQLite/Git workspaces and process shims: HTTP root creation, planning, promotion, recursive Child capability inheritance, Child completion, actual workspace integration, Parent result delivery/acknowledgement, explicit retirement, final Parent completion, and durable rereads. Browser QA can replay those API snapshots; that is UI integration evidence, not evidence that live Codex emitted the protocol. Node tests cover creation choices, hierarchy/filter/camera invariants, notifications and the existing realtime queue. The complete Windows backend suite remains a separate user verification checkpoint.
+
+Synthetic browser review covers the list-first entry, three-pane navigation, tree-local and keyboard selection, full-card hit areas, context restoration, automatic/dark/light appearance and responsive viewports. Deterministic tests additionally exercise vertical geometry, bounded family scope, cycles, historical assignments and stale-response suppression. The three-pane build was inspected at 1672px, 1366px, 1280px, 900px and 390px widths, including 40-level and 60-sibling fixtures, deep search, historical records, polling camera stability and isolated activity failures. A composition issue found during review was corrected so readable camera focus includes nearby relatives when space permits. Mobile navigation rows were left-aligned consistently. Large-tree Fit is an overview; search, keyboard focus and Focus selected restore a readable node scale. Reduced-motion rules were inspected in CSS, but OS-level reduced-motion and assistive-technology behavior were not exercised in that browser session. These remain manual accessibility checks.
+
+### Recorded live autonomous run
+
+One controlled real Codex run was performed on Windows against a disposable Git repository. It used an isolated workspace root and the strict delegation limits `CONTROL_CENTER_DELEGATION_DEPTH=1`, `CONTROL_CENTER_DELEGATION_CHILDREN_PER_PARENT=1` and `CONTROL_CENTER_DELEGATION_CONCURRENT_CHILDREN=1`. The request asked, in natural language, for a CSV starter project to become a toolkit with two applications. The persisted records show:
+
+- The root recorded a `propose` planning decision (revision 1) and promoted two responsibilities in one decision. Both were admitted as `ready`, with explicit non-overlapping scopes.
+- Two Child Tasks ran **one after the other**. The second Child Task was attached milliseconds after the first completed. That is consistent with limits that allow one unfinished Child at a time, not one Child in total (see [delegation limits](configuration.md#delegation-limits)). Two Children was therefore expected behavior under 1/1/1.
+- Each Child completed, and its integration into the Parent workspace was `applied` with no conflict paths. The integration journal recorded `validation_status: not_run`, because the integrator does not run project tests itself.
+- One delivery carried both results. The Parent accepted both through the structured `acknowledge_results` contract, both delegations became `acknowledged`, and the delivery acknowledgement was persisted.
+- The Parent ran the integrated project's 26 tests, which passed, and then completed. All three Tasks finished `completed`.
+
+This is one recorded run, not a statistical guarantee. It did not exercise replanning, recursive Grandchildren, rejected results or Hybrid continuation, which remain covered by the deterministic suites. Earlier natural-language runs completed without Children, and the [orchestration decision](planning.md#orchestration-decisions) record was added to make that choice inspectable.
+
+### Running another live test
+
+Use a new disposable repository, an isolated `CONTROL_CENTER_DB_PATH` and `CONTROL_CENTER_WORKSPACE_ROOT`, and the delegation limits above. Confirm that `GET /system/process-supervision` reports `supervised` before starting. Stop on any out-of-scope write, unexpected provider behavior, unsafe admission, repeated uncontrolled continuation or provider-limit error. A pass requires the actual protocol chain and truthful UI state, not just a plausible final answer. Resumed Parent invocations add provider calls, and usage cannot be predicted. No automatic cleanup of worktrees is performed. Generalized Worker reassignment and additional providers remain future work.

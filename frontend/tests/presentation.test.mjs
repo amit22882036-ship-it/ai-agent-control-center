@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readTheme, applyTheme, connectTheme } from '../src/theme.mjs'
-import { agentName, attentionAgents, statusLabels, workspaceSummary, attentionContext } from '../src/agentPresentation.mjs'
+import { agentName, attentionAgents, statusLabels, workspaceSummary, attentionContext, executionLabel } from '../src/agentPresentation.mjs'
 import { matchesSearch } from '../src/agentListView.mjs'
 
 test('theme preference is validated and unavailable storage falls back safely', () => {
@@ -27,7 +27,21 @@ test('attention uses waiting only, names are searchable and UUID is not the titl
   assert.equal(agentName({ agent_id: 'uuid' }), 'Untitled agent')
   assert.equal(matchesSearch(agent, 'engineer'), true)
   assert.deepEqual(attentionAgents([agent, { status: 'stopped' }, { status: 'finished' }]), [agent])
-  assert.equal(statusLabels.waiting, 'Needs you')
+  assert.equal(statusLabels.waiting, 'Waiting')
+})
+
+test('generic waiting filter is neutral while execution labels use authoritative waiting context', () => {
+  assert.equal(statusLabels.waiting, 'Waiting')
+  assert.equal(executionLabel({ status: 'waiting' }), 'Waiting')
+  assert.equal(executionLabel({ status: 'waiting', waiting_context: null }), 'Waiting')
+  for (const [kind, label] of [
+    ['user', 'Waiting for you'],
+    ['dependency', 'Waiting for dependencies'],
+    ['delegation', 'Waiting for delegated results'],
+    ['coordination', 'Coordination blocked'],
+  ]) {
+    assert.equal(executionLabel({ status: 'waiting', waiting_context: { kind, label } }), label)
+  }
 })
 
 

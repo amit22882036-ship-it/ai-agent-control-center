@@ -9,6 +9,7 @@ import AttentionPanel from './AttentionPanel'
 import ResizeHandle from './ResizeHandle'
 import { readLayout, layoutKey } from './panelLayout.mjs'
 import './App.css'
+import './hierarchy.css'
 
 function App() {
   const [layout, setLayout] = useState(() => readLayout())
@@ -20,6 +21,10 @@ function App() {
   const [showStart, setShowStart] = useState(false)
   const [rootStarting, setRootStarting] = useState(false)
   const [agents, setAgents] = useState([])
+  const [overview, setOverview] = useState(null)
+  const [hasMore, setHasMore] = useState(false)
+  const [refreshing, setRefreshing] = useState(false)
+  const pagesRef = useRef(1)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [selectedAgentId, setSelectedAgentId] = useState(null)
@@ -35,16 +40,24 @@ function App() {
     const controller = new AbortController()
 
     async function fetchAgents() {
+      setRefreshing(true)
       try {
-        const response = await fetch('http://127.0.0.1:8000/agents', {
-          signal: controller.signal,
-        })
-        if (!response.ok) throw new Error('Unable to fetch agents')
-        const data = await response.json()
+        let after = 0, data
+        const collected = []
+        for (let page = 0; page < pagesRef.current; page++) {
+          const response = await fetch(`http://127.0.0.1:8000/workspace?limit=500&after=${after}`, { signal: controller.signal })
+          if (!response.ok) throw new Error('Unable to fetch agents')
+          data = await response.json()
+          collected.push(...data.agents)
+          after = data.next_after
+          if (after === null) break
+        }
         if (!controller.signal.aborted) {
-          setAgents(data.agents)
+          setAgents(collected)
+          setOverview(data.overview)
+          setHasMore(after !== null)
           setError('')
-          observeAgents(data.agents)
+          observeAgents(collected)
         }
       } catch {
         if (!controller.signal.aborted) {
@@ -52,7 +65,7 @@ function App() {
         }
         return false
       } finally {
-        if (!controller.signal.aborted) setLoading(false)
+        if (!controller.signal.aborted) { setLoading(false); setRefreshing(false) }
       }
     }
 
@@ -91,6 +104,12 @@ function App() {
     restoreNewAgentFocus()
   }
 
+  function loadMoreAgents() {
+    if (refreshing) return
+    pagesRef.current++
+    refreshRef.current?.()
+  }
+
   return (
     <div className={`app-shell${selectedAgentId !== null ? ' has-details' : ''}`} style={{ '--details-width': `${layout.right}px` }}>
       <WorkspaceBar agents={agents} search={search} onSearch={setSearch} notifications={notifications}
@@ -102,11 +121,15 @@ function App() {
         </header>
       {showStart && <StartAgentForm sectionId="new-agent-composer" onCancel={closeStartComposer}
         onStartingChange={setRootStarting} onStarted={rootAgentStarted} />}
+      {overview && <div className="workspace-overview" aria-label="Recorded workspace totals">
+        {Object.entries({ active_agents: 'Active agents', completed_tasks: 'Completed tasks', waiting_tasks: 'Waiting tasks', needs_input: 'Need your input', pending_responsibilities: 'Pending responsibilities' }).map(([key, label]) => <div key={key}><strong>{overview[key]}</strong><span>{label}</span></div>)}
+      </div>}
       <AttentionPanel agents={agents} onSelect={setSelectedAgentId} />
       {error && <p className="message error" role="alert">{error}</p>}
       {loading && <p className="message" role="status">Loading agents...</p>}
       <AgentList agents={agents} selectedAgentId={selectedAgentId} onSelect={setSelectedAgentId}
         loading={loading} unavailable={Boolean(error)} search={search} onStart={() => setShowStart(true)} />
+      {hasMore && <button disabled={refreshing} onClick={loadMoreAgents}>Load more agents (showing {agents.length})</button>}
       </main>
       {selectedAgentId !== null && (
         <div className="details-dock">
@@ -115,6 +138,7 @@ function App() {
           key={selectedAgentId}
           agentId={selectedAgentId}
           agents={agents}
+          workspace={{ agents, hasMore, loading, refreshing, error, onLoadMore: loadMoreAgents }}
           onSelect={setSelectedAgentId}
           refreshVersion={detailsRefresh}
           onClose={() => setSelectedAgentId(null)}

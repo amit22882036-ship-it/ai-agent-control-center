@@ -15,6 +15,7 @@ from app import agent_manager as manager, dependencies, workspace_git as gitops
 from app.main import app
 from app.persistence import AgentStore
 import test_work_control
+from api_test_support import request_headers
 
 
 class DependencyTests(unittest.TestCase):
@@ -55,7 +56,7 @@ class DependencyTests(unittest.TestCase):
                 messages.append(message)
             await app({'type': 'http', 'asgi': {'version': '3.0'}, 'http_version': '1.1', 'method': method,
                        'scheme': 'http', 'path': path, 'raw_path': path.encode(), 'query_string': b'',
-                       'headers': [(b'content-type', b'application/json')], 'root_path': '',
+                       'headers': request_headers(method), 'root_path': '',
                        'client': ('127.0.0.1', 1), 'server': ('localhost', 8000)}, receive, send)
             self.assertEqual(messages[0]['status'], expected, messages)
             return json.loads(b''.join(m.get('body', b'') for m in messages))

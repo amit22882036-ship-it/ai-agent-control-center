@@ -20,6 +20,7 @@ class AlwaysDecisionTests(unittest.TestCase):
     waiting_agent = test_similar_decisions.SimilarDecisionTests.waiting_agent
     replacement = test_similar_decisions.SimilarDecisionTests.replacement
     resume = test_similar_decisions.SimilarDecisionTests.resume
+    watch = test_similar_decisions.SimilarDecisionTests.watch
     tearDown = test_similar_decisions.SimilarDecisionTests.tearDown
     make_launcher = test_similar_decisions.SimilarDecisionTests.make_launcher
     wait_until_waiting = test_similar_decisions.SimilarDecisionTests.wait_until_waiting
@@ -131,7 +132,7 @@ class AlwaysDecisionTests(unittest.TestCase):
         self.resume(manager.decide_always_agent, agent_id)
         self.finish(agent_id, 'What is your token?')
         with patch.object(manager.notifications, 'transition') as notify:
-            _, process = self.resume(manager.get_agent, agent_id)
+            _, process = self.resume(self.watch, agent_id)
             self.assertEqual(manager.agent_statuses[agent_id], 'running')
             self.assertIn('What is your token?', process.stdin.saved)
             self.assertIn('unavailable information', process.stdin.saved)
@@ -139,6 +140,7 @@ class AlwaysDecisionTests(unittest.TestCase):
             self.finish(agent_id, 'Please provide the missing token')
             with patch.object(manager, '_spawn_process') as spawn:
                 for _ in range(3):
+                    self.watch(agent_id)
                     self.assertEqual(manager.get_agent(agent_id)['status'], 'waiting')
                     manager.get_agents()
                 spawn.assert_not_called()
@@ -146,7 +148,7 @@ class AlwaysDecisionTests(unittest.TestCase):
         # A manual reply ends the blocked episode, even if wording later repeats.
         self.resume(lambda key: manager.reply_agent(key, 'Use local configuration'), agent_id)
         self.finish(agent_id, 'What is your token?')
-        self.resume(manager.get_agent, agent_id)
+        self.resume(self.watch, agent_id)
         self.assertEqual(manager.agent_statuses[agent_id], 'running')
 
     def test_handled_new_episode_and_finished_notifications(self):
@@ -154,13 +156,14 @@ class AlwaysDecisionTests(unittest.TestCase):
         self.resume(manager.decide_always_agent, agent_id)
         self.finish(agent_id, 'Which approach?')
         with patch.object(manager.notifications, 'transition') as notify:
-            self.resume(manager.get_agent, agent_id)
+            self.resume(self.watch, agent_id)
             self.finish(agent_id, 'Which file next?', handled=True)
             self.assertTrue(manager.agent_always_decisions[agent_id].handled)
-            _, process = self.resume(manager.get_agent, agent_id)
+            _, process = self.resume(self.watch, agent_id)
             self.assertIn('Which file next?', process.stdin.saved)
             notify.assert_not_called()
             self.finish(agent_id, handled=True)
+            self.watch(agent_id)
             self.assertEqual(manager.get_agent(agent_id)['status'], 'finished')
             notify.assert_called_once_with(agent_id, 'finished', 'Original task')
 
@@ -173,6 +176,7 @@ class AlwaysDecisionTests(unittest.TestCase):
              patch.object(manager.notifications, 'transition') as notify, \
              self.assertLogs(manager.logger, level='ERROR'):
             for _ in range(3):
+                self.watch(agent_id)
                 detail = manager.get_agent(agent_id)
                 self.assertEqual(detail['status'], 'waiting')
                 self.assertEqual(detail['waiting_question'], 'Which approach?')
@@ -190,7 +194,7 @@ class AlwaysDecisionTests(unittest.TestCase):
         self.resume(manager.decide_always_agent, agent_id)
         self.finish(agent_id, 'Another question')
         with patch.object(manager, '_similar_prompt') as prompt:
-            _, automatic = self.resume(manager.get_agent, agent_id)
+            _, automatic = self.resume(self.watch, agent_id)
             prompt.assert_not_called()
         with patch.object(manager, '_stop_windows_tree') as stop:
             result = disable_always_codex_agent(agent_id)
@@ -203,7 +207,7 @@ class AlwaysDecisionTests(unittest.TestCase):
         self.assertEqual(similar.examples, ['Which local variable name?'])
         self.assertEqual(similar.attempted, {'Previously declined'})
         self.finish(agent_id, 'Another question')
-        _, process = self.resume(manager.get_agent, agent_id)
+        _, process = self.resume(self.watch, agent_id)
         self.assertIn('Approved examples (JSON):', process.stdin.saved)
         self.assertIn('Always Decide is disabled', process.stdin.saved)
         self.assertEqual(manager.agent_outputs[agent_id][-2], '--- Automatic Similar Decision ---')
@@ -222,6 +226,7 @@ class AlwaysDecisionTests(unittest.TestCase):
              patch.object(manager.notifications, 'transition') as notify, \
              self.assertLogs(manager.logger, level='ERROR'):
             for _ in range(3):
+                self.watch(agent_id)
                 detail = manager.get_agent(agent_id)
                 self.assertEqual(detail['status'], 'waiting')
                 self.assertEqual(detail['waiting_question'], 'Missing file?')
@@ -235,7 +240,7 @@ class AlwaysDecisionTests(unittest.TestCase):
         self.finish(agent_id, handled=True)
         self.assertFalse(manager.agent_always_decisions[agent_id].handled)
         manager.agent_waiting_questions[agent_id] = 'Which approach?'
-        self.resume(manager.get_agent, agent_id)
+        self.resume(self.watch, agent_id)
         process.stdout = io.StringIO('CONTROL_CENTER_ALWAYS_HANDLED\n')
         manager._read_output(agent_id, process)
         self.assertFalse(manager.agent_always_decisions[agent_id].handled)
@@ -248,13 +253,14 @@ class AlwaysDecisionTests(unittest.TestCase):
         agent_id, _ = self.waiting_agent()
         self.resume(manager.decide_similar_agent, agent_id)
         self.finish(agent_id, 'Another approach?')
-        self.resume(manager.get_agent, agent_id)
+        self.resume(self.watch, agent_id)
         self.finish(agent_id, 'Another approach?')
+        self.watch(agent_id)
         self.assertEqual(manager.get_agent(agent_id)['status'], 'waiting')
         self.resume(manager.decide_always_agent, agent_id)
         manager.disable_always_agent(agent_id)
         self.finish(agent_id, 'New choice?')
-        _, process = self.resume(manager.get_agent, agent_id)
+        _, process = self.resume(self.watch, agent_id)
         self.assertIn('Approved examples (JSON):', process.stdin.saved)
         self.assertIn('New choice?', process.stdin.saved)
 
@@ -264,6 +270,7 @@ class AlwaysDecisionTests(unittest.TestCase):
         manager.disable_always_agent(agent_id)
         self.finish(agent_id, 'Which approach?')
         with patch.object(manager, '_spawn_process') as spawn:
+            self.watch(agent_id)
             self.assertEqual(manager.get_agent(agent_id)['status'], 'waiting')
             spawn.assert_not_called()
 
@@ -271,7 +278,7 @@ class AlwaysDecisionTests(unittest.TestCase):
         agent_id, _ = self.waiting_agent()
         self.resume(manager.decide_always_agent, agent_id)
         self.finish(agent_id, 'Which approach?')
-        _, automatic = self.resume(manager.get_agent, agent_id)
+        _, automatic = self.resume(self.watch, agent_id)
         with patch.object(manager, '_stop_windows_tree') as stop:
             self.resume(lambda key: manager.redirect_agent(key, 'Correction'), agent_id)
             stop.assert_called_once_with(automatic)

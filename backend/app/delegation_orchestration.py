@@ -266,6 +266,9 @@ def prepare_delivery(db, task_id):
         raise ValueError('Parent continuation already admitted or requires inspection')
     results = [r for r in result_rows(db, task_id) if r['phase'] == 'ready'][:MAX_DELIVERY_RESULTS]
     plan = json.loads(current['plan']) if current['plan'] else None
+    # Only an unconsumed plan's own continuation carries required intents. A
+    # review continuation may follow no plan or a consumed one (stale intents).
+    required_intents = ()
     if results:
         mode = 'reviewing'
         delivery_id = str(uuid4())
@@ -296,7 +299,8 @@ def prepare_delivery(db, task_id):
         # work is admitted; do not infer safety from still-unmaterialized text.
         if any(not replanning.retired(db,r[0]) for r in db.execute('SELECT delegation_id FROM delegations WHERE parent_task_id=? AND child_task_id IS NULL',(task_id,))):
             raise ValueError('Pending Child responsibility scopes are not available')
-        parallel_admission(db, task_id, plan['intent_ids'])
+        required_intents = plan['intent_ids']
+        parallel_admission(db, task_id, required_intents)
         prompt = 'Perform only the approved independent work, then yield at a safe synchronization point:\n' + plan['instruction']
     elif (review := replanning.review_prompt(db, task_id)):
         mode, delivery_id, prompt = 'independent', None, review
@@ -305,7 +309,7 @@ def prepare_delivery(db, task_id):
         prompt = 'All required Child responsibilities have been accepted or safely retired. Continue the original Parent Task, verify the overall outcome, and finish only when the whole task is complete.'
     else:
         return None
-    parallel_admission(db, task_id, plan['intent_ids'] if mode == 'independent' else ())
+    parallel_admission(db, task_id, required_intents)
     delegation_safety.worker_boundary(db, task_id)
     launch_id = str(uuid4())
     db.execute(f"UPDATE delegation_continuations SET phase='launching',mode=?,launch_id=?,delivery_id=?,last_error=NULL,updated_at={NOW} WHERE task_id=?",

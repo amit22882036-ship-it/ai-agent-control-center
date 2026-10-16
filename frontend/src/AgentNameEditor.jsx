@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import Icon from './Icon'
+import { apiFetch } from './apiClient.mjs'
 export default function AgentNameEditor({ agent, disabled, onSaved }) {
   const [editing, setEditing] = useState(false)
   const [name, setName] = useState('')
@@ -10,7 +11,7 @@ export default function AgentNameEditor({ agent, disabled, onSaved }) {
     if (saving || !name.trim()) return
     setSaving(true); setError('')
     try {
-      const response = await fetch(`http://127.0.0.1:8000/agents/${agent.agent_id}/rename`, {
+      const response = await apiFetch(`http://127.0.0.1:8000/agents/${agent.agent_id}/rename`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ display_name: name.trim() }),
       })
       const result = await response.json()

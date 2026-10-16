@@ -385,7 +385,8 @@ class ProbeTests(unittest.TestCase):
         self.assertEqual((self.state(task), self.current(claim)), before)
 
     def test_recovery_never_spawns_and_replacement_uses_fresh_observation(self):
-        key, _ = self.create(kind='mock')
+        with patch.object(manager.process_supervision, 'job_of', return_value=object()):  # supervised launch
+            key, _ = self.create(kind='mock')
         task = self.task_for(key)
         claim = self.claim(task)
         self.probe.return_value = UNAVAILABLE
