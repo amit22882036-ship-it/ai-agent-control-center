@@ -1,6 +1,8 @@
 # Stage 1 technical handoff
 
-This document describes the completed Stage 1 implementation of AI Agent Control Center. Read it together with [WORKING_AGREEMENT.md](WORKING_AGREEMENT.md) before starting Stage 2. Implementation was checked against the repository at `1878ca0` (`Harden Stage 1 agent control robustness`). Future changes must be checked against the actual working tree; this is a checkpoint, not permission to overwrite newer work.
+> **Historical record.** This is the Stage 1 checkpoint, kept for its design decisions. Current behavior is described in the [README](../../README.md) and the other documents under `docs/`.
+
+This document describes the completed Stage 1 implementation of AI Agent Control Center. Read it together with the [working agreement](../development/working-agreement.md) before starting Stage 2. Implementation was checked against the repository at `1878ca0` (`Harden Stage 1 agent control robustness`). Future changes must be checked against the actual working tree; this is a checkpoint, not permission to overwrite newer work.
 
 ## 1. Project purpose
 
@@ -20,19 +22,19 @@ Browser / React + Vite dashboard
 
 The backend uses Python, FastAPI, Uvicorn and standard-library process/thread/SQLite facilities. The frontend uses React 19 and Vite 8. SSE is the primary live transport; two-second polling is the fallback. REST remains authoritative. Windows is the supported Codex launching and process-management target. Run one backend process/worker; in-memory registries, locks, notification leases and the SSE broker are process-local.
 
-Repository root: `C:\Users\User\Desktop\AI agent control center\ai-agent-control-center`.
+Repository root: the directory that contains `README.md`. Each command block below starts there.
 
 In a dedicated **backend PowerShell window**:
 
 ```powershell
-cd "C:\Users\User\Desktop\AI agent control center\ai-agent-control-center\backend"
+cd .\backend
 ..\.venv\Scripts\python.exe -m uvicorn app.main:app --reload
 ```
 
 In a separate **frontend PowerShell window**:
 
 ```powershell
-cd "C:\Users\User\Desktop\AI agent control center\ai-agent-control-center\frontend"
+cd .\frontend
 npm run dev -- --port 5173 --strictPort
 ```
 
@@ -235,13 +237,13 @@ Tests under `backend/test_*.py` cover identity/PID reuse, command/stdin safety, 
 For a future verification checkpoint, use a **verification PowerShell window** (these commands do not start servers):
 
 ```powershell
-cd "C:\Users\User\Desktop\AI agent control center\ai-agent-control-center\backend"
+cd .\backend
 ..\.venv\Scripts\python.exe -B -m unittest discover -s . -p "test_*.py" -v
-cd "C:\Users\User\Desktop\AI agent control center\ai-agent-control-center\frontend"
+cd ..\frontend
 node --test tests\*.test.mjs
 npm run build
 npm run lint
-cd "C:\Users\User\Desktop\AI agent control center\ai-agent-control-center"
+cd ..
 git diff --check
 git status
 ```

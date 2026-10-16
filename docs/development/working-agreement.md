@@ -1,6 +1,6 @@
 # Working agreement with Amit
 
-This document preserves the project's collaboration preferences. Read [STAGE1_HANDOFF.md](STAGE1_HANDOFF.md) for the technical checkpoint. A newer explicit instruction from Amit takes precedence over an older documented preference.
+This document preserves the project's collaboration preferences. Read [Stage 1 handoff](../history/stage1-handoff.md) for the technical checkpoint. A newer explicit instruction from Amit takes precedence over an older documented preference.
 
 ## 1. General working style
 
@@ -15,14 +15,14 @@ Whenever directing Amit to the dashboard, remind him how to start **both** compo
 **Backend PowerShell window** — open a dedicated window and run:
 
 ```powershell
-cd "C:\Users\User\Desktop\AI agent control center\ai-agent-control-center\backend"
+cd .\backend
 ..\.venv\Scripts\python.exe -m uvicorn app.main:app --reload
 ```
 
 **Frontend PowerShell window** — open a second window and run:
 
 ```powershell
-cd "C:\Users\User\Desktop\AI agent control center\ai-agent-control-center\frontend"
+cd .\frontend
 npm run dev -- --port 5173 --strictPort
 ```
 
@@ -65,7 +65,7 @@ Preserve established invariants. If an issue is genuinely architectural, address
 Use `--reload` for ordinary development. For deliberate backend crash/restart tests, use Uvicorn **without reload** so reloader/worker PIDs do not confuse the test. In the dedicated **backend PowerShell window**, after stopping the existing development backend:
 
 ```powershell
-cd "C:\Users\User\Desktop\AI agent control center\ai-agent-control-center\backend"
+cd .\backend
 ..\.venv\Scripts\python.exe -m uvicorn app.main:app --port 8000
 ```
 

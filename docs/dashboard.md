@@ -8,6 +8,29 @@ The integrated composer still initially selects Mock. Autonomous mode is unavail
 
 `POST /agents/start` accepts the optional strict boolean `autonomous` (API default false). True maps to the existing `planning_enabled`, `delegation_protocol_enabled`, `child_materialization_enabled`, `hybrid_delegation_enabled`, and `recursive_delegation_enabled` arguments. Unknown individual capability fields are rejected. Mock, unsupported providers, manually created Children and existing-Task replacement starts cannot use this root-creation shortcut. Existing responses remain compatible. Historical rows are unchanged. Automatically materialized Codex Children inherit only through the existing fresh-authority checks, including provider/sandbox, assignment/generation, depth, ancestor control, scope and resource admission.
 
+## Managed execution policy
+
+Users describe the desired result in natural language. Managed autonomous Codex workers receive
+internal planning/promotion guidance: simple work may finish independently, while delegated work
+must use Control Center admission, isolated Child workspaces, integration and explicit result review.
+Structured managed executions (including opted-in protocol workers, managed Children and session
+continuations) use the process-local `-c features.multi_agent=false` override. Ordinary non-autonomous
+Codex and Mock behavior is unchanged; global and project Codex configuration files are not edited.
+CLI 0.154.0 accepts this setting. In the recorded Stage 2I.4 live run, neither the Parent's three
+supervised executions nor the two Children emitted a native collaboration event. Recheck this after CLI upgrades.
+
+A native collaboration JSONL item remains valid provider output, but is a policy violation in a
+managed execution: the current worker is stopped without accepting completion or control messages.
+Known native-collaboration history prevents session resume pending explicit inspection; provider
+subagents and prose claims of acknowledgement are never imported as Control Center records.
+Historical output lacks channel provenance, so an exact saved collaboration wire event is treated
+conservatively, including one reproduced verbatim in output. Ordinary prose mentioning tools is not.
+
+Eligible autonomous roots are asked, within their existing turn, to record one orchestration decision
+(`independent` or `propose`). A missing decision is nonfatal and triggers no extra continuation.
+`GET /tasks/{task_id}/orchestration` reports it as a read-only `decision`; see
+[orchestration decisions](planning.md#orchestration-decisions).
+
 ## Choosing a repository
 
 New Agent loads registered Projects from `GET /projects`. Select a Project explicitly; its canonical repository path is displayed before Start. This applies to Mock and Codex roots, including Autonomous mode. There is no automatic first-Project selection. Loading failures, missing selections and registration errors cannot silently select the application's repository. Refresh clears the selection so it can be confirmed again.
@@ -43,18 +66,24 @@ Light, dark and automatic themes use shared tokens. Node text, status labels and
 
 One existing SSE connection invalidates the shared workspace snapshot, selected details and open projections; polling remains the fallback. There is no stream or polling loop per node. Aborted requests cannot populate a different selection, and failed projections retry through the existing refresh queue. Workspace pages load sequentially, 500 records at a time, with explicit Load more for older history. Counts cover all records, while workspace search/filtering applies to loaded records. The separate family snapshot supplies explorer ancestry even when workspace pages are incomplete. Multiple workspace pages may span different committed snapshots, but immutable creation cursors prevent duplicate identities. No view opening authorizes model execution.
 
-## Verification and live-test proposal
+## Verification
 
 The deterministic product scenario uses real temporary SQLite/Git workspaces and process shims: HTTP root creation, planning, promotion, recursive Child capability inheritance, Child completion, actual workspace integration, Parent result delivery/acknowledgement, explicit retirement, final Parent completion, and durable rereads. Browser QA can replay those API snapshots; that is UI integration evidence, not evidence that live Codex emitted the protocol. Node tests cover creation choices, hierarchy/filter/camera invariants, notifications and the existing realtime queue. The complete Windows backend suite remains a separate user verification checkpoint.
 
 Synthetic browser review covers the list-first entry, three-pane navigation, tree-local and keyboard selection, full-card hit areas, context restoration, automatic/dark/light appearance and responsive viewports. Deterministic tests additionally exercise vertical geometry, bounded family scope, cycles, historical assignments and stale-response suppression. The three-pane build was inspected at 1672px, 1366px, 1280px, 900px and 390px widths, including 40-level and 60-sibling fixtures, deep search, historical records, polling camera stability and isolated activity failures. A composition issue found during review was corrected so readable camera focus includes nearby relatives when space permits. Mobile navigation rows were left-aligned consistently. Large-tree Fit is an overview; search, keyboard focus and Focus selected restore a readable node scale. Reduced-motion rules were inspected in CSS, but OS-level reduced-motion and assistive-technology behavior were not exercised in that browser session. These remain manual accessibility checks.
 
-**Real Codex E2E is not authorized or claimed.** Proposed first test, subject to separate approval:
+### Recorded live autonomous run
 
-1. Use a new disposable Git repository containing one small parser and one test file, an isolated SQLite database, and a separate temporary workspace root. Never use existing Projects or worktrees.
-2. Create one Codex root with autonomy enabled and `workspace-write`; ask it to propose and promote exactly one independent parser-test responsibility, then review/integrate the Child result and finish its own summary. Expected logical Agents: two. Resumed Parent invocations can increase provider calls; usage cannot be predicted reliably.
-3. Set the existing depth limit to one. The existing default admission ceiling is four concurrent Children and sixteen Children per Parent; for a strict two-Agent experiment, start the backend with `CONTROL_CENTER_DELEGATION_DEPTH=1`, `CONTROL_CENTER_DELEGATION_CHILDREN_PER_PARENT=1` and `CONTROL_CENTER_DELEGATION_CONCURRENT_CHILDREN=1` (see [delegation bounds](delegations.md#depth-and-operational-bounds)). The dashboard does not expose these limits. Confirm the configuration, and that `GET /system/process-supervision` reports `supervised`, before approval/execution.
-4. Inspect accepted plan/provenance, promotion, task assignments/generations, actual Child launch, result integration, Parent acknowledgement, completion safeguards, graph/inspector state and unchanged canonical source. Preserve evidence and temporary workspaces until reviewed.
-5. Stop on any extra Child, out-of-scope write, unexpected provider/authentication behavior, unsafe admission, repeated uncontrolled continuation, provider-limit error, or a user stop request. Pass requires the actual protocol chain and truthful UI state, not just a plausible final answer. No automatic cleanup of existing worktrees.
+One controlled real Codex run was performed on Windows against a disposable Git repository. It used an isolated workspace root and the strict delegation limits `CONTROL_CENTER_DELEGATION_DEPTH=1`, `CONTROL_CENTER_DELEGATION_CHILDREN_PER_PARENT=1` and `CONTROL_CENTER_DELEGATION_CONCURRENT_CHILDREN=1`. The request asked, in natural language, for a CSV starter project to become a toolkit with two applications. The persisted records show:
 
-A separate proposed replanning test would introduce one now-obsolete, not-yet-executed responsibility after a successful Child result and verify explicit retirement with preserved history and correct Parent completion. Do not force that scenario into the first paid run. Generalized Worker reassignment and additional providers remain outside this milestone and in future work, including Stage 2J.
+- The root recorded a `propose` planning decision (revision 1) and promoted two responsibilities in one decision. Both were admitted as `ready`, with explicit non-overlapping scopes.
+- Two Child Tasks ran **one after the other**. The second Child Task was attached milliseconds after the first completed. That is consistent with limits that allow one unfinished Child at a time, not one Child in total (see [delegation limits](configuration.md#delegation-limits)). Two Children was therefore expected behavior under 1/1/1.
+- Each Child completed, and its integration into the Parent workspace was `applied` with no conflict paths. The integration journal recorded `validation_status: not_run`, because the integrator does not run project tests itself.
+- One delivery carried both results. The Parent accepted both through the structured `acknowledge_results` contract, both delegations became `acknowledged`, and the delivery acknowledgement was persisted.
+- The Parent ran the integrated project's 26 tests, which passed, and then completed. All three Tasks finished `completed`.
+
+This is one recorded run, not a statistical guarantee. It did not exercise replanning, recursive Grandchildren, rejected results or Hybrid continuation, which remain covered by the deterministic suites. Earlier natural-language runs completed without Children, and the [orchestration decision](planning.md#orchestration-decisions) record was added to make that choice inspectable.
+
+### Running another live test
+
+Use a new disposable repository, an isolated `CONTROL_CENTER_DB_PATH` and `CONTROL_CENTER_WORKSPACE_ROOT`, and the delegation limits above. Confirm that `GET /system/process-supervision` reports `supervised` before starting. Stop on any out-of-scope write, unexpected provider behavior, unsafe admission, repeated uncontrolled continuation or provider-limit error. A pass requires the actual protocol chain and truthful UI state, not just a plausible final answer. Resumed Parent invocations add provider calls, and usage cannot be predicted. No automatic cleanup of worktrees is performed. Generalized Worker reassignment and additional providers remain future work.

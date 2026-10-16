@@ -12,6 +12,22 @@ The Codex adapter accepts a planning envelope only as a complete `item.completed
 
 **Provider limitation:** the [official non-interactive documentation](https://learn.chatgpt.com/docs/non-interactive-mode) documents JSONL events and completed assistant messages, but does not promise multiple assistant messages per invocation. This integration records a plan only when the provider actually emits a separate intermediate assistant message followed by a valid final response. It does not assume such messages always exist or force a planning-only turn. An ordinary single-message completion works without a plan. A plan-only final response is rejected as unverified execution, using the existing stopped/pending failure path; it does not complete the Task, hand off to orchestration, or automatically resume. No plan from that invocation is accepted. The recorded Stage 2I.1 real Codex E2E captured an independent decision followed by ordinary completion. It did not verify propose-to-execution promotion or guarantee an intermediate event on every run.
 
+## Orchestration decisions
+
+An eligible root has planning, delegation protocol, Child materialization and Hybrid authority, runs as Codex and has no Parent. When no decision is recorded for its current assignment, its prompt asks for exactly one planning decision after it has assessed the request and repository. The decision is either `independent` with a concise rationale or `propose`. It is requested inside the existing turn as an intermediate assistant message. No separate planning call or continuation is made, and no Child is forced. A missing decision is not a failure. Children and planning-only Agents keep the optional wording. The guidance includes balanced delegation criteria and one minimal planning-to-promotion example that validates against the current schemas, with an explicit scope and `resources: []`. Autonomous Mode authorizes managed orchestration only within configured limits. Admission, scope, resource and safety checks remain authoritative.
+
+`GET /tasks/{task_id}/orchestration` includes a read-only `decision`, derived from `planning_revisions` and `promotion_decisions`/`promotion_items` for the Task's latest assignment:
+
+| `state` | Meaning |
+| --- | --- |
+| `independent` | The current plan revision decided independent work. |
+| `proposed` | The current revision proposes work that is not yet promoted, or whose promotion was entirely rejected at admission (`promotion_rejected: true`). |
+| `promoted` | This assignment promoted the current revision, and at least one item was not definitively rejected (`conflict`, `unauthorized` or `invalid`). |
+| `not_recorded` | The assignment is authorized but has no decision. A plan from an earlier assignment appears under `superseded`, not as current. |
+| `not_authorized` | The latest assignment lacks promotion authority, or the Task has no assignment. |
+
+The response also carries `revision`, `decision_key`, `rationale`, `accepted_at`, `assignment_id` and up to 16 per-item `promotions` with their dispositions. A malformed promotion rolls back with its plan and leaves nothing to report. Agent activity labels show only the validated decision value (`Plan revision 1 accepted: independent`), never the rationale text.
+
 ## Contract
 
 The strict provider-neutral protocol is `control-center.planning.v1`:
@@ -62,7 +78,7 @@ Stage 2I.1 supplies optional planning records only. Stage 2I.2 adds explicit exe
 
 ## Verification limitation
 
-The recorded Stage 2I.1 Windows full backend run executed 787 tests and ended with two errors: `test_agent_manager.AgentTests.test_tree_stop` and `test_always_decisions.AlwaysDecisionTests.test_windows_resume_stdin_cwd_session_sandbox_and_watcher`. Both passed when rerun together in isolation (2 tests, 1.094 seconds). The failures may be timing/environment-sensitive, but their cause has not been conclusively identified or fixed; that full suite cannot be described as passing. Stage 2I.1 publication was approved with this known limitation. Real paid propose-to-promotion behavior remains unverified.
+The recorded Stage 2I.1 Windows full backend run executed 787 tests and ended with two errors: `test_agent_manager.AgentTests.test_tree_stop` and `test_always_decisions.AlwaysDecisionTests.test_windows_resume_stdin_cwd_session_sandbox_and_watcher`. Both passed when rerun together in isolation (2 tests, 1.094 seconds). The failures may be timing/environment-sensitive, but their cause has not been conclusively identified or fixed; that full suite cannot be described as passing. Stage 2I.1 publication was approved with this known limitation. A later Stage 2I.4 live run verified propose-to-promotion with two Children, integration and acknowledgement; see [the recorded run](dashboard.md#recorded-live-autonomous-run).
 
 ## Coordinated promotion (Stage 2I.2)
 

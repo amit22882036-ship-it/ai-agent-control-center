@@ -1,6 +1,6 @@
 # Codex instructions — AI Agent Control Center
 
-These instructions apply across this repository. Work from this Git root, not its parent directory. Read the current code, [README](README.md), and technical documentation relevant to the current task. Consult the [working agreement](WORKING_AGREEMENT.md) or [Stage 1 handoff](STAGE1_HANDOFF.md) only when relevant to that task's workflow or historical context. The handoff is historical: do not apply superseded Stage 1 assumptions to current behavior. Follow newer explicit user instructions and preserve still-relevant workflow constraints.
+These instructions apply across this repository. Work from this Git root, not its parent directory. Read the current code, [README](README.md), and technical documentation relevant to the current task. Consult the [working agreement](docs/development/working-agreement.md) or [Stage 1 handoff](docs/history/stage1-handoff.md) only when relevant to that task's workflow or historical context. The handoff is historical: do not apply superseded Stage 1 assumptions to current behavior. Follow newer explicit user instructions and preserve still-relevant workflow constraints.
 
 ## Public repository security
 

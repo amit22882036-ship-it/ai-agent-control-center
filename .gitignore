@@ -18,22 +18,43 @@ env/
 .env.*
 !.env.example
 
-# Editors
+# Credentials and keys
+*.pem
+*.key
+*.pfx
+*.p12
+
+# Editors and local agent tooling
 .vscode/
 .idea/
 *.iml
+.claude/
+.codex/
 
-# Windows
+# Operating systems
 Thumbs.db
 ehthumbs.db
 Desktop.ini
 $RECYCLE.BIN/
+.DS_Store
 
 # Node.js
 node_modules/
 npm-debug.log*
 
-# Local SQLite state and sidecar files
+# Local runtime state: SQLite databases, sidecars and agent output.
+# Task workspaces default to %LOCALAPPDATA%, outside the repository.
 data/
+*.sqlite
 *.sqlite3
+*.sqlite-*
 *.sqlite3-*
+*.db
+*.db-*
+
+# Logs, caches and temporary files
+logs/
+*.log
+.cache/
+*.tmp
+coverage/
