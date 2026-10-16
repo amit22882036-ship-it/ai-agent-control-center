@@ -1,6 +1,6 @@
 # Codex instructions — AI Agent Control Center
 
-These instructions apply across this repository. Work from this Git root, not its parent directory. Read the current code, [README](README.md), and technical documentation relevant to the current task. Consult the [working agreement](docs/development/working-agreement.md) or [Stage 1 handoff](docs/history/stage1-handoff.md) only when relevant to that task's workflow or historical context. The handoff is historical: do not apply superseded Stage 1 assumptions to current behavior. Follow newer explicit user instructions and preserve still-relevant workflow constraints.
+These instructions apply across this repository. Work from this Git root, not its parent directory. Read the current code, [README](README.md), and technical documentation relevant to the current task. Consult the [Stage 1 handoff](docs/history/stage1-handoff.md) only when historical context is relevant. The handoff is historical: do not apply superseded Stage 1 assumptions to current behavior. Follow newer explicit user instructions and preserve still-relevant workflow constraints.
 
 ## Public repository security
 
@@ -25,3 +25,17 @@ These instructions apply across this repository. Work from this Git root, not it
 - Do not start servers during implementation/review-only work without authorization. Never stop unrelated processes or discard existing work to make verification pass.
 - Do not stage, commit, push, deploy, change repository visibility, or publish releases unless explicitly authorized for that action. Stage only intended files when authorized; review scope before committing.
 - Treat the repository as a professional engineering portfolio while preserving technical correctness. Report changed files, verification results, limitations, and outstanding issues.
+- After an interruption, inspect existing uncommitted changes and resume from that state; do not restart a milestone or replace correct work.
+- Do not trust a generated summary that claims tests passed: inspect actual command results and the relevant code.
+
+## Testing
+
+- Add focused regression tests for real bugs, not tests that only raise counts. Preserve the complete existing suite and never weaken tests to make them pass.
+- Mock- and shim-based suites do not prove live Codex behavior. Live provider runs consume paid usage and require explicit approval.
+- Use isolated `CONTROL_CENTER_DB_PATH` and `CONTROL_CENTER_WORKSPACE_ROOT` values for experiments; never point tests at a user's real database or worktrees.
+
+## Windows notes
+
+- When giving PowerShell instructions, name the window, its starting directory and the exact `cd`, with copy-paste-ready commands. Keep shell commands, dashboard text and agent prompts visually separate.
+- Use Uvicorn without `--reload` for crash, restart or process-supervision tests so reloader processes do not confuse results.
+- Identify the actual listening process before stopping anything on a port. Never stop unrelated processes. Do not use PowerShell's reserved `$PID` as a custom variable.

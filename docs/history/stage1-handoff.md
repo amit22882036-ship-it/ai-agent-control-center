@@ -2,7 +2,7 @@
 
 > **Historical record.** This is the Stage 1 checkpoint, kept for its design decisions. Current behavior is described in the [README](../../README.md) and the other documents under `docs/`.
 
-This document describes the completed Stage 1 implementation of AI Agent Control Center. Read it together with the [working agreement](../development/working-agreement.md) before starting Stage 2. Implementation was checked against the repository at `1878ca0` (`Harden Stage 1 agent control robustness`). Future changes must be checked against the actual working tree; this is a checkpoint, not permission to overwrite newer work.
+This document describes the completed Stage 1 implementation of AI Agent Control Center. Implementation was checked against the repository at `1878ca0` (`Harden Stage 1 agent control robustness`). Future changes must be checked against the actual working tree; this is a checkpoint, not permission to overwrite newer work.
 
 ## 1. Project purpose
 
@@ -310,7 +310,7 @@ Future concepts include human-friendly editable agent names and useful task-deri
 ## 18. Starting Stage 2 in a fresh conversation
 
 1. Read `STAGE1_HANDOFF.md`.
-2. Read `WORKING_AGREEMENT.md`.
+2. Read `AGENTS.md`.
 3. Inspect current Git status, history and repository.
 4. Treat Stage 1 invariants as existing behavior to preserve.
 5. Do not casually redesign stable Stage 1 mechanisms.

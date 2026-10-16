@@ -6,6 +6,10 @@ In autonomous mode, a Codex agent can split a request into separate responsibili
 
 > **Status:** an open-source, actively developed engineering project that you run locally. It is not a production service. It runs locally on Windows and supports one real provider, the [OpenAI Codex CLI](https://github.com/openai/codex), plus a Mock provider for exploring the UI without model usage. See [limitations](#security-and-limitations).
 
+![Agent Workspace with a Parent agent, two Child agents and the inspector open](docs/images/agent-workspace.png)
+
+<sub>Illustrative screenshot made with Mock agents and a demo repository. The hierarchy was created manually through the API, so it does not record an autonomous run.</sub>
+
 ## Why it exists
 
 Running several coding agents in separate terminals breaks down quickly. It becomes hard to see which agent is waiting for you, two agents can edit the same files, and nobody records which output was actually reviewed or merged. If a terminal closes, its history is gone.
@@ -37,6 +41,17 @@ The Control Center puts that work behind one local backend:
 - Pause, resume and cancel with subtree impact, dependencies and durable blockers.
 - Resource claims with fair queues and deadlock detection, plus logical work-intent scopes that detect overlapping responsibilities.
 - On Windows, every agent process tree runs inside a Job Object, which makes Stop reliable even for detached descendants.
+
+<table>
+  <tr>
+    <td width="50%"><img src="docs/images/hierarchy-explorer.png" alt="Hierarchy Explorer showing one Parent agent and two Child agents"></td>
+    <td width="50%"><img src="docs/images/new-agent.png" alt="New agent form with Project, task, agent type, access and Autonomous mode"></td>
+  </tr>
+  <tr>
+    <td><sub>Hierarchy Explorer. Mock agents with demo data.</sub></td>
+    <td><sub>New agent, with Codex and Autonomous mode selected.</sub></td>
+  </tr>
+</table>
 
 A real autonomous run has been verified end to end. A natural-language request led one Parent to promote two Children. Both Children completed, both results were integrated and accepted, and the Parent finished after its own test run passed. The [verification notes](docs/dashboard.md#verification) list exactly what was and was not covered.
 
