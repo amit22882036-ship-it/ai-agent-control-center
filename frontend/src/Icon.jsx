@@ -13,6 +13,7 @@ const paths = {
   agent: 'M8 3h8 M12 3v3 M4 6h16v14H4z M8 11v2 M16 11v2 M9 17h6',
   edit: 'M13.5 6.5l4 4 M4 20l4.5-1 10-10a2.8 2.8 0 0 0-4-4l-10 10z',
   more: 'M5 12h.01 M12 12h.01 M19 12h.01',
+  removed: 'M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0 M9 9l6 6 M15 9l-6 6',
 }
 export default function Icon({ name, size = 18, ...props }) {
   return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false" {...props}><path d={paths[name] || paths.agent} /></svg>

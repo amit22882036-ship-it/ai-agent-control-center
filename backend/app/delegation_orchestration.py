@@ -96,6 +96,8 @@ def owner(db, task_id, *, allow_running=False):
             or current['origin_generation'] != receipt.get('generation')
             or not agent['session_id'] or agent['session_id'] != receipt.get('session_id')):
         raise ValueError('Hybrid continuation ownership is stale or unavailable')
+    from . import agent_removal
+    agent_removal.require_operational(db, agent['agent_id'])
     if (parent['control_intent'] != 'active' or parent['stop_required']
             or parent['status'] in ('completed', 'canceled', 'paused')
             or current['phase'] in ('recovery_required', 'stopped', 'completed')):

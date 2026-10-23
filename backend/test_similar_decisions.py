@@ -63,7 +63,7 @@ class SimilarDecisionTests(unittest.TestCase):
                     payloads = [json.loads(line) for line in detail['output'] if line.startswith('{')]
                     self.assertEqual(len(payloads), 3)
                     for payload in payloads[1:]:
-                        self.assertEqual(payload['args'], ['exec', '--sandbox', sandbox, '--color', 'never',
+                        self.assertEqual(payload['args'], ['exec', '-c', 'model_provider=openai', '--sandbox', sandbox, '--color', 'never',
                                                           '--skip-git-repo-check', 'resume', session, '-'])
                         self.assertEqual(Path(payload['cwd']), self.workspace_path)
                     self.assertIn('Which local variable name?', payloads[-1]['prompt'])

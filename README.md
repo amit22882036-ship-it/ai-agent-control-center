@@ -1,14 +1,14 @@
 # AI Agent Control Center
 
-A local dashboard for running and supervising AI coding agents on your own machine. You describe the work in plain language. The Control Center starts the agent in an isolated Git workspace, streams its output, lets you answer its questions or stop it, and keeps a durable record of what happened.
+A local platform for orchestrating, monitoring and controlling AI coding agents on your own machine. You describe the work in plain language. The Control Center starts the agent in an isolated Git workspace, streams its output, lets you answer its questions, redirect it or stop it, and keeps a durable record of what happened.
 
-In autonomous mode, a Codex agent can split a request into separate responsibilities. The Control Center then admits **Child agents** under explicit limits and gives each one its own workspace. It integrates their results back into the Parent's workspace, and the Parent must review and accept each result before it can finish.
+A chat window gives you one model and one conversation. The Control Center instead treats work as **Tasks** owned by **Agents**: a Parent agent can split a request into separate responsibilities, the backend admits **Child agents** under explicit limits, each Child works in its own workspace, and its result comes back only through conflict-checked integration and the Parent's explicit acceptance. Different agents in one hierarchy can run on different providers, models and reasoning efforts.
 
-> **Status:** an open-source, actively developed engineering project that you run locally. It is not a production service. It runs locally on Windows and supports one real provider, the [OpenAI Codex CLI](https://github.com/openai/codex), plus a Mock provider for exploring the UI without model usage. See [limitations](#security-and-limitations).
+> **Status:** an open-source engineering project under active development, run locally on Windows. It is not a production service. The [OpenAI Codex CLI](https://github.com/openai/codex) is the provider verified with real runs. Claude Code and Gemini CLI adapters are implemented and tested against fake CLIs; authenticated end-to-end runs with them have not been performed yet. A Mock provider lets you explore the UI without model usage. See [providers](docs/providers.md) and [limitations](#current-limitations).
 
 ![Agent Workspace with a Parent agent, two Child agents and the inspector open](docs/images/agent-workspace.png)
 
-<sub>Illustrative screenshot made with Mock agents and a demo repository. The hierarchy was created manually through the API, so it does not record an autonomous run.</sub>
+<sub>Illustrative screenshot made with Mock agents and a demo repository, taken before multi-provider support was added. The hierarchy was created manually through the API, so it does not record an autonomous run.</sub>
 
 ## Why it exists
 
@@ -16,44 +16,63 @@ Running several coding agents in separate terminals breaks down quickly. It beco
 
 The Control Center puts that work behind one local backend:
 
-- **One place to watch and steer.** Every agent's status, output and pending question is in one dashboard. You can reply, redirect, stop a single agent or stop a whole branch of agents.
+- **One place to watch and steer.** Every agent's status, output and pending question is in one dashboard. You can reply, redirect, stop a single agent or stop a whole branch.
 - **Isolation by default.** Each Task gets its own Git worktree snapshot, so agents never edit your checkout directly.
-- **Explicit hand-offs.** Child results are integrated only through conflict-checked, journaled steps and explicit acknowledgement, never by trusting an agent's claim that it is done.
-- **Durable state.** Tasks, assignments, plans, delegations, integrations and output live in SQLite and survive backend restarts.
+- **Explicit hand-offs.** Child results are integrated only through journaled, conflict-checked steps and explicit acknowledgement, never by trusting an agent's claim that it is done.
+- **Durable state.** Tasks, assignments, plans, delegations, allocation decisions, integrations and output live in SQLite and survive backend restarts.
 
 ## What it does
 
-**Dashboard (React)**
-- Register an existing local Git repository as a Project, then start Mock or Codex agents against it. Codex runs in the `read-only` (default) or `workspace-write` sandbox.
-- Follow live status over Server-Sent Events, with polling as a fallback, and browse paginated output history.
-- Reply to a waiting agent, redirect a running one, delegate routine decisions to it, or stop an agent or its whole subtree.
-- Explore an agent's family in a three-pane hierarchy view that shows Task state, planning decisions, Child outcomes, integration evidence and recent activity.
-- Use an attention panel for agents that need you, light and dark themes, and optional browser or Windows notifications.
+**Agents and Tasks**
+- First-class, durable Task and Agent identities: work survives a worker being replaced, and stale workers cannot write.
+- Start agents against a registered local Git repository (Project). Reply to a waiting agent, redirect a running one, delegate routine decisions, stop an agent or its whole subtree, and resume work after an interruption.
+- Remove an agent or a whole branch while preserving its Tasks, and transfer responsibility to a new owner explicitly.
+- Pause, resume and cancel with subtree impact, dependencies and durable blockers; resource claims with fair queues and deadlock detection; work-intent scopes that detect overlapping responsibilities.
 
-**Autonomous orchestration (Codex)**
+**Autonomous orchestration (Codex, and Claude Code with fake-CLI verification)**
 - The Parent records an orchestration decision: work independently with a rationale, or propose separate Child responsibilities with their dependencies.
-- Proposals are promoted through a strict JSON protocol. The backend alone decides admission, applying depth, capacity, scope-overlap, resource and lifecycle checks.
-- Codex's own built-in multi-agent tools are disabled for these runs, so every Child goes through Control Center admission.
-- Children run in workspaces derived from their Parent. Their results are integrated into the Parent's workspace and delivered for review. The Parent cannot complete until it accepts or rejects each result.
+- Proposals are promoted through a strict JSON protocol. The backend alone decides admission, applying depth, capacity, scope-overlap, resource and lifecycle checks. Provider-native sub-agent tools are disabled for these runs.
+- Children work in workspaces derived from their Parent; results are integrated into the Parent's workspace and delivered for review. The Parent cannot complete until it accepts or rejects each result.
 
-**Backend foundations (mostly API-only)**
-- Durable Task and Agent identities, so work survives a worker being replaced.
-- Pause, resume and cancel with subtree impact, dependencies and durable blockers.
-- Resource claims with fair queues and deadlock detection, plus logical work-intent scopes that detect overlapping responsibilities.
-- On Windows, every agent process tree runs inside a Job Object, which makes Stop reliable even for detached descendants.
+**Providers, models and effort**
+- One adapter contract for Codex, Claude Code and Gemini CLI, plus Mock. Readiness (installed, signed in, enabled, billing route, usage limits) is shown with the next step when a provider is unavailable.
+- Per-agent model and reasoning effort, chosen from the models the provider CLI reports for your account; unavailable models stay visible but disabled with the provider's reason. A one-time override can change model or effort for a single instruction.
+- Usage awareness: provider-reported limits block new work, a run that reaches a limit waits with its Task, output and session preserved, and work resumes only when you choose Resume.
+
+**Quality-first Auto allocation**
+- For delegated Children, you can let the backend choose the provider, model and effort among the providers you allow. Suitability for the specific work comes first (from the Parent's assessment or your per-category profile); usage only separates comparably suitable candidates. Without evidence, the work waits instead of being downgraded.
+- Works for promoted proposals and for ordinary delegation through the versioned `control-center.delegation.v3` protocol, which also supports explicit provider, model and effort requests.
+- Per-Task policies with allowed providers and models, preference order and suitability profiles, inherited by subtrees with local overrides; edits are revision-checked. Every decision is recorded with an explanation in the inspector.
+
+**Dashboard (React)**
+- Live status over Server-Sent Events with polling as a fallback, and paginated output history.
+- A three-pane hierarchy view with Task state, planning decisions, Child outcomes, integration evidence and recent activity.
+- An inspector for each agent: provider and model settings, provider waits, allocation decisions, process ownership and removal.
+- An attention panel, light, dark and automatic themes, and optional browser or Windows notifications.
 
 <table>
   <tr>
     <td width="50%"><img src="docs/images/hierarchy-explorer.png" alt="Hierarchy Explorer showing one Parent agent and two Child agents"></td>
-    <td width="50%"><img src="docs/images/new-agent.png" alt="New agent form with Project, task, agent type, access and Autonomous mode"></td>
+    <td width="50%"><img src="docs/images/new-agent.png" alt="Earlier version of the New agent form with Project, task, agent type, access and Autonomous mode"></td>
   </tr>
   <tr>
     <td><sub>Hierarchy Explorer. Mock agents with demo data.</sub></td>
-    <td><sub>New agent, with Codex and Autonomous mode selected.</sub></td>
+    <td><sub>An earlier version of the New agent form (Codex and Mock only); the current form also offers Claude Code, Gemini CLI, model and effort selection, and Auto allocation for Children.</sub></td>
   </tr>
 </table>
 
-A real autonomous run has been verified end to end. A natural-language request led one Parent to promote two Children. Both Children completed, both results were integrated and accepted, and the Parent finished after its own test run passed. The [verification notes](docs/dashboard.md#verification) list exactly what was and was not covered.
+A real autonomous run with Codex has been verified end to end. A natural-language request led one Parent to promote two Children. Both Children completed, both results were integrated and accepted, and the Parent finished after its own test run passed. The [verification notes](docs/dashboard.md#verification) list exactly what was and was not covered.
+
+## Supported providers
+
+| Provider | Status |
+| --- | --- |
+| OpenAI Codex CLI | Verified with real runs (tested with Codex CLI 0.154.0). Autonomous orchestration and delegation. |
+| Anthropic Claude Code | Implemented; tested with fake CLIs only. Model discovery was checked against the installed CLI without a model request. Autonomous orchestration supported. |
+| Google Gemini CLI | Implemented; tested with fake CLIs only. Can run as a delegated Child but cannot coordinate Children. A specific model cannot be enforced by Gemini CLI, so only Auto routing or its default model can be selected. |
+| Mock | Simulated work for development and UI exploration; no model is used. |
+
+Each real provider uses the CLI you installed and signed in to on your own machine, under your own plan. The Control Center contains no credentials, never uses API keys and never buys credits; Claude Code and Gemini CLI stay disabled until you enable them and confirm their billing route. Available models and limits depend on your account. Details: [providers](docs/providers.md).
 
 ## Architecture
 
@@ -61,16 +80,17 @@ A real autonomous run has been verified end to end. A natural-language request l
 flowchart LR
     UI[React dashboard<br/>localhost:5173] -->|REST + CSRF token| API[FastAPI backend<br/>127.0.0.1:8000]
     API -->|SSE invalidations| UI
-    API --> Core[Agent, Task and orchestration core]
+    API --> Core[Task, agent, orchestration<br/>and allocation core]
     Core --> DB[(SQLite state and history)]
     Core --> WS[Git Task worktrees]
-    Core --> Workers[Codex / Mock processes<br/>in Windows Job Objects]
-    Workers -->|JSONL events / output| Core
+    Core --> Workers[Codex / Claude Code / Gemini CLI / Mock<br/>processes in Windows Job Objects]
+    Workers -->|structured events / output| Core
 ```
 
 - **Frontend:** React 19, Vite 8 and plain CSS. Tests run on Node's built-in test runner.
-- **Backend:** Python, FastAPI, Uvicorn, SQLite and standard-library process and thread management. The backend has no ORM and no task queue.
-- **Providers:** Codex runs as `codex exec --json`. The prompt is sent on stdin, and only validated, fixed CLI options are passed as arguments.
+- **Backend:** Python, FastAPI, Uvicorn, SQLite and standard-library process and thread management. No ORM and no task queue.
+- **Provider adapters:** one contract for locating, checking, launching and parsing each CLI. The prompt is sent on stdin, and only validated, fixed CLI options are passed as arguments. Lifecycle, admission, supervision and recovery stay in the backend.
+- **Orchestration:** planning, promotion, delegation, allocation, materialization and integration are durable, journaled steps with idempotent identities, rechecked at every admission boundary.
 - **Single process:** run one backend process. Live process registries and the event broker are in memory.
 
 ## Engineering highlights
@@ -79,24 +99,25 @@ These are the problems that took most of the design work. The linked documents e
 
 | Problem | Approach |
 | --- | --- |
-| Agents claiming work they did not do | The adapter accepts control messages only from validated, completed JSONL assistant events. Prose, tool output, stderr and code fences cannot request delegation or acknowledge results. See [delegations](docs/delegations.md). |
+| Agents claiming work they did not do | Control messages are accepted only from validated, completed structured assistant events. Prose, tool output, stderr and code fences cannot request delegation or acknowledge results. See [delegations](docs/delegations.md). |
 | Ownership after crashes and replacements | Work is owned by Task assignments and execution generations. Stale workers cannot write, and uncertain launches are marked `recovery_required` instead of being retried blindly. See [task lifecycle](docs/task-lifecycle.md). |
 | Parallel agents editing the same code | Each Task gets a detached worktree snapshot. Integration checks freshness, stages changes outside the destination, keeps a journal and refuses conflicts. See [workspaces](docs/workspaces.md). |
 | Unbounded multi-agent fan-out | Depth, unfinished-Children and concurrency limits are checked at every admission and launch, together with per-tree round rate limits and non-overlapping responsibility scopes. See [delegations](docs/delegations.md#depth-and-operational-bounds). |
-| Orphaned processes | Each execution runs in a Windows Job Object that kills its whole tree on Stop, shutdown or backend crash, and launch fails closed if supervision cannot be established. See [process supervision](docs/process-supervision.md). |
+| Choosing models without guessing | Auto allocation applies hard eligibility first (policy, entitlement, billing route, usage limits), then evidence-based suitability, and uses usage only as a tie-breaker. The user's current policy is rechecked inside the final admission transaction. See [providers](docs/providers.md#auto-allocation-for-delegated-children). |
+| Orphaned processes | Each execution runs in a Windows Job Object that kills its whole tree on Stop, shutdown or backend crash, and launch fails closed if supervision cannot be established. When an end cannot be proven, the Task stays held, and the inspector offers a recorded human attestation only when fresh diagnostics allow it. See [process supervision](docs/process-supervision.md). |
 | Local API exposed to the browser | Host and Origin checks, a per-process CSRF token and JSON-only bodies block other websites. GET requests have no side effects. See [API security](docs/api-security.md). |
 
 ## Quick start (Windows)
 
-The commands below are PowerShell. Run them in order: each block assumes the directory left by the previous one.
+The backend and the frontend are started separately; there is no installer or one-click launcher yet. The commands below are PowerShell. Run them in order: each block assumes the directory left by the previous one.
 
 ### 1. Prerequisites
 
-- **Windows 10 or 11.** Real-agent launching and process supervision are Windows-only.
+- **Windows 10 or 11.** Agent launching and process supervision are Windows-only for now; on other platforms launches are refused with `Process supervision unavailable`.
 - **Git**, on `PATH`, with `user.name` and `user.email` configured.
 - **Python 3.11 or newer**, available as `python`.
 - **Node.js 22.13+ or 24+**, with npm.
-- **For real agents only:** an OpenAI account that can use Codex. Mock mode needs no account.
+- **For real agents only:** an account that can use the provider CLI you choose. Mock mode needs no account.
 
 Check what you have:
 
@@ -141,9 +162,9 @@ npm ci
 cd ..
 ```
 
-### 6. Install and sign in to your own Codex CLI (real agents only)
+### 6. Install and sign in to a provider CLI (real agents only)
 
-The Control Center uses whatever Codex account is signed in on **your** machine. It contains no credentials and gives no access to anyone else's account. Model usage is billed to, or counted against, your own plan.
+The Control Center uses whatever account is signed in on **your** machine. Model usage is billed to, or counted against, your own plan. For Codex:
 
 ```powershell
 npm install -g @openai/codex
@@ -151,9 +172,11 @@ codex login
 codex login status
 ```
 
-`codex login` opens a browser so you can sign in. The backend launches Codex through npm's global launcher at `%APPDATA%\npm\codex.cmd`, which is where `npm install -g` puts it by default. If you changed npm's global prefix, real agents will report that Codex was not found. The integration was tested with Codex CLI 0.154.0.
+`codex login` opens a browser so you can sign in. The backend launches Codex through npm's global launcher at `%APPDATA%\npm\codex.cmd`, which is where `npm install -g` puts it by default; if you changed npm's global prefix, real agents report that Codex was not found.
 
-No Control Center configuration is required. If your account cannot use the CLI's default model, see the optional [model settings](docs/configuration.md#codex-model-and-reasoning-effort).
+Claude Code (`%USERPROFILE%\.local\bin\claude.exe` or `%APPDATA%\npm\claude.cmd`) and Gemini CLI (`%APPDATA%\npm\gemini.cmd`) are installed and signed in with their own official instructions; the provider panel shows what is missing and links to the documentation. Their supported sign-in routes and billing checks are described in [providers](docs/providers.md).
+
+No Control Center configuration is required. Optional settings are listed in [configuration](docs/configuration.md).
 
 ### 7. Start the backend (window 1)
 
@@ -178,8 +201,6 @@ npm run dev -- --host 127.0.0.1 --port 5173 --strictPort
 ### 9. Open the dashboard
 
 Go to <http://127.0.0.1:5173>.
-
-The two ports do different jobs:
 
 | Port | What runs there | Used for |
 | --- | --- | --- |
@@ -209,9 +230,9 @@ Agents never edit this folder directly. Each Task works in its own snapshot unde
 
 In **New agent**, select your Project and choose **Mock**. Enter any short assignment and start the agent. Mock agents simulate progress and output so you can try Stop, the output view and the hierarchy. They do not run the assignment and use no model.
 
-### 12. Start a real Codex agent
+### 12. Start a real agent
 
-In **New agent**, choose **Codex** and keep the **Read only** sandbox for a first run. Turn **Autonomous mode** off unless you want the agent to be able to create Child agents. It is on by default for new Codex root agents, and autonomous runs can use noticeably more model usage. Enter a request in plain language, for example:
+In **New agent**, choose a ready provider, optionally a model and effort, and keep **Read only** access for a first run. Turn **Autonomous mode** off unless you want the agent to be able to create Child agents: it is on by default for new Codex and Claude Code root agents, and autonomous runs can use noticeably more model usage. Enter a request in plain language, for example:
 
 ```text
 Summarize what this repository contains and suggest one small improvement.
@@ -233,18 +254,27 @@ Clear any you did not intend to keep, for example `Remove-Item Env:CONTROL_CENTE
 
 ## Configuration
 
-Everything has a working default, and environment variables are read by the backend at startup. You can relocate the database or the workspace root, override the Codex model and reasoning effort, and tighten delegation limits. All settings are listed in [configuration and troubleshooting](docs/configuration.md).
+Everything has a working default, and environment variables are read by the backend at startup. You can relocate the database or the workspace root, set Codex defaults, adjust the model-catalog cache and tighten delegation limits. All settings are listed in [configuration and troubleshooting](docs/configuration.md) and [providers](docs/providers.md).
 
-## Security and limitations
+## Current limitations
 
-- **Local and single-user.** The backend has no user authentication. Its [local API guards](docs/api-security.md) block other websites, but any program running as your Windows user can call it. Do not expose it to a network.
-- **Windows only for real agents.** Codex launching and Job Object supervision are implemented and tested on Windows. Other operating systems are not a supported target.
-- **One real provider.** Codex is the only real provider. Support for additional providers is planned, not implemented.
-- **Model usage costs.** Real agents use your Codex plan, and autonomous runs can start several agents and several continuations. The Control Center has no token or spending budget. Usage depends on your provider plan and cannot be predicted in advance.
-- **Sandboxes and workspaces are boundaries, not guarantees.** Codex's sandbox modes are enforced by the Codex CLI. Task worktrees share repository history, and snapshots exclude common secret and build paths by filename, but this is not a secret scanner. Symlinks and submodules are not supported in Task snapshots.
+- **Under active development.** Real-provider end-to-end validation is not complete: Claude Code and Gemini CLI, multi-provider hierarchies and Auto allocation have been exercised with fake CLIs and isolated databases, not with authenticated accounts.
+- **Gemini model selection.** Gemini CLI documents no way to disable its model fallback and does not report which model produced a response, so selecting a specific Gemini model is refused; only Auto routing or its default model run.
+- **Local and single-user.** The backend has no user authentication. Its [local API guards](docs/api-security.md) block other websites, but any program running as your Windows user can call it. Do not expose it to a network. Production security and deployment have not been validated.
+- **Windows only for real agents.** Launching and Job Object supervision are implemented and tested on Windows. Other operating systems are not a supported target.
+- **Model usage costs.** Real agents use your provider plan, and autonomous runs can start several agents and continuations. The Control Center has no token or spending budget, never estimates usage, and resumes after a usage limit only when you choose Resume. Billing checks reduce, but cannot eliminate, the risk of provider charges.
+- **Ordinary delegation.** Ordinary (non-Hybrid) delegations have no review or acknowledgement protocol for their results; the reviewed path is autonomous orchestration with promotion and Hybrid continuation. See [delegations](docs/delegations.md).
+- **Sandboxes and workspaces are boundaries, not guarantees.** Provider permission modes are enforced by each CLI. Task worktrees share repository history, and snapshots exclude common secret and build paths by filename, but this is not a secret scanner. Symlinks and submodules are not supported in Task snapshots.
 - **Private runtime data.** Prompts, agent output and workspace paths are stored in `data/control_center.sqlite3` and the task-workspace folder. Both are excluded from Git. Do not publish them.
-- **Tested, not guaranteed.** The automated suites use mocks, process shims and real temporary Git repositories. The live autonomous run is a recorded verification, not proof that every provider response will follow the protocol. Agent status does not prove that an agent's work is correct, so review results before relying on them.
-- **Limited UI.** Many controls exist only as API endpoints, including Task lifecycle, resources, work intents and integration. The UI has no separate Project or Task management screens.
+- **Tested, not guaranteed.** The automated suites use mocks, fake provider CLIs, process shims and real temporary Git repositories. Agent status does not prove that an agent's work is correct, so review results before relying on them.
+- **UI coverage.** Some controls exist only as API endpoints, including Task lifecycle, resources, work intents and integration. The UI has no separate Project or Task management screens.
+
+## Roadmap
+
+- **Provider onboarding (Stage 2G):** guided installation, sign-in and connection management for each provider.
+- **Real-provider integration testing:** authenticated end-to-end runs with Claude Code and Gemini CLI, and mixed-provider hierarchies.
+- **User experience redesign and production readiness (Stage 2J):** a substantial redesign of the interface and workflows, not only visual polish.
+- **Convenient launch and presentation (Stage 2K):** a simpler way to start the application on the desktop (the packaging approach is not decided yet) and a project demonstration video.
 
 ## Development
 
@@ -261,7 +291,7 @@ cd ..
 git diff --check
 ```
 
-The full backend suite takes about 20 minutes on Windows. It uses temporary databases and repositories and never starts real Codex. For backend development you can add `--reload` to the Uvicorn command. Do not use it while agents are running, because a reload restarts the backend and stops them.
+The full backend suite takes about 30 minutes on Windows. It uses temporary databases, repositories and fake provider CLIs and never starts a real provider. For backend development you can add `--reload` to the Uvicorn command. Do not use it while agents are running, because a reload restarts the backend and stops them.
 
 [AGENTS.md](AGENTS.md) holds the repository rules that coding agents follow when working on this project.
 
@@ -272,14 +302,16 @@ The full backend suite takes about 20 minutes on Windows. It uses temporary data
 | [Configuration and troubleshooting](docs/configuration.md) | Environment variables, state locations, delegation limits and common problems |
 | [Dashboard](docs/dashboard.md) | Autonomous creation, the managed execution policy, the hierarchy explorer and verification |
 | [Planning and promotion](docs/planning.md) | Orchestration decisions, proposals and promotion to Child Tasks |
+| [Providers](docs/providers.md) | Provider adapters, readiness, billing and usage policy, the model catalog, per-agent model and effort, Auto allocation and mixed hierarchies |
 | [Delegations](docs/delegations.md) | Request protocol, Child materialization, result delivery, recursion and limits |
 | [Task lifecycle](docs/task-lifecycle.md) | Task identity, assignments, controls, dependencies and recovery |
+| [Agent removal](docs/agent-removal.md) | Removing an Agent or a whole branch while preserving Tasks, and transferring responsibility |
 | [Workspaces and integration](docs/workspaces.md) | Projects, worktree snapshots, freshness and conflict-aware integration |
 | [Resource coordination](docs/resource-coordination.md) | Resource claims, fairness, deadlocks and work intents |
-| [Process supervision](docs/process-supervision.md) | Windows Job Object containment and Stop semantics |
+| [Process supervision](docs/process-supervision.md) | Windows Job Object containment, Stop semantics, restart recovery, diagnostics and human attestation |
 | [Local API security](docs/api-security.md) | Host and Origin checks, CSRF token and scripting the API |
 | [Project history](docs/history/stage1-handoff.md) | The Stage 1 technical checkpoint and earlier design decisions |
 
 ## License
 
-Released under the [MIT License](LICENSE). The software is provided as is, without warranty. Using real agents also falls under your own Codex and OpenAI terms.
+Released under the [MIT License](LICENSE). The software is provided as is, without warranty. Using real agents also falls under the terms of the provider you use.

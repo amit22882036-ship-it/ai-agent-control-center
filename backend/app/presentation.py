@@ -4,14 +4,19 @@ Queries share a SQLite snapshot. Explicit columns intentionally exclude paths,
 provider messages, result output, protocol payloads and arbitrary error strings.
 """
 
+from . import providers
+
 CAPABILITIES = ('planning_enabled', 'delegation_protocol_enabled',
                 'child_materialization_enabled', 'hybrid_delegation_enabled',
                 'recursive_delegation_enabled')
 
 
-def waiting_context(status, question, task_status, blockers, phase, current, pending=None):
+def waiting_context(status, question, task_status, blockers, phase, current, pending=None, provider_condition=None):
     if not current:
         return None
+    if 'process_ownership_unknown' in blockers:
+        # Not a lost watcher: the end of its process tree is not established.
+        return {'kind': 'recovery', 'label': 'Process end unconfirmed'}
     if task_status == 'paused':
         return {'kind': 'control', 'label': 'Task paused'}
     if phase == 'recovery_required' or any('recovery' in code for code in blockers):
@@ -30,6 +35,9 @@ def waiting_context(status, question, task_status, blockers, phase, current, pen
         return {'kind': 'delegation', 'label': 'Waiting for delegated results'}
     if status == 'waiting' and question:
         return {'kind': 'user', 'label': 'Waiting for you'}
+    if status == 'waiting' and provider_condition:
+        # Stage 2F: a provider limit, sign-in or availability wait (closed enum).
+        return {'kind': 'provider', 'label': provider_condition['label'], 'condition': provider_condition['kind']}
     if status == 'waiting' or task_status in ('waiting', 'blocked'):
         return {'kind': 'unknown', 'label': 'Waiting'}
     return None
@@ -37,10 +45,10 @@ def waiting_context(status, question, task_status, blockers, phase, current, pen
 
 AGENT_QUERY = '''WITH latest_assignment AS (SELECT agent_id,MAX(rowid) AS latest FROM task_assignments GROUP BY agent_id)
     SELECT g.creation_order,g.agent_id,g.parent_id,g.status,g.task,
-    g.display_name,g.display_color,g.agent_type,g.sandbox,g.waiting_question,
+    g.display_name,g.display_color,g.agent_type,g.model,g.provider_condition,g.sandbox,g.waiting_question,
     g.planning_enabled,g.delegation_protocol_enabled,g.child_materialization_enabled,
     g.hybrid_delegation_enabled,g.recursive_delegation_enabled,
-    a.assignment_id,a.ended_at,t.task_id,t.status AS task_status,t.project_id,
+    a.assignment_id,a.ended_at,a.ended_reason,t.task_id,t.status AS task_status,t.project_id,
     c.phase AS continuation_phase,
     (SELECT COUNT(*) FROM delegations d WHERE d.parent_task_id=t.task_id AND d.status IN ('requested','materialized','result_ready')) AS pending_responsibilities,
     (SELECT MAX(revision) FROM planning_revisions p WHERE p.task_id=t.task_id) AS plan_revision
@@ -58,15 +66,32 @@ def _nodes(db, rows):
         for row in db.execute('SELECT task_id,reason_code FROM task_blockers WHERE active=1 AND task_id IN ('
                               + ','.join('?' for _ in keys) + ')', keys):
             blockers.setdefault(row['task_id'], []).append(row['reason_code'])
+    from . import agent_removal
+    removals = agent_removal.agent_states(db, [r['agent_id'] for r in rows])
     result = []
     for row in rows:
         node = {key: row[key] for key in ('agent_id', 'parent_id', 'status', 'task', 'display_name',
-                'display_color', 'agent_type', 'sandbox', 'waiting_question', 'task_id', 'task_status', 'plan_revision')}
+                'display_color', 'agent_type', 'model', 'sandbox', 'waiting_question', 'task_id', 'task_status', 'plan_revision')}
+        node['provider_condition'] = providers.condition_view(row['provider_condition'])
         current = row['assignment_id'] is not None and row['ended_at'] is None
         node['historical_assignment'] = bool(row['assignment_id'] and not current)
         node['autonomous'] = all(row[key] for key in CAPABILITIES)
         node['waiting_context'] = waiting_context(row['status'], row['waiting_question'], row['task_status'],
-            blockers.get(row['task_id'], []), row['continuation_phase'], current, row['pending_responsibilities'])
+            blockers.get(row['task_id'], []), row['continuation_phase'], current, row['pending_responsibilities'],
+            node['provider_condition'])
+        removal = removals.get(row['agent_id'])
+        node['removal'] = removal
+        node['removed'] = bool(removal and removal['state'] == 'removed')
+        # The Agent's last Task waits for an explicit new owner (Stage 2D.2).
+        node['responsibility_awaiting'] = bool(node['removed'] and row['task_id'] and row['ended_reason'] == 'removed'
+                                               and row['task_status'] not in ('completed', 'canceled') and not db.execute(
+                                                   'SELECT 1 FROM task_assignments WHERE task_id=? AND ended_at IS NULL',
+                                                   (row['task_id'],)).fetchone())
+        if removal and removal['state'] != 'removed':
+            node['waiting_context'] = ({'kind': 'recovery', 'label': 'Removal blocked'} if removal['state'] == 'blocked'
+                                       else {'kind': 'removal', 'label': 'Removal in progress'})
+        elif node['removed']:
+            node['waiting_context'] = {'kind': 'removed', 'label': 'Removed'}
         result.append(node)
     return result
 

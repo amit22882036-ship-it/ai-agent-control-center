@@ -6,10 +6,12 @@ from unittest.mock import patch
 from app.persistence import AgentStore
 from app import presentation, main
 from test_product_workspace import TestClient
+from execution_test_support import use_attested_test_doubles
 
 
 class HierarchyProjectionTests(unittest.TestCase):
     def setUp(self):
+        use_attested_test_doubles(self)  # explicit test-only evidence for test doubles
         folder = tempfile.TemporaryDirectory()
         self.addCleanup(folder.cleanup)
         self.store = AgentStore(Path(folder.name) / 'fixture.sqlite3')
@@ -31,7 +33,7 @@ class HierarchyProjectionTests(unittest.TestCase):
             self.assertFalse(snapshot['incomplete_ancestry'])
         with self.store._connection() as db:
             self.assertEqual(before, list(db.iterdump()))
-            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 26)
+            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 36)
 
     def test_missing_agent_is_404_and_orphan_is_explicit(self):
         self.seed([('orphan', 'missing'), ('single', None)])

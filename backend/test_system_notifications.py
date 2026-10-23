@@ -12,6 +12,7 @@ from app import agent_manager as manager
 from app import system_notifications as native
 from app.main import NotificationPreference, notification_heartbeat, set_notification_preference
 import test_redirect
+from execution_test_support import use_attested_test_doubles
 
 
 class FakeTimer:
@@ -29,6 +30,7 @@ class FakeTimer:
 
 class NotificationTests(unittest.TestCase):
     def setUp(self):
+        use_attested_test_doubles(self)  # explicit test-only evidence for test doubles
         self.now = 100.0
         self.deliver = Mock()
         self.service = native.SystemNotifications(

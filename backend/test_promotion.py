@@ -10,11 +10,12 @@ from dataclasses import replace
 from unittest.mock import patch
 from uuid import uuid4
 
-from app import agent_manager as manager, promotion, planning, delegation_materialization, delegation_orchestration
+from app import agent_manager as manager, promotion, planning, delegation_materialization, delegation_orchestration, providers
 from app.persistence import AgentStore
 import test_delegation_protocol as baseline
 import test_planning as plans
 import test_delegation_hybrid as hybrid
+from execution_test_support import use_attested_test_doubles
 
 
 def selection(key='a', **changes):
@@ -28,6 +29,7 @@ class PromotionTests(unittest.TestCase):
     finish = baseline.RuntimeTests.finish
 
     def setUp(self):
+        use_attested_test_doubles(self)  # explicit test-only evidence for test doubles
         baseline.RuntimeTests.setUp(self)
         self.patch(patch.object(manager, '_schedule_materialization'))
         self.patch(patch.object(manager, '_schedule_hybrid_for_agent'))
@@ -79,6 +81,26 @@ class PromotionTests(unittest.TestCase):
         self.assertEqual(self.store.get_task(self.task['task_id'])['status'], 'blocked')
         self.assertEqual(self.store.get_active_assignment_for_agent(key)['assignment_id'], process._control_center_execution.origin.assignment_id)
         self.assertEqual(len(self.commands), 1)
+
+    def test_requested_child_provider_is_recorded_and_never_substituted(self):
+        # Stage 2F: Claude Code is disabled by default, so the request is blocked, not replaced.
+        self.accepted(items=[selection(provider='claude', model='sonnet')])
+        row, = self.rows()
+        self.assertEqual(row['disposition'], 'blocked')
+        self.assertIn('No other provider is substituted', row['reason'])
+        with self.store._connection() as db:
+            record = db.execute('SELECT child_provider,child_model,child_task_id FROM delegations').fetchone()
+        self.assertEqual((record['child_provider'], record['child_model'], record['child_task_id']), ('claude', 'sonnet', None))
+
+    def test_requested_enabled_child_provider_is_admitted(self):
+        with self.store._connection() as db:
+            db.execute('BEGIN IMMEDIATE')
+            providers.update_settings(db, 'gemini', enabled=True, billing_confirmed=True)
+        self.accepted(items=[selection(provider='gemini')])
+        row, = self.rows()
+        self.assertEqual(row['disposition'], 'ready')
+        with self.store._connection() as db:
+            self.assertEqual(db.execute('SELECT child_provider FROM delegations').fetchone()[0], 'gemini')
 
     def test_persisted_plan_and_exact_retry(self):
         _, process = self.active()
@@ -303,7 +325,7 @@ class PromotionTests(unittest.TestCase):
             self.assertFalse(db.execute("SELECT 1 FROM sqlite_master WHERE name='promotion_items'").fetchone())
         AgentStore(self.store.path)
         with self.store._connection() as db:
-            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 26)
+            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 36)
             self.assertIsNone(db.execute('PRAGMA foreign_key_check').fetchone())
 
     def workspace_fixture(self):

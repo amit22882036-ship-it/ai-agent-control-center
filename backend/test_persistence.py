@@ -17,12 +17,17 @@ from app.persistence import AgentStore
 import test_similar_decisions
 
 
+from execution_test_support import rebooted
+from execution_test_support import use_attested_test_doubles
+
+
 class PersistenceTests(unittest.TestCase):
     replacement = test_similar_decisions.SimilarDecisionTests.replacement
     make_launcher = test_similar_decisions.SimilarDecisionTests.make_launcher
     wait_until_waiting = test_similar_decisions.SimilarDecisionTests.wait_until_waiting
 
     def setUp(self):
+        use_attested_test_doubles(self)  # explicit test-only evidence for test doubles
         self.temp = tempfile.TemporaryDirectory()
         self.path = Path(self.temp.name) / 'data' / 'test.sqlite3'
         self.assertIsNone(manager._store)
@@ -87,9 +92,14 @@ class PersistenceTests(unittest.TestCase):
     def test_schema_override_and_safe_round_trip(self):
         self.assertTrue(self.path.is_file())
         with closing(sqlite3.connect(self.path)) as db, db:
-            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 26)
+            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 36)
             self.assertEqual({row[0] for row in db.execute("SELECT name FROM sqlite_master WHERE type='table'")},
-                             {'agents', 'output', 'agent_name_history', 'sqlite_sequence', 'tasks', 'task_assignments', 'projects', 'task_workspaces', 'agent_source_context', 'integrations', 'task_dependencies', 'task_blockers', 'task_replan_reasons', 'task_control_operations', 'task_control_members', 'resource_claims', 'resource_waits', 'resource_deadlocks', 'resource_deadlock_members', 'resource_ownership', 'work_intents', 'delegations', 'delegation_materializations', 'delegation_continuations', 'delegation_results', 'delegation_deliveries', 'delegation_rounds', 'delegation_round_requests', 'planning_revisions', 'promotion_decisions', 'promotion_items', 'replan_decisions', 'replan_transitions', 'replan_signals'})
+                             {'agents', 'output', 'agent_name_history', 'sqlite_sequence', 'tasks', 'task_assignments', 'projects', 'task_workspaces', 'agent_source_context', 'integrations', 'task_dependencies', 'task_blockers', 'task_replan_reasons', 'task_control_operations', 'task_control_members', 'resource_claims', 'resource_waits', 'resource_deadlocks', 'resource_deadlock_members', 'resource_ownership', 'work_intents', 'delegations', 'delegation_materializations', 'delegation_continuations', 'delegation_results', 'delegation_deliveries', 'delegation_rounds', 'delegation_round_requests', 'planning_revisions', 'promotion_decisions', 'promotion_items', 'replan_decisions', 'replan_transitions', 'replan_signals', 'agent_removals', 'agent_removal_members', 'controller_instances', 'executions', 'execution_diagnostics', 'execution_attestations', 'responsibility_transfers',
+                              'provider_settings', 'provider_usage_blocks', 'agent_provider_changes',
+                              'provider_usage_windows', 'agent_resume_requests',
+                              'model_catalog', 'model_catalog_refreshes', 'model_denials',
+                              'auto_allocation_policies', 'allocation_decisions',
+                              'auto_allocation_policy_revisions'})
         with patch.dict(os.environ, {'CONTROL_CENTER_DB_PATH': str(self.path)}):
             self.assertEqual(AgentStore().path, self.path)
         text = "quotes '\"; DROP TABLE agents; --\nUnicode שלום 🐍"
@@ -157,7 +167,8 @@ class PersistenceTests(unittest.TestCase):
         self.output(child, f'session id: {child}\nCONTROL_CENTER_WAITING: Question\n', True)
         self.output(grandchild, 'Done\n', True)
         self.output(unrelated, 'CONTROL_CENTER_WAITING: Other question\n', True)
-        self.recover()
+        with rebooted():  # This test is about hierarchy: the running root's process ended with Windows.
+            self.recover()
         self.assertEqual([item['agent_id'] for item in manager.get_agents()], [root, child, grandchild, unrelated])
         self.assertEqual(manager.get_agent(root)['child_ids'], [child])
         self.assertEqual(manager.get_agent(child)['child_ids'], [grandchild])
@@ -306,9 +317,12 @@ class PersistenceTests(unittest.TestCase):
             with self.assertRaises(BrokenPipeError):
                 manager.decide_always_agent(key)
         self.assertIsNone(manager.agents[key])
-        self.assertEqual(manager.get_agent(key), before)
+        # The failed attempt stays in the durable execution history (Stage 2F
+        # latest_execution reports it); the Agent's own state is rolled back.
+        without_execution = lambda view: {k: v for k, v in view.items() if k != 'latest_execution'}
+        self.assertEqual(without_execution(manager.get_agent(key)), without_execution(before))
         self.recover()
-        self.assertEqual(manager.get_agent(key), before)
+        self.assertEqual(without_execution(manager.get_agent(key)), without_execution(before))
 
     def test_redirect_marker_and_processless_stop_statuses_persist(self):
         key, _ = self.create()
@@ -380,7 +394,7 @@ class PersistenceTests(unittest.TestCase):
             self.wait_until_waiting(child)
             after = manager.get_agent(child)
             payload = [json.loads(line) for line in after['output'] if line.startswith('{')][-1]
-            self.assertEqual(payload['args'], ['exec', '--sandbox', 'workspace-write', '--color', 'never',
+            self.assertEqual(payload['args'], ['exec', '-c', 'model_provider=openai', '--sandbox', 'workspace-write', '--color', 'never',
                                               '--skip-git-repo-check', 'resume', session, '-'])
             self.assertEqual(payload['prompt'], manager._codex_prompt(answer))
             self.assertEqual(Path(payload['cwd']), manager._resume_cwd(child))

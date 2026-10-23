@@ -12,10 +12,13 @@ from uuid import uuid4
 from app import agent_manager as manager, resources, dependencies, resource_probes
 from app.persistence import AgentStore
 import test_dependencies
+from execution_test_support import rebooted
+from execution_test_support import use_attested_test_doubles
 
 
 class ResourceTests(unittest.TestCase):
     def setUp(self):
+        use_attested_test_doubles(self)  # explicit test-only evidence for test doubles
         test_dependencies.DependencyTests.setUp(self)
         # Managed-coordination unit fixtures use symbolic developer ports.
         # Real ephemeral-socket behavior is covered by test_resource_probes.
@@ -370,7 +373,8 @@ class ResourceTests(unittest.TestCase):
         key, _ = self.create(kind='mock')
         stale = self.claim(self.task_for(key), '8003', lifetime='worker')
         with patch.object(manager, '_spawn_process') as spawn:
-            self.recover()
+            with rebooted():  # Controlled evidence: the worker processes ended with Windows.
+                self.recover()
             spawn.assert_not_called()
         self.assertEqual(self.current(active)['status'], 'active')
         self.assertEqual(self.current(waiting)['status'], 'suspended')
@@ -670,7 +674,7 @@ class ResourceTests(unittest.TestCase):
         self.assertEqual(AgentStore(self.path).list_tasks(), store.list_tasks())
         self.assertEqual(store.load_agents()[0]['session_id'], key)
         with store._connection() as db:
-            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 26)
+            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 36)
             self.assertEqual(db.execute('PRAGMA foreign_key_check').fetchall(), [])
             self.assertEqual(db.execute('SELECT COUNT(*) FROM resource_claims').fetchone()[0], 0)
 

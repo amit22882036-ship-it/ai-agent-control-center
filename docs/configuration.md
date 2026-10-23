@@ -9,7 +9,7 @@ The Control Center needs no configuration for normal use. The backend reads envi
 | `CONTROL_CENTER_DB_PATH` | `data\control_center.sqlite3` in the repository | SQLite database with all Agents, Tasks, plans, delegations and output history |
 | `CONTROL_CENTER_WORKSPACE_ROOT` | `%LOCALAPPDATA%\AI Agent Control Center\task-workspaces` | Parent folder for per-Task Git worktrees. It must not overlap a registered Project. |
 | `CONTROL_CENTER_ALLOWED_ORIGINS` | `http://127.0.0.1:5173`, `http://localhost:5173`, and the backend's own origins on port 8000 | Comma-separated browser origins that may call the API. See [API security](api-security.md). |
-| `CONTROL_CENTER_CODEX_MODEL` | Codex CLI default | Model passed to Codex for new executions and session resumes |
+| `CONTROL_CENTER_CODEX_MODEL` | Codex CLI default | Model passed to Codex for new executions and session resumes when the Agent has no model selected (a per-Agent model takes precedence) |
 | `CONTROL_CENTER_CODEX_REASONING_EFFORT` | Codex CLI default | One of `none`, `minimal`, `low`, `medium`, `high`, `xhigh` |
 | `CONTROL_CENTER_DELEGATION_DEPTH` | `4` | Maximum number of Parent-to-Child levels below a root Task |
 | `CONTROL_CENTER_DELEGATION_CHILDREN_PER_PARENT` | `16` | Maximum **unfinished** direct Children of one Parent |
@@ -100,3 +100,7 @@ Check that the Project is still a valid Git repository with a commit. On Windows
 ### State-changing API calls from scripts return 403
 
 Every `POST`, `PUT`, `PATCH` and `DELETE` needs the CSRF header. See [scripting the API](api-security.md).
+
+## Providers
+
+Provider enablement, billing confirmations, model catalogs and usage blocks are stored in the database (`provider_settings`, `provider_usage_blocks`) and changed in the dashboard's provider panel or through the [provider API](providers.md#api), not through environment variables. Mock and Codex are enabled by default; Claude Code and Gemini CLI stay disabled until you enable them and confirm their billing route. Environment variables that would switch a provider to pay-per-use billing (for example `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, `CODEX_API_KEY`) are removed from that provider's environment. See [providers](providers.md).

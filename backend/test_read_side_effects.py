@@ -18,6 +18,7 @@ import test_persistence
 import test_similar_decisions
 import test_task_lifecycle
 from test_api_security import GET_ROUTES, call, headers
+from execution_test_support import use_attested_test_doubles
 
 LAUNCHERS = ('_spawn_process', '_resume_agent', '_schedule_materialization', '_schedule_hybrid_for_agent',
              '_wake_delegation_siblings', 'start_agent', 'materialize_delegations', 'advance_delegations',
@@ -140,7 +141,8 @@ class ReadSideEffectTests(unittest.TestCase):
             launched = self.no_launch(stack)
             for route in sorted(GET_ROUTES - {'/events'}):
                 path = route
-                for name in ('agent_id', 'task_id', 'project_id', 'integration_id', 'deadlock_id', 'delegation_id'):
+                for name in ('agent_id', 'task_id', 'project_id', 'integration_id', 'deadlock_id', 'delegation_id', 'removal_id',
+                             'execution_id'):
                     path = path.replace('{' + name + '}', values.get(name, 'missing'))
                 with self.subTest(route=route):
                     status, _, _ = call('GET', path, headers(token=None))
@@ -203,6 +205,7 @@ class RealWatcherTests(unittest.TestCase):
     fake_agent = test_similar_decisions.SimilarDecisionTests.fake_agent
 
     def setUp(self):
+        use_attested_test_doubles(self)  # explicit test-only evidence for test doubles
         from workspace_test_support import process_test_setup
         process_test_setup(self)
         # Fakes have no OS process: never let a stop reach taskkill.
@@ -402,7 +405,8 @@ class ReadAuditTests(unittest.TestCase):
                 values['agent_id'] = agent_id
                 for route in sorted(GET_ROUTES - {'/events'}):
                     path = route
-                    for name in ('agent_id', 'task_id', 'project_id', 'integration_id', 'deadlock_id', 'delegation_id'):
+                    for name in ('agent_id', 'task_id', 'project_id', 'integration_id', 'deadlock_id', 'delegation_id', 'removal_id',
+                             'execution_id'):
                         path = path.replace('{' + name + '}', values.get(name, 'missing'))
                     with self.subTest(route=route, agent=agent_id):
                         status, _, _ = call('GET', path, headers(token=None))

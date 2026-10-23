@@ -3,7 +3,7 @@ import json
 from dataclasses import dataclass
 
 from . import delegation_protocol, delegations, dependencies, work_control, runtime_resources
-from . import delegation_continuation, delegation_orchestration, delegation_rounds, delegation_safety
+from . import delegation_continuation, delegation_orchestration, delegation_rounds, delegation_safety, delegation_v3
 
 
 @dataclass(frozen=True)
@@ -31,11 +31,17 @@ def accept(db, origin, message, *, session_id, message_id):
     except (ValueError, RecursionError) as exc:
         raise ValueError('Malformed delegation JSON') from exc
     extension = payload.get('protocol') == delegation_continuation.PROTOCOL if isinstance(payload, dict) else False
+    allocating = payload.get('protocol') == delegation_v3.PROTOCOL if isinstance(payload, dict) else False
     if extension:
         payload = delegation_continuation.validate(message)
         if payload['action'] != 'request_delegations':
             raise ValueError('Expected a delegation request')
         requests = payload['requests']
+    elif allocating:
+        # v3: v1 requests with an optional Child allocation and v2's continuation.
+        payload = delegation_v3.validate(message)
+        requests = payload['requests']
+        extension = payload['continuation'] is not None
     else:
         requests = delegation_protocol.validate(message)
     task = dependencies.task(db, origin.parent_task_id)
@@ -55,6 +61,8 @@ def accept(db, origin, message, *, session_id, message_id):
     # revive canceled work, launch a process, or replace another generation.
     receipt = json.loads(task['orchestration_handoff']) if task['orchestration_handoff'] else None
     plan = payload['continuation'] if extension else None
+    if allocating and not agent['delegation_protocol_enabled']:
+        raise ValueError('Delegation protocol is not enabled')
     history = delegation_rounds.history(db, origin.parent_task_id)
     for previous in history:
         accepted = previous['receipt']
@@ -62,6 +70,10 @@ def accept(db, origin, message, *, session_id, message_id):
             if accepted['requests'] != requests or accepted.get('continuation') != plan:
                 raise ValueError('Conflicting replay of accepted delegation message')
             return accepted
+    from . import agent_removal
+    # Exact replays above are read-only receipts; anything new after removal
+    # admission is refused inside this same transaction.
+    agent_removal.require_operational(db, origin.agent_id)
     if receipt:
         if not agent['hybrid_delegation_enabled']:
             raise ValueError('Parent already handed control to orchestration')
@@ -88,7 +100,7 @@ def accept(db, origin, message, *, session_id, message_id):
             return accepted
     records = [delegations.create(db, origin.parent_task_id, project_id=origin.project_id,
                requested_by_agent_id=origin.agent_id, requested_by_assignment_id=origin.assignment_id,
-               **request) for request in requests]
+               **request) for request in requests]  # A v3 allocation is part of each request's identity.
     if receipt and all(db.execute('SELECT 1 FROM delegation_round_requests WHERE delegation_id=?',
                                   (r['delegation_id'],)).fetchone() for r in records):
         raise ValueError('A new round must include a fresh request key; accepted work cannot be reissued as new work')
@@ -98,6 +110,8 @@ def accept(db, origin, message, *, session_id, message_id):
                    delegation_ids=[r['delegation_id'] for r in records])
     if extension:
         receipt['continuation'] = payload['continuation']
+    if allocating:
+        receipt['protocol'] = delegation_v3.PROTOCOL
     batch_id = delegation_rounds.record(db, task['task_id'], receipt)
     if agent['hybrid_delegation_enabled']:
         delegation_orchestration.initialize(db, task, receipt, plan, batch_id)

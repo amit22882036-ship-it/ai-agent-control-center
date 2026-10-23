@@ -12,7 +12,11 @@ from .agent_names import default_display_name, validate_display_color
 from .output_history import OUTPUT_PAGE_SIZE, OUTPUT_MAX_LIMIT
 from .project_domain import DEFAULT_ROOT, canonical_path, contains, project_name
 from . import delegation_orchestration, delegation_rounds, delegation_safety
-from . import planning, promotion, replanning
+from . import planning, promotion, replanning, agent_removal, executions, execution_attestation, responsibility, providers, model_catalog, allocation
+
+
+class ControllerConflict(RuntimeError):
+    """A live (or unverifiable) controller already owns this database."""
 
 
 class AgentStore:
@@ -23,9 +27,11 @@ class AgentStore:
         self._lock = RLock()
         with self._connection() as db:
             version = db.execute('PRAGMA user_version').fetchone()[0]
-            if version not in range(27):
+            if version not in range(37):
                 raise RuntimeError(f'Unsupported control-center database schema version: {version}')
-            if version < 18:
+            if version < 27:
+                # Table rebuilds (v11, v12, v27) need enforcement off on this
+                # migration connection only; each step runs foreign_key_check.
                 db.execute('PRAGMA foreign_keys = OFF')
             if version == 0:
                 if db.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchone():
@@ -255,6 +261,115 @@ class AgentStore:
                     if db.execute('PRAGMA foreign_key_check').fetchone():
                         raise sqlite3.IntegrityError('Invalid replanning migration references')
                     db.execute('PRAGMA user_version = 26')
+                    version = 26
+                if version == 26:
+                    if not db.in_transaction:
+                        db.execute('BEGIN IMMEDIATE')
+                    agent_removal.migrate(db)
+                    if db.execute('PRAGMA foreign_key_check').fetchone():
+                        raise sqlite3.IntegrityError('Invalid agent removal migration references')
+                    db.execute('PRAGMA user_version = 27')
+                    version = 27
+                if version == 27:
+                    if not db.in_transaction:
+                        db.execute('BEGIN IMMEDIATE')
+                    executions.migrate(db)
+                    if db.execute('PRAGMA foreign_key_check').fetchone():
+                        raise sqlite3.IntegrityError('Invalid execution journal migration references')
+                    db.execute('PRAGMA user_version = 28')
+                    version = 28
+                if version == 28:
+                    if not db.in_transaction:
+                        db.execute('BEGIN IMMEDIATE')
+                    execution_attestation.migrate(db)
+                    if db.execute('PRAGMA foreign_key_check').fetchone():
+                        raise sqlite3.IntegrityError('Invalid execution attestation migration references')
+                    db.execute('PRAGMA user_version = 29')
+                    version = 29
+                if version == 29:
+                    if not db.in_transaction:
+                        db.execute('BEGIN IMMEDIATE')
+                    responsibility.migrate(db)
+                    if db.execute('PRAGMA foreign_key_check').fetchone():
+                        raise sqlite3.IntegrityError('Invalid responsibility transfer migration references')
+                    db.execute('PRAGMA user_version = 30')
+                    version = 30
+                if version == 30:
+                    if not db.in_transaction:
+                        db.execute('BEGIN IMMEDIATE')
+                    providers.migrate(db)
+                    if db.execute('PRAGMA foreign_key_check').fetchone():
+                        raise sqlite3.IntegrityError('Invalid provider migration references')
+                    db.execute('PRAGMA user_version = 31')
+                    version = 31
+                if version == 31:
+                    if not db.in_transaction:
+                        db.execute('BEGIN IMMEDIATE')
+                    providers.migrate_v32(db)
+                    if db.execute('PRAGMA foreign_key_check').fetchone():
+                        raise sqlite3.IntegrityError('Invalid provider usage migration references')
+                    db.execute('PRAGMA user_version = 32')
+                    version = 32
+                if version == 32:
+                    if not db.in_transaction:
+                        db.execute('BEGIN IMMEDIATE')
+                    model_catalog.migrate_v33(db)
+                    if db.execute('PRAGMA foreign_key_check').fetchone():
+                        raise sqlite3.IntegrityError('Invalid model catalog migration references')
+                    db.execute('PRAGMA user_version = 33')
+                    version = 33
+                if version == 33:
+                    if not db.in_transaction:
+                        db.execute('BEGIN IMMEDIATE')
+                    allocation.migrate_v34(db)
+                    if db.execute('PRAGMA foreign_key_check').fetchone():
+                        raise sqlite3.IntegrityError('Invalid allocation migration references')
+                    db.execute('PRAGMA user_version = 34')
+                    version = 34
+                if version == 34:
+                    if not db.in_transaction:
+                        db.execute('BEGIN IMMEDIATE')
+                    allocation.migrate_v35(db)
+                    if db.execute('PRAGMA foreign_key_check').fetchone():
+                        raise sqlite3.IntegrityError('Invalid ordinary allocation migration references')
+                    db.execute('PRAGMA user_version = 35')
+                    version = 35
+                if version == 35:
+                    if not db.in_transaction:
+                        db.execute('BEGIN IMMEDIATE')
+                    allocation.migrate_v36(db)
+                    if db.execute('PRAGMA foreign_key_check').fetchone():
+                        raise sqlite3.IntegrityError('Invalid policy revision migration references')
+                    db.execute('PRAGMA user_version = 36')
+                db.execute('SELECT revision FROM auto_allocation_policies LIMIT 0')
+                db.execute('SELECT revision,task_id,action FROM auto_allocation_policy_revisions LIMIT 0')
+                db.execute('SELECT allocation_request FROM delegations LIMIT 0')
+                db.execute('SELECT origin FROM allocation_decisions LIMIT 0')
+                db.execute('SELECT task_id,enabled,providers,models,preferences,profile FROM auto_allocation_policies LIMIT 0')
+                db.execute('SELECT decision_id,delegation_id,status,provider,model,effort,explanation FROM allocation_decisions LIMIT 0')
+                db.execute('SELECT child_effort FROM delegations LIMIT 0')
+                db.execute('SELECT effort,session_config FROM agents LIMIT 0')
+                db.execute('SELECT requested_effort,effective_model,config_source,entitlement_state FROM executions LIMIT 0')
+                db.execute('SELECT provider,scope_key,model_id,entitlement,listing FROM model_catalog LIMIT 0')
+                db.execute('SELECT refresh_id,provider,scope_key,status FROM model_catalog_refreshes LIMIT 0')
+                db.execute('SELECT denial_id,provider,model_id FROM model_denials LIMIT 0')
+                db.execute('SELECT provider,window_id,scope_key,used_percent,status,reset_at,observed_at,source FROM provider_usage_windows LIMIT 0')
+                db.execute('SELECT window_id,clear_reason FROM provider_usage_blocks LIMIT 0')
+                db.execute('SELECT request_id,agent_id,mode,outcome FROM agent_resume_requests LIMIT 0')
+                db.execute('SELECT model,provider_condition FROM agents LIMIT 0')
+                db.execute('SELECT model FROM executions LIMIT 0')
+                db.execute('SELECT child_provider,child_model FROM delegations LIMIT 0')
+                db.execute('SELECT provider,enabled,billing_confirmed_at,models FROM provider_settings LIMIT 0')
+                db.execute('SELECT block_id,provider,model,condition,reset_at,cleared_at FROM provider_usage_blocks LIMIT 0')
+                db.execute('SELECT change_id,agent_id,from_provider,to_provider,handoff_pending FROM agent_provider_changes LIMIT 0')
+                db.execute('SELECT transfer_id,request_key,task_id,from_assignment_id,to_assignment_id,phase FROM responsibility_transfers LIMIT 0')
+                db.execute('SELECT diagnostic_id,execution_id,status,classification,observations,conclusions FROM execution_diagnostics LIMIT 0')
+                db.execute('SELECT attestation_id,request_key,execution_id,outcome,refusal,actor FROM execution_attestations LIMIT 0')
+                db.execute('SELECT instance_id,pid,created_at,session_id,user_sid,boot_id,os_boot_time,stopped_at FROM controller_instances LIMIT 0')
+                db.execute('SELECT execution_id,agent_id,assignment_id,controller_instance_id,containment,job_name,job_config,root_pid,root_created_at,state,evidence,uncertainty FROM executions LIMIT 0')
+                db.execute('SELECT removal_id,request_key,target_agent_id,phase,plan_token FROM agent_removals LIMIT 0')
+                db.execute('SELECT removal_id,agent_id,phase,outcome,failure FROM agent_removal_members LIMIT 0')
+                db.execute('SELECT removed_at,removal_id FROM agents LIMIT 0')
                 db.execute('SELECT decision_id FROM replan_decisions LIMIT 0')
                 db.execute('SELECT transition_id FROM replan_transitions LIMIT 0')
                 db.execute('SELECT event_key FROM replan_signals LIMIT 0')
@@ -705,6 +820,7 @@ class AgentStore:
     def create_assignment(self, task_id, agent_id):
         with self._connection() as db:
             db.execute('BEGIN IMMEDIATE')
+            agent_removal.require_operational(db, agent_id)
             delegation_materialization.check_worker(db, task_id, agent_id)
             if db.execute('SELECT 1 FROM task_assignments WHERE ended_at IS NULL AND (task_id=? OR agent_id=?)',
                           (task_id, agent_id)).fetchone():
@@ -740,6 +856,11 @@ class AgentStore:
         with self._connection() as db:
             db.execute('BEGIN IMMEDIATE')
             original = db.execute('SELECT * FROM task_assignments WHERE assignment_id=?', (assignment_id,)).fetchone()
+            if original and original['ended_at'] is None and agent_removal.removal_pending(db, original['agent_id']):
+                raise ValueError('Assignment of an Agent under removal ends only through verified removal settlement')
+            if original and original['ended_at'] is None and (executions.blocking(db, agent_id=original['agent_id'])
+                                                              or executions.blocking(db, task_id=original['task_id'])):
+                raise ValueError('Assignment ends only after its execution is confirmed ended')
             task = db.execute('SELECT * FROM tasks WHERE task_id=?', (original['task_id'],)).fetchone() if original else None
             if task and task['control_intent'] != 'active':
                 reason = task['control_intent']
@@ -776,30 +897,36 @@ class AgentStore:
             delegation_materialization.recover(db)
             delegation_orchestration.recover(db)
             runtime_resources.recover(db)
-            from .recovery_actions import OWNERSHIP_BLOCKER, supervised_last_execution
-            unknown_ownership = []
+            from .recovery_actions import OWNERSHIP_BLOCKER
+            # The execution journal (already resolved from kernel and reboot
+            # evidence at startup) decides; output markers are never evidence.
+            was_running = set()
             for agent in db.execute("SELECT agent_id FROM agents WHERE status='running'").fetchall():
                 key = agent['agent_id']
-                lines = [r[0] for r in db.execute('SELECT line FROM output WHERE agent_id=? ORDER BY sequence', (key,))]
-                supervised = supervised_last_execution(lines)
+                was_running.add(key)
+                unresolved = executions.blocking(db, agent_id=key)
                 db.execute("UPDATE agents SET status='stopped' WHERE agent_id=?", (key,))
                 seq = db.execute('SELECT COALESCE(MAX(sequence)+1,0) FROM output WHERE agent_id=?', (key,)).fetchone()[0]
                 marker = ['--- Backend Restart ---',
-                          'Agent was running when the backend stopped and cannot be safely reattached. Marked stopped.']
-                if not supervised:
-                    # No supervision evidence for the last execution: its process tree
-                    # may have survived. Fail closed until an operator confirms it ended.
-                    marker[1] = ('Agent was running when the backend stopped. Its last execution has no process-supervision '
-                                 'evidence, so its process may still be running. Task blocked (process_ownership_unknown) '
-                                 'until an operator confirms it ended.')
-                    unknown_ownership += [row[0] for row in db.execute(
-                        'SELECT task_id FROM task_assignments WHERE agent_id=? AND ended_at IS NULL', (key,))]
+                          'Agent was running when the backend stopped and cannot be safely reattached. Its process tree '
+                          'is confirmed ended. Marked stopped.']
+                if unresolved:
+                    marker[1] = ('Agent was running when the backend stopped. The end of its process could not be '
+                                 'established (' + ', '.join(sorted({r['uncertainty'] for r in unresolved})) + '), so it '
+                                 'may still be running. Its assignment and resources stay held and the Task is blocked '
+                                 '(process_ownership_unknown).')
                 db.executemany('INSERT INTO output(agent_id,sequence,line) VALUES (?,?,?)',
                                [(key, seq + i, line) for i, line in enumerate(marker)])
             rows = db.execute('''SELECT a.assignment_id, a.task_id, a.agent_id, g.status, t.status AS task_status FROM task_assignments a
                 JOIN tasks t ON t.task_id=a.task_id
                 JOIN agents g ON g.agent_id=a.agent_id WHERE a.ended_at IS NULL''').fetchall()
+            # An unresolved execution keeps its assignment open (its claims,
+            # scopes and the Task's single slot stay held) whatever its status.
+            protected = agent_removal.protected_assignments(db, was_running)
+            unknown_ownership = executions.held_tasks(db)
             for row in rows:
+                if row['assignment_id'] in protected:
+                    continue
                 status = row['status']
                 agent_id = row['agent_id']
                 task_status = row['task_status']
@@ -818,6 +945,18 @@ class AgentStore:
             for task_id in unknown_ownership:
                 db.execute('''INSERT OR IGNORE INTO task_blockers(id,task_id,blocker_type,reason_code,active,hard)
                     VALUES (?,?,?,?,1,1)''', (str(uuid4()), task_id, *OWNERSHIP_BLOCKER))
+            # A blocker whose executions were all settled from kernel or reboot
+            # evidence (never from a scan or marker) no longer has a reason.
+            for (task_id,) in db.execute('SELECT task_id FROM task_blockers WHERE blocker_type=? AND reason_code=? AND active=1',
+                                         OWNERSHIP_BLOCKER).fetchall():
+                agents = [r[0] for r in db.execute('SELECT DISTINCT agent_id FROM task_assignments WHERE task_id=?', (task_id,))]
+                if not executions.blocking(db, task_id=task_id) and not any(executions.blocking(db, agent_id=a) for a in agents):
+                    db.execute("UPDATE task_blockers SET active=0,resolved_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') "
+                               "WHERE task_id=? AND blocker_type=? AND reason_code=? AND active=1", (task_id, *OWNERSHIP_BLOCKER))
+            # Interrupted removals: never resumed, never settled on marker evidence alone.
+            agent_removal.recover(db, was_running)
+            # Interrupted responsibility transfers: decided from durable assignments only.
+            responsibility.recover(db)
             dependencies.reconcile(db)
             dependencies.finish_operations(db)
             for row in db.execute('SELECT task_id FROM delegation_continuations').fetchall():
@@ -922,6 +1061,7 @@ class AgentStore:
             assignment = db.execute('SELECT * FROM task_assignments WHERE agent_id=? AND ended_at IS NULL', (agent_id,)).fetchone()
             if assignment is None:
                 raise ValueError('Delegation execution requires an active assignment')
+            agent_removal.require_operational(db, agent_id)
             task = dependencies.task(db, assignment['task_id'])
             work_control.require_active(task, db=db)
             if not task['project_id']:
@@ -1087,6 +1227,73 @@ class AgentStore:
             dependencies.reconcile(db)
             dependencies.finish_operations(db, failures)
 
+    def removal_preview(self, agent_id, mode='single', disposition='preserve'):
+        with self._connection() as db:
+            db.execute('BEGIN')
+            return agent_removal.plan(db, agent_id, mode, disposition)
+
+    def admit_removal(self, agent_id, **request):
+        with self._connection() as db:
+            db.execute('BEGIN IMMEDIATE')
+            return agent_removal.admit(db, agent_id=agent_id, **request)
+
+    def removal(self, removal_id):
+        with self._connection() as db:
+            db.execute('BEGIN')
+            return agent_removal.get(db, removal_id)
+
+    def agent_removals(self, agent_id):
+        with self._connection() as db:
+            db.execute('BEGIN')
+            return agent_removal.for_agent(db, agent_id)
+
+    def agent_removal_pending(self, agent_id):
+        with self._connection() as db:
+            return agent_removal.removal_pending(db, agent_id)
+
+    def responsibility(self, task_id):
+        with self._connection() as db:
+            db.execute('BEGIN')
+            return responsibility.state(db, task_id)
+
+    def admit_transfer(self, task_id, **request):
+        with self._connection() as db:
+            db.execute('BEGIN IMMEDIATE')
+            return responsibility.admit(db, task_id, **request)
+
+    def complete_transfer(self, transfer_id, agent_id):
+        with self._connection() as db:
+            db.execute('BEGIN IMMEDIATE')
+            return responsibility.complete(db, transfer_id, agent_id)
+
+    def fail_transfer(self, transfer_id, code, detail=None):
+        with self._connection() as db:
+            db.execute('BEGIN IMMEDIATE')
+            return responsibility.fail(db, transfer_id, code, detail)
+
+    def transfer(self, transfer_id):
+        with self._connection() as db:
+            return responsibility.get(db, transfer_id)
+
+    def require_agent_operational(self, agent_id):
+        with self._connection() as db:
+            agent_removal.require_operational(db, agent_id)
+
+    def mark_removal_stopping(self, removal_id, agent_id):
+        with self._connection() as db:
+            db.execute('BEGIN IMMEDIATE')
+            agent_removal.mark_stopping(db, removal_id, agent_id)
+
+    def fail_removal(self, removal_id, agent_id, code, detail=None):
+        with self._connection() as db:
+            db.execute('BEGIN IMMEDIATE')
+            agent_removal.fail(db, removal_id, agent_id, code, detail)
+
+    def settle_removal(self, removal_id, agent_id, outcome, *, confirmed=False):
+        with self._connection() as db:
+            db.execute('BEGIN IMMEDIATE')
+            return agent_removal.settle(db, removal_id, agent_id, outcome, confirmed=confirmed)
+
     @contextmanager
     def _connection(self):
         with self._lock:
@@ -1099,12 +1306,16 @@ class AgentStore:
             finally:
                 db.close()
 
-    def save_agent(self, record, output_lines=(), output_entries=None, assignment_task_id=None, execution_origin=None, completion_evidence=None, activation=None):
+    def save_agent(self, record, output_lines=(), output_entries=None, assignment_task_id=None, execution_origin=None, completion_evidence=None, activation=None, execution_id=None):
         """Commit metadata and any new output together, retaining creation order."""
         values = dict(record)
         values.setdefault('display_name', default_display_name(values['task']))
         values['display_color'] = validate_display_color(values.get('display_color', 'neutral'))
         values['similar_examples'] = json.dumps(values['similar_examples'], ensure_ascii=False)
+        values.setdefault('model', None)
+        values.setdefault('provider_condition', None)
+        values.setdefault('effort', None)
+        values.setdefault('session_config', None)
         with self._connection() as db:
             db.execute('BEGIN IMMEDIATE')
             if execution_origin is not None:
@@ -1113,6 +1324,16 @@ class AgentStore:
                     AND NOT EXISTS (SELECT 1 FROM task_assignments WHERE agent_id=? AND ended_at IS NULL AND assignment_id<>?)''',
                     (origin.agent_id, origin.generation, origin.agent_id, origin.assignment_id)).fetchone():
                     raise sqlite3.IntegrityError('Stale execution cannot persist Agent state')
+            if record['status'] == 'running':
+                previous = db.execute('SELECT status FROM agents WHERE agent_id=?', (record['agent_id'],)).fetchone()
+                if previous is not None and previous['status'] != 'running':
+                    # A transition into execution (start/resume) is refused for a
+                    # retiring or removed Agent. IntegrityError keeps the caller's
+                    # existing compensation path (stop the spawned process).
+                    try:
+                        agent_removal.require_operational(db, record['agent_id'])
+                    except ValueError as exc:
+                        raise sqlite3.IntegrityError(str(exc)) from None
             existing_assignment = None
             if assignment_task_id is not None:
                 existing_assignment = db.execute('SELECT assignment_id FROM task_assignments WHERE task_id=? AND agent_id=?',
@@ -1123,8 +1344,9 @@ class AgentStore:
                 if existing_assignment is None:
                     progress = delegation_materialization.check_worker(db, assignment_task_id, record['agent_id'])
                     if progress and record['status'] == 'running':
-                        _, _, provider = delegation_materialization.authorize(db, progress['delegation_id'])
-                        delegation_safety.require_inherited(provider, record['agent_type'], record['sandbox'], activation or {})
+                        delegation, _, provider = delegation_materialization.authorize(db, progress['delegation_id'])
+                        delegation_safety.require_inherited(provider, record['agent_type'], record['sandbox'], activation or {},
+                                                            child_provider=delegation.get('child_provider'))
                     work_control.require_active(task, pending=True, db=db)
                 if existing_assignment is None and (task['status'] != 'pending' or db.execute(
                         'SELECT 1 FROM task_assignments WHERE task_id=? AND ended_at IS NULL', (assignment_task_id,)).fetchone()):
@@ -1133,11 +1355,15 @@ class AgentStore:
                     raise ValueError('Agent work must match Task description')
             db.execute('''INSERT INTO agents (agent_id, parent_id, task, agent_type, sandbox,
                 status, session_id, waiting_question, similar_decisions_enabled, similar_examples,
-                always_decide_enabled, always_decide_configured, display_name, display_color)
+                always_decide_enabled, always_decide_configured, display_name, display_color, model, provider_condition,
+                effort, session_config)
                 VALUES (:agent_id, :parent_id, :task, :agent_type, :sandbox, :status, :session_id,
                 :waiting_question, :similar_decisions_enabled, :similar_examples,
-                :always_decide_enabled, :always_decide_configured, :display_name, :display_color)
+                :always_decide_enabled, :always_decide_configured, :display_name, :display_color, :model, :provider_condition,
+                :effort, :session_config)
                 ON CONFLICT(agent_id) DO UPDATE SET parent_id=excluded.parent_id,
+                model=excluded.model, provider_condition=excluded.provider_condition,
+                effort=excluded.effort, session_config=excluded.session_config,
                 display_name=excluded.display_name, display_color=excluded.display_color, agent_type=excluded.agent_type, sandbox=excluded.sandbox,
                 status=excluded.status, session_id=excluded.session_id, waiting_question=excluded.waiting_question,
                 similar_decisions_enabled=excluded.similar_decisions_enabled, similar_examples=excluded.similar_examples,
@@ -1150,6 +1376,10 @@ class AgentStore:
                            'SELECT ?,base_snapshot,(SELECT COALESCE(MAX(integration_order),0) FROM integrations '
                            "WHERE destination_key=? AND status='applied') FROM task_workspaces WHERE task_id=?",
                            (record['agent_id'], 'task:' + assignment_task_id, assignment_task_id))
+            if execution_id is not None:
+                # The new assignment and its execution's link commit together.
+                executions.link(db, execution_id, record['agent_id'],
+                                execution_origin.generation if execution_origin is not None else None)
             if activation is not None and existing_assignment is None:
                 if activation.get('recursive_delegation_enabled'):
                     if not activation.get('hybrid_delegation_enabled') or not activation.get('child_materialization_enabled'):
@@ -1159,8 +1389,8 @@ class AgentStore:
                     (int(activation.get('child_materialization_enabled', False)), int(activation.get('hybrid_delegation_enabled', False)),
                      int(activation.get('recursive_delegation_enabled', False)), record['agent_id']))
                 if activation.get('planning_enabled'):
-                    if record['agent_type'] != 'codex':
-                        raise ValueError('Planning runtime requires Codex')
+                    if not providers.managed_capable(record['agent_type']):
+                        raise ValueError('Planning runtime requires a provider that supports managed orchestration')
                     db.execute('UPDATE agents SET planning_enabled=1,delegation_protocol_enabled=? WHERE agent_id=?',
                                (int(activation.get('delegation_protocol_enabled', False)), record['agent_id']))
             self._sync_task(db, record['agent_id'], record['status'])
@@ -1193,6 +1423,60 @@ class AgentStore:
                     delegation_orchestration.collect(db,parent[0])
                 replanning.collect_signals(db)
 
+
+    def register_controller(self, identity):
+        with self._connection() as db:
+            db.execute('BEGIN IMMEDIATE')
+            executions.register_controller(db, identity)
+
+    def claim_controller(self, identity, status=None):
+        """Become this database's only live controller, or refuse (serialized by BEGIN IMMEDIATE).
+
+        Every earlier controller that did not stop cleanly must be proven gone
+        (PID plus creation time). One still alive, or one whose state cannot be
+        established, refuses this startup: two backends never control the
+        same database. An earlier instance in this same process is superseded.
+        """
+        from .process_supervision import process_status
+        status = status or process_status
+        with self._connection() as db:
+            db.execute('BEGIN IMMEDIATE')
+            for row in db.execute('SELECT * FROM controller_instances WHERE stopped_at IS NULL AND instance_id<>?',
+                                  (identity['instance_id'],)).fetchall():
+                if row['instance_id'].startswith(executions.LEGACY_CONTROLLER + '-'):
+                    continue
+                if row['pid'] == identity['pid'] and row['created_at'] is not None \
+                        and row['created_at'] == identity['created_at']:
+                    executions.controller_stopped(db, row['instance_id'])  # Superseded in this process.
+                    continue
+                state = status(row['pid'], row['created_at'])
+                if state != 'gone':
+                    raise ControllerConflict(
+                        f"Another backend controller (PID {row['pid']}) may still be using this database "
+                        f"({state}); refusing to start a second controller")
+            executions.register_controller(db, identity)
+
+    def controller_stopped(self, instance_id):
+        with self._connection() as db:
+            db.execute('BEGIN IMMEDIATE')
+            executions.controller_stopped(db, instance_id)
+
+    def transition_execution(self, execution_id, state, from_states, **changes):
+        with self._connection() as db:
+            db.execute('BEGIN IMMEDIATE')
+            return executions.transition(db, execution_id, state, from_states, **changes)
+
+    def get_execution(self, execution_id):
+        with self._connection() as db:
+            return executions.get(db, execution_id)
+
+    def agent_executions(self, agent_id):
+        with self._connection() as db:
+            return executions.for_agent(db, agent_id)
+
+    def controller_instance(self, instance_id):
+        with self._connection() as db:
+            return executions.controller(db, instance_id)
 
     def name_history(self, agent_id):
         with self._connection() as db:

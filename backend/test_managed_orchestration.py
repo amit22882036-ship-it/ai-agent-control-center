@@ -13,6 +13,7 @@ import test_codex_configuration as configuration
 import test_delegation_protocol as baseline
 import test_promotion as promotion_tests
 from test_codex_collaboration_events import collaboration
+from execution_test_support import use_attested_test_doubles
 
 
 class CommandTests(unittest.TestCase):
@@ -68,6 +69,7 @@ class RuntimePolicyTests(unittest.TestCase):
     finish = baseline.RuntimeTests.finish
 
     def setUp(self):
+        use_attested_test_doubles(self)  # explicit test-only evidence for test doubles
         baseline.RuntimeTests.setUp(self)
         self.task = self.store.create_task('Fix the CSV parser and verify its behavior.',
                                           project_id=self.project['project_id'])

@@ -8,6 +8,7 @@ from unittest.mock import patch
 from app import agent_manager as manager, work_control
 from app.persistence import AgentStore
 import test_task_workspaces
+from execution_test_support import rebooted
 
 
 class WorkControlTests(unittest.TestCase):
@@ -308,7 +309,8 @@ class WorkControlTests(unittest.TestCase):
         pending = self.task()
         self.control(pending, 'paused')
         tasks.append((pending, 'paused'))
-        self.recover()
+        with rebooted():  # Controlled evidence: the worker processes ended with Windows.
+            self.recover()
         for task, intent in tasks:
             self.assertEqual(self.state(task)['status'], intent)
             self.assertEqual(self.state(task)['control_intent'], intent)
@@ -392,7 +394,7 @@ class WorkControlTests(unittest.TestCase):
         self.assertEqual(store.create_task('Blocked', status='blocked')['status'], 'blocked')
         self.assertEqual(AgentStore(self.path).list_tasks(), store.list_tasks())
         with store._connection() as db:
-            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 26)
+            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 36)
             self.assertEqual(db.execute('PRAGMA foreign_key_check').fetchall(), [])
 
     def test_migration_rollback_is_atomic(self):

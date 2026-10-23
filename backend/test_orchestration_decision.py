@@ -9,6 +9,7 @@ from unittest.mock import patch
 from app import agent_manager as manager, managed_orchestration as policy, planning, presentation, promotion
 import test_planning as plans
 import test_promotion as promotions
+from execution_test_support import use_attested_test_doubles
 
 CAPABILITIES = ('planning_enabled', 'delegation_protocol_enabled', 'child_materialization_enabled',
                 'hybrid_delegation_enabled', 'recursive_delegation_enabled')
@@ -23,6 +24,7 @@ def example_messages(task_id, revision=0):
 
 class DecisionTests(unittest.TestCase):
     def setUp(self):
+        use_attested_test_doubles(self)  # explicit test-only evidence for test doubles
         promotions.PromotionTests.setUp(self)
         spawn = manager._spawn_process.side_effect
 

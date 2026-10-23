@@ -107,6 +107,7 @@ class AgentIdentityTests(unittest.TestCase):
             db.execute('ALTER TABLE agents DROP COLUMN display_color')
             db.execute('DROP TABLE agent_name_history')
             # Remove post-v2 Task-owned tables when constructing a genuine legacy DB.
+            db.execute('DROP TABLE executions')  # The v28 journal references Tasks.
             db.execute('DROP TABLE integrations')
             db.execute('DROP TABLE agent_source_context')
             db.execute('DROP TABLE task_workspaces')

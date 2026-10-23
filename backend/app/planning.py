@@ -127,6 +127,7 @@ def current(db, task_id):
 
 
 def accept(db, origin, message, *, session_id, message_id):
+    from . import agent_removal
     value = validate(message)
     text(message_id, 128)
     task = dependencies.task(db, origin.parent_task_id)
@@ -145,6 +146,9 @@ def accept(db, origin, message, *, session_id, message_id):
             raise ValueError('Conflicting replay of planning decision')
         # Read-only receipt recovery is allowed after completion; no authority is restored.
         return {**dict(previous), 'content': value}
+    # Exact replays above are read-only receipts; anything new after removal
+    # admission is refused inside this same transaction.
+    agent_removal.require_operational(db, origin.agent_id)
     if assignment['ended_at'] is not None or agent['status'] != 'running':
         raise ValueError('Planning requires a running current assignment')
     work_control.require_active(task, db=db)

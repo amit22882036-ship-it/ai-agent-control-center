@@ -4,7 +4,7 @@ Tasks represent durable work; Agents are workers linked through assignment histo
 
 `POST /tasks` creates work, `GET /tasks` and `GET /tasks/{task_id}` inspect it, `GET /tasks/{task_id}/assignments` exposes assignment history, and `POST /tasks/{task_id}/start-agent` starts a worker for eligible pending work. Explicit child creation uses `POST /agents/{parent_id}/children/start`; the current dashboard displays existing relationships but does not mount a child-creation form. Hierarchy does not automatically infer dependencies or decompose work.
 
-This reference preserves the Stage 2 design and migration details. Stage labels explain how the implementation evolved; later sections refine earlier behavior. The current database schema is v26; [Delegation records](delegations.md) add request provenance without replacing Task hierarchy or lifecycle. The [dashboard projection](dashboard.md) counts Tasks separately from Agents, marks ended assignments, and distinguishes Task cancellation from successful execution. Presentation reads grant no lifecycle authority.
+This reference preserves the Stage 2 design and migration details. Stage labels explain how the implementation evolved; later sections refine earlier behavior. The current database schema is v30 ([responsibility transfers](agent-removal.md#schema-v30)); [Agent removal](agent-removal.md) retires Agent identities without changing Task identity. [Delegation records](delegations.md) add request provenance without replacing Task hierarchy or lifecycle. The [dashboard projection](dashboard.md) counts Tasks separately from Agents, marks ended assignments, and distinguishes Task cancellation from successful execution. Presentation reads grant no lifecycle authority.
 
 [Project overview and setup](../README.md) | [Task lifecycle](task-lifecycle.md) | [Workspaces](workspaces.md) | [Resource coordination](resource-coordination.md)
 
@@ -21,6 +21,7 @@ How a worker's exit becomes Task state:
 | Codex, exit code 0, no waiting question | `finished` | `completed` (dependents unblock) | `completed` |
 | Codex, nonzero exit code, no waiting question | `stopped` | `pending` (dependents stay blocked) | `stopped` |
 | Codex, waiting question (any exit code) | `waiting` | `waiting` | assignment kept |
+| Any exit after an [Agent removal](agent-removal.md) was admitted | `stopped` | `pending` (never `completed`) | `removed` |
 
 A failed run also appends `--- Codex exited with code N; the Task was not completed ---` to the output and sends no "finished" notification. The Task can be started again.
 

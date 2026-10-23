@@ -9,6 +9,7 @@ from app import agent_manager as manager, runtime_resources as runtime, resource
 from app.persistence import AgentStore
 import test_resource_probes
 from test_resource_probes import occupied, real_probe, AVAILABLE, UNAVAILABLE
+from execution_test_support import use_attested_test_doubles
 
 real_reserve = resource_probes.reserve_port
 
@@ -22,6 +23,7 @@ class RuntimeResourceTests(unittest.TestCase):
     del _name
 
     def setUp(self):
+        use_attested_test_doubles(self)  # explicit test-only evidence for test doubles
         test_resource_probes.ProbeTests.setUp(self)
         stop = patch.object(manager, '_stop_windows_tree', side_effect=lambda process: setattr(process.poll, 'return_value', 0))
         stop.start()
@@ -101,6 +103,22 @@ class RuntimeResourceTests(unittest.TestCase):
         spawn.assert_not_called()
         self.assertEqual(self.current(claim)['probe_status'], 'unknown')
         self.assertNotIn('secret', str(self.current(claim)))
+
+    def test_unverified_launch_abort_keeps_its_resource_ownership(self):
+        # Stage 2D.1b P1 review: a refused launch whose process may survive releases nothing.
+        from app import process_supervision
+        task = self.task()
+        claim = self.claim(task)
+        failure = process_supervision.TerminationUnverified('end unconfirmed')
+        with patch.object(manager, '_spawn_process', side_effect=failure), \
+             self.assertRaises(process_supervision.TerminationUnverified):
+            manager.start_agent('ignored', task_id=task['task_id'])
+        owned = self.ownership(claim)
+        self.assertIsNotNone(owned)
+        self.assertEqual(owned['state'], 'handoff_pending')
+        with patch.object(manager, '_spawn_process') as spawn, self.assertRaises(ValueError):
+            manager.start_agent('ignored', task_id=task['task_id'])  # No second launch over it.
+        spawn.assert_not_called()
 
     def test_spawn_failure_compensates_only_its_attempt_and_retry_gets_new_generation(self):
         task = self.task()
@@ -432,7 +450,7 @@ class RuntimeResourceTests(unittest.TestCase):
             before = {t: db.execute(f'SELECT rowid,* FROM {t} ORDER BY rowid').fetchall() for t in tables}
         AgentStore(self.path)
         with closing(sqlite3.connect(self.path)) as db:
-            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 26)
+            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 36)
             self.assertEqual(db.execute('SELECT * FROM resource_ownership').fetchall(), [])
             for t in tables:
                 self.assertEqual(db.execute(f'SELECT rowid,* FROM {t} ORDER BY rowid').fetchall(), before[t], t)
@@ -450,7 +468,7 @@ class RuntimeResourceTests(unittest.TestCase):
         with closing(sqlite3.connect(self.path)) as db, db:
             self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 15)
             self.assertIsNone(db.execute("SELECT name FROM sqlite_master WHERE name='resource_ownership'").fetchone())
-            db.execute('PRAGMA user_version=27')
+            db.execute('PRAGMA user_version=37')
         with self.assertRaises(RuntimeError):
             AgentStore(self.path)
 

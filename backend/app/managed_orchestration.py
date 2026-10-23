@@ -58,7 +58,9 @@ Emit'''
 
 def can_promote(agent):
     """The capability set promotion ingress requires; admission still rechecks it."""
-    return bool(agent and agent['agent_type'] == 'codex' and all(agent[k] for k in (
+    from . import providers
+    return bool(agent and agent['agent_type'] in providers.IDS and providers.managed_capable(agent['agent_type'])
+                and all(agent[k] for k in (
         'planning_enabled', 'delegation_protocol_enabled',
         'child_materialization_enabled', 'hybrid_delegation_enabled')))
 

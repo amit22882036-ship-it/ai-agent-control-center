@@ -381,7 +381,7 @@ class PlanningTests(unittest.TestCase):
         self.assertEqual(self.domain_snapshot(), before)
         self.assertFalse(self.store.planning_enabled(key))
         with self.store._connection() as db:
-            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 26)
+            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 36)
             self.assertIsNone(db.execute('PRAGMA foreign_key_check').fetchone())
         self.assertEqual(len(self.commands), 1)
 

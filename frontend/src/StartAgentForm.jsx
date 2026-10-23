@@ -1,8 +1,25 @@
-import { useId, useState } from 'react'
+import { useCallback, useEffect, useId, useState } from 'react'
 import Icon from './Icon'
 import ProjectSelection from './ProjectSelection'
+import ProviderPanel from './ProviderPanel'
+import ModelPicker from './ModelPicker'
+import useModelCatalog from './useModelCatalog'
+import { chosenConfig, initialChoice, selectionReady } from './modelPresentation.mjs'
+import { AUTO_SUMMARY, providerChoices } from './allocationPresentation.mjs'
 import { initialAutonomousChoice, autonomyEligible, creationPayload } from './autonomousCreation.mjs'
 import { apiFetch } from './apiClient.mjs'
+import { PROVIDER_IDS, capabilityReason, providerLabel, selectable, stateLabel, stateOf, stateTone, statusFor } from './providerPresentation.mjs'
+
+// Explicit local checks (installation, version, sign-in, billing route); never a model request.
+async function loadProviders() {
+  try {
+    const response = await apiFetch('http://127.0.0.1:8000/providers/check', { method: 'POST' })
+    const data = await response.json().catch(() => ({}))
+    return response.ok && Array.isArray(data.providers) ? data.providers : null
+  } catch {
+    return null
+  }
+}
 
 export default function StartAgentForm({
   parentId = null,
@@ -17,15 +34,45 @@ export default function StartAgentForm({
   const [project, setProject] = useState(null)
   const [agentType, setAgentType] = useState('mock')
   const [sandbox, setSandbox] = useState('read-only')
+  const [modelChoice, setModelChoice] = useState(initialChoice)
   const [autonomous, setAutonomous] = useState(initialAutonomousChoice)
+  const [childAllocation, setChildAllocation] = useState('explicit')
+  const [autoProviders, setAutoProviders] = useState([])
   const [starting, setStarting] = useState(false)
   const [error, setError] = useState('')
+  const [statuses, setStatuses] = useState(null)
+  const [statusError, setStatusError] = useState('')
   const unavailable = disabled || starting
   const child = parentId !== null
+  const status = statusFor(statuses, agentType)
+  const real = agentType !== 'mock'
+  const usable = selectable(status, agentType)
+  const [catalogVersion, setCatalogVersion] = useState(0)
+  const models = useModelCatalog(real ? agentType : null, catalogVersion)
+  const config = chosenConfig(models.catalog, modelChoice)
+  const modelReady = !real || selectionReady(models.catalog, modelChoice)
+
+  const applyProviders = useCallback((result) => {
+    if (result) {
+      setStatuses(result)
+      setStatusError('')
+    } else {
+      setStatusError('Provider status is unavailable. Mock agents can still start.')
+    }
+  }, [])
+  const refreshProviders = useCallback(() => loadProviders().then((result) => {
+    applyProviders(result)
+    setCatalogVersion((version) => version + 1)
+  }), [applyProviders])
+  useEffect(() => {
+    let active = true
+    loadProviders().then((result) => { if (active) applyProviders(result) })
+    return () => { active = false }
+  }, [applyProviders])
 
   async function handleStart(event) {
     event.preventDefault()
-    if (!task.trim() || unavailable || (!child && !project)) return
+    if (!task.trim() || unavailable || (!child && !project) || !usable || !modelReady) return
     setStarting(true)
     onStartingChange?.(true)
     setError('')
@@ -33,7 +80,9 @@ export default function StartAgentForm({
       const path = child ? `/agents/${encodeURIComponent(parentId)}/children/start` : '/agents/start'
       const response = await apiFetch(`http://127.0.0.1:8000${path}`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(creationPayload(task, agentType, sandbox, autonomous, parentId, child ? undefined : project.project_id)),
+        body: JSON.stringify(creationPayload(task, agentType, sandbox, autonomous, parentId, child ? undefined : project.project_id,
+          config.model || undefined, { effort: config.effort, attempt: config.attempt,
+            autoProviders: childAllocation === 'auto' ? autoProviders : null })),
       })
       if (!response.ok) {
         const data = await response.json().catch(() => ({}))
@@ -43,16 +92,19 @@ export default function StartAgentForm({
       if (child) {
         setAgentType('mock')
         setSandbox('read-only')
+        setModelChoice(initialChoice())
       }
       onStarted()
     } catch (err) {
       setError(err.message || 'Unable to start agent. Please try again.')
+      refreshProviders()
     } finally {
       setStarting(false)
       onStartingChange?.(false)
     }
   }
 
+  const autonomyReason = capabilityReason(status, 'autonomous')
   return (
     <section id={sectionId} className={`start-agent ${child ? 'start-agent-child' : 'start-agent-root'}`} aria-labelledby={`${id}-heading`}
       onKeyDown={(event) => {
@@ -75,16 +127,26 @@ export default function StartAgentForm({
             placeholder="What should this agent work on?" rows={3} required disabled={unavailable} autoFocus={!child} />
         </div>
         <fieldset className="start-choice-field">
-          <legend>Agent type</legend>
-          <div className="segmented-control">
-            {['mock', 'codex'].map((value) => <label key={value}>
-              <input type="radio" name={`${id}-type`} value={value} checked={agentType === value}
-                onChange={() => setAgentType(value)} disabled={unavailable} />
-              <span>{value === 'mock' ? 'Mock' : 'Codex'}</span>
-            </label>)}
+          <legend>Provider</legend>
+          <div className="segmented-control provider-choice">
+            {PROVIDER_IDS.map((value) => {
+              const item = statusFor(statuses, value)
+              const state = value === 'mock' ? 'ready' : stateOf(item)
+              return <label key={value}>
+                <input type="radio" name={`${id}-type`} value={value} checked={agentType === value}
+                  onChange={() => { setAgentType(value); setModelChoice(initialChoice()) }} disabled={unavailable}
+                  aria-describedby={`${id}-provider-state`} />
+                <span>{providerLabel(value)}{value !== 'mock' && <small className={`provider-dot provider-${stateTone(state)}`} aria-label={stateLabel(state)} title={stateLabel(state)} />}</span>
+              </label>
+            })}
           </div>
+          <p id={`${id}-provider-state`} className="agent-type-note" role="status">
+            {real ? `${providerLabel(agentType)}: ${stateLabel(stateOf(status))}.${!usable && status?.state?.reason ? ` ${status.state.reason}` : ''}${!usable && status?.state?.guidance ? ` ${status.state.guidance}` : ''}`
+              : 'Mock only simulates work and uses no provider.'}
+          </p>
+          {statusError && <p className="agent-type-note">{statusError}</p>}
         </fieldset>
-        {agentType === 'codex' && (
+        {real && (
           <fieldset className="start-choice-field sandbox-field">
             <legend>Access</legend>
             <div className="segmented-control">
@@ -96,9 +158,15 @@ export default function StartAgentForm({
               </label>)}
             </div>
             {sandbox === 'workspace-write' && (
-              <p id={`${id}-warning`} className="agent-type-note" role="status">Can modify files in this project.</p>
+              <p id={`${id}-warning`} className="agent-type-note" role="status">Can modify files in its task workspace.</p>
             )}
           </fieldset>
+        )}
+        {real && (
+          <div className="task-field model-field">
+            <ModelPicker provider={agentType} catalog={models.catalog} catalogError={models.error} refreshing={models.refreshing}
+              onRefresh={models.refresh} value={modelChoice} onChange={setModelChoice} disabled={unavailable} label="Model (this agent's default)" />
+          </div>
         )}
         {!child && <div className="autonomous-option">
           <label htmlFor={`${id}-autonomous`}><span><strong>Autonomous mode</strong><span className="agent-type-note">Plan work, create sub-agents and adapt the plan.</span></span>
@@ -106,14 +174,35 @@ export default function StartAgentForm({
               disabled={unavailable || !autonomyEligible(agentType)} onChange={(event) => setAutonomous(event.target.checked)} aria-describedby={`${id}-autonomous-help`} />
           </label>
           <p id={`${id}-autonomous-help`} className="agent-type-note">{!autonomyEligible(agentType)
-            ? 'Available for new Codex root agents. Mock only simulates work.'
+            ? (agentType === 'mock' ? 'Available for new Codex and Claude Code root agents. Mock only simulates work.'
+              : autonomyReason || 'Not available for this provider.')
             : autonomous ? 'May create additional agents and use more provider usage. Set at creation only.' : 'Runs without autonomous planning or sub-agent creation.'}</p>
+          {autonomyEligible(agentType) && autonomous && <fieldset className="start-choice-field allocation-choice">
+            <legend>Child agents</legend>
+            <div className="segmented-control">
+              {[['explicit', 'Explicit provider/model'], ['auto', 'Auto — best suitable']].map(([value, label]) => <label key={value}>
+                <input type="radio" name={`${id}-allocation`} value={value} checked={childAllocation === value} disabled={unavailable}
+                  onChange={() => { setChildAllocation(value); if (value === 'auto' && autoProviders.length === 0) setAutoProviders([agentType]) }} />
+                <span>{label}</span></label>)}
+            </div>
+            <p className="agent-type-note">{childAllocation === 'auto' ? `${AUTO_SUMMARY} Model allowlists, preferences and suitability profiles can be set in the agent inspector after creation.`
+              : "Children use the provider the plan requests, or this agent's; an unavailable one is never replaced."}</p>
+            {childAllocation === 'auto' && <div className="allocation-providers" role="group" aria-label="Providers Auto may use">
+              {providerChoices(statuses).map((choice) => <label key={choice.id} className="attestation-check">
+                <input type="checkbox" checked={autoProviders.includes(choice.id)} disabled={unavailable}
+                  onChange={(event) => setAutoProviders(event.target.checked ? [...autoProviders, choice.id]
+                    : autoProviders.filter((item) => item !== choice.id))} />
+                <span>{choice.label}{choice.ready ? '' : ` (${choice.state.replace('_', ' ')})`}</span></label>)}
+            </div>}
+          </fieldset>}
         </div>}
+        <ProviderPanel statuses={statuses} onChanged={refreshProviders} disabled={unavailable} />
         <div className="start-agent-footer">
-          <p>{agentType === 'codex' ? `Codex · ${sandbox === 'workspace-write' ? 'Workspace write' : 'Read only'}` : 'Mock agent · Simulated work'}</p>
+          <p>{real ? `${providerLabel(agentType)} · ${sandbox === 'workspace-write' ? 'Workspace write' : 'Read only'}${config.model ? ` · ${config.model}` : ''}${config.effort ? ` · ${config.effort} effort` : ''}` : 'Mock agent · Simulated work'}</p>
           <div className="start-agent-actions">
             {!child && <button className="close-button" type="button" onClick={onCancel} disabled={unavailable}>Cancel</button>}
-            <button className="start-button" type="submit" disabled={unavailable || !task.trim() || (!child && !project)}>
+            <button className="start-button" type="submit" disabled={unavailable || !task.trim() || (!child && !project) || !usable || !modelReady
+              || (autonomous && autonomyEligible(agentType) && childAllocation === 'auto' && autoProviders.length === 0)}>
               {starting ? 'Starting...' : child ? 'Start child agent' : 'Start agent'}<Icon name="arrow" size={15} />
             </button>
           </div>

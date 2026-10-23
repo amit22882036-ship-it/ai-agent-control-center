@@ -5,6 +5,7 @@ from unittest.mock import patch
 
 from app import agent_manager as manager
 from app import workspace_git
+from execution_test_support import use_attested_test_doubles
 
 
 def make_repository(path):
@@ -19,6 +20,7 @@ def make_repository(path):
 
 
 def process_test_setup(test):
+    use_attested_test_doubles(test)  # explicit test-only evidence for test doubles
     # These are isolated process/protocol unit tests, not workspace integration
     # tests. The workspace boundary is stubbed explicitly (no production bypass).
     temp = tempfile.TemporaryDirectory()
@@ -35,6 +37,11 @@ def process_test_setup(test):
 
 
 def worker_output(lines):
-    """Worker output without per-execution supervision markers (asserted separately)."""
+    """Worker output without per-execution supervision markers (asserted separately).
+
+    The unverified-end marker is shown as soon as the end cannot be confirmed,
+    so it may precede the last lines its reader has not delivered yet.
+    """
+    from app.agent_manager import UNVERIFIED_END_MARKER
     from app.process_supervision import MARKER
-    return [line for line in lines if line != MARKER]
+    return [line for line in lines if line not in (MARKER, UNVERIFIED_END_MARKER)]

@@ -6,21 +6,48 @@ import Icon from './Icon'
 import Popover from './Popover'
 import { buildAgentTree } from './buildAgentTree.mjs'
 import { shouldExpandFilteredPaths, viewFilters, countStatuses, filterAgentTree, parentIds, effectiveCollapsedIds, visibleAgentIds, listEmptyMessage } from './agentListView.mjs'
+import { withoutRemoved, fullyRemovedBranches, effectiveRemovalCollapse } from './agentRemoval.mjs'
+
+const showRemovedKey = 'agent-control-center.show-removed'
+function readShowRemoved() {
+  try { return localStorage.getItem(showRemovedKey) !== 'false' } catch { return true }
+}
 
 export default function AgentList({ agents, selectedAgentId, onSelect, loading, unavailable, search, onStart }) {
   const [status, setStatus] = useState('active')
   const [selectedColors, setSelectedColors] = useState(() => new Set())
   const [collapsed, setCollapsed] = useState(() => new Set())
-  const tree = useMemo(() => buildAgentTree(agents), [agents])
+  // Removed Agents stay visible by default; fully removed branches start collapsed.
+  const [showRemoved, setShowRemoved] = useState(readShowRemoved)
+  const [expandedHistory, setExpandedHistory] = useState(() => new Set())
+  const fullTree = useMemo(() => buildAgentTree(agents), [agents])
+  const tree = useMemo(() => showRemoved ? fullTree : withoutRemoved(fullTree), [fullTree, showRemoved])
+  const removedCount = useMemo(() => agents.filter((agent) => agent.removed).length, [agents])
+  const autoCollapsed = useMemo(() => new Set(fullyRemovedBranches(tree)), [tree])
   const counts = useMemo(() => countStatuses(agents), [agents])
   const parents = useMemo(() => parentIds(tree), [tree])
   const filtered = useMemo(() => filterAgentTree(tree, search, status, selectedColors), [tree, search, status, selectedColors])
   const filtering = shouldExpandFilteredPaths(search, status, selectedColors)
-  const effectiveCollapsed = useMemo(() => effectiveCollapsedIds(filtered, collapsed, filtering), [filtered, collapsed, filtering])
+  const historyCollapsed = useMemo(() => effectiveRemovalCollapse(collapsed, autoCollapsed, expandedHistory), [collapsed, autoCollapsed, expandedHistory])
+  const effectiveCollapsed = useMemo(() => effectiveCollapsedIds(filtered, historyCollapsed, filtering), [filtered, historyCollapsed, filtering])
   const visible = useMemo(() => visibleAgentIds(filtered, effectiveCollapsed), [filtered, effectiveCollapsed])
   const emptyMessage = listEmptyMessage(agents, filtered, search, status, selectedColors)
 
+  function changeShowRemoved(value) {
+    setShowRemoved(value)
+    try { localStorage.setItem(showRemovedKey, String(value)) } catch { /* The choice still applies to this session. */ }
+  }
+
   function toggleBranch(id) {
+    if (autoCollapsed.has(id)) {
+      setExpandedHistory((current) => {
+        const next = new Set(current)
+        if (next.has(id)) next.delete(id)
+        else next.add(id)
+        return next
+      })
+      return
+    }
     setCollapsed((current) => {
       const next = new Set(current)
       if (next.has(id)) next.delete(id)
@@ -57,8 +84,14 @@ export default function AgentList({ agents, selectedAgentId, onSelect, loading, 
           </Popover>
           <Popover label="Hierarchy options" trigger={<Icon name="more" />}>
             <button type="button" disabled={filtering || !parents.length} onClick={() => setCollapsed(new Set(parents))}>Collapse all</button>
-            <button type="button" disabled={filtering || !collapsed.size} onClick={() => setCollapsed(new Set())}>Expand all</button>
+            <button type="button" disabled={filtering || (!collapsed.size && !autoCollapsed.size)} onClick={() => { setCollapsed(new Set()); setExpandedHistory(new Set(autoCollapsed)) }}>Expand all</button>
             {filtering && <p className="agent-type-note">Clear search and color filters, and select Active or All, to restore collapse choices.</p>}
+            <fieldset className="choice-group removal-visibility"><legend>Removed agents{removedCount ? ` (${removedCount})` : ''}</legend>
+              <label className="choice"><span>Show removed agents</span><input type="checkbox" checked={showRemoved} onChange={(event) => changeShowRemoved(event.target.checked)} /></label>
+              <button type="button" disabled={!autoCollapsed.size} onClick={() => setExpandedHistory(new Set())}>Collapse removed branches</button>
+              <button type="button" disabled={!autoCollapsed.size || [...autoCollapsed].every((id) => expandedHistory.has(id))} onClick={() => setExpandedHistory(new Set(autoCollapsed))}>Expand removed branches</button>
+              {!showRemoved && <p className="agent-type-note">Agents that continue under a hidden removed parent stay listed and are marked.</p>}
+            </fieldset>
           </Popover>
         </div>
       </div>

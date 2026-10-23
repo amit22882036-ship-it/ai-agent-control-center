@@ -5,7 +5,7 @@ registry, lifetime quota, timer, or provider calls are introduced here.
 """
 import os
 
-from . import work_control
+from . import providers, work_control
 
 
 def migrate(db):
@@ -52,24 +52,30 @@ def check_depth(db, task_id, *, child=False, limit=None):
 def activation(db, task_id, provider, sandbox):
     """Validate explicit root activation or delegation of that same capability."""
     path = check_depth(db, task_id)
-    if provider != 'codex':
-        raise ValueError('Recursive delegation requires Codex')
+    if provider not in providers.IDS or not providers.managed_capable(provider):
+        raise ValueError('Recursive delegation requires a provider that supports managed orchestration '
+                         '(Codex or Claude Code)')
     if len(path) == 1:
         return
     parent = db.execute('''SELECT g.* FROM task_assignments a JOIN agents g USING(agent_id)
         WHERE a.task_id=? AND a.ended_at IS NULL''', (path[1]['task_id'],)).fetchone()
+    # Stage 2F: the provider may differ from the Parent's (mixed hierarchies);
+    # the access policy may never widen.
     if (not parent or not parent['recursive_delegation_enabled']
             or not parent['hybrid_delegation_enabled'] or not parent['child_materialization_enabled']
-            or not parent['delegation_protocol_enabled'] or parent['agent_type'] != provider
-            or parent['sandbox'] != sandbox):
+            or not parent['delegation_protocol_enabled'] or parent['sandbox'] != sandbox):
         raise ValueError('Parent has not authorized recursive provider/sandbox capability')
 
 
-def inherited(provider):
+def inherited(provider, child_provider=None):
     enabled = bool(provider['recursive_delegation_enabled'])
-    if enabled and (provider['agent_type'] != 'codex' or not all(provider[k] for k in
+    if enabled and (not providers.managed_capable(provider['agent_type']) or not all(provider[k] for k in
             ('delegation_protocol_enabled', 'child_materialization_enabled', 'hybrid_delegation_enabled'))):
         raise ValueError('Invalid recursive Parent capability')
+    if enabled and not providers.managed_capable(child_provider or provider['agent_type']):
+        # Narrower, never broader: a Child provider that cannot coordinate
+        # Children receives no recursive authority (its capability says why).
+        enabled = False
     return dict(delegation_protocol_enabled=enabled, child_materialization_enabled=enabled,
                 hybrid_delegation_enabled=enabled, recursive_delegation_enabled=enabled,
                 planning_enabled=enabled and bool(provider['planning_enabled']))
@@ -116,10 +122,11 @@ def root_slot(db, task_id, timestamp, *, burst=8, window_seconds=60):
     return max(timestamp, prior[0] + window_seconds) if prior else timestamp
 
 
-def require_inherited(provider, agent_type, sandbox, capabilities):
+def require_inherited(provider, agent_type, sandbox, capabilities, child_provider=None):
     """Recheck the actual launch request against fresh durable Parent authority."""
-    allowed = inherited(provider)
-    if (provider['agent_type'] != agent_type
-            or (agent_type == 'codex' and provider['sandbox'] != sandbox)
+    expected = child_provider or provider['agent_type']
+    allowed = inherited(provider, expected)
+    if (expected != agent_type
+            or (agent_type in providers.REAL and provider['sandbox'] != sandbox)
             or any(capabilities.get(key, False) and not value for key, value in allowed.items())):
         raise ValueError('Inherited Child capabilities exceed current Parent authorization')

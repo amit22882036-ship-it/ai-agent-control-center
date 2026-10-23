@@ -16,6 +16,7 @@ from app.main import app
 from app.persistence import AgentStore
 import test_work_control
 from api_test_support import request_headers
+from execution_test_support import rebooted
 
 
 class DependencyTests(unittest.TestCase):
@@ -373,7 +374,8 @@ class DependencyTests(unittest.TestCase):
         self.assertEqual(manager._store.control_operations(task['task_id'])[-1]['status'], 'recovery_required')
         with self.assertRaises(ValueError):
             self.control(task, 'active')
-        self.recover()
+        with rebooted():  # Controlled evidence: the worker processes ended with Windows.
+            self.recover()
         self.assertEqual(self.task_for(child)['status'], 'paused')
         self.assertEqual(manager._store.control_operations(task['task_id'])[-1]['status'], 'completed')
 
@@ -518,7 +520,7 @@ class DependencyTests(unittest.TestCase):
         self.assertEqual(store.get_task(waiting['task_id'])['replanning_reasons'], [])
         self.assertEqual(store.list_tasks(), AgentStore(self.path).list_tasks())
         with store._connection() as db:
-            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 26)
+            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 36)
             self.assertEqual(db.execute('PRAGMA foreign_key_check').fetchall(), [])
             self.assertEqual(db.execute('SELECT rowid FROM task_assignments').fetchone()[0], 100)
         self.recover()
@@ -574,7 +576,8 @@ class DependencyTests(unittest.TestCase):
         self.assertEqual(self.task_for(child)['status'], 'in_progress')
         self.assertEqual(manager._store.control_operations(task['task_id'])[-1]['status'], 'recovery_required')
         with patch.object(manager, '_spawn_process') as spawn:
-            self.recover()
+            with rebooted():  # Controlled evidence: the worker processes ended with Windows.
+                self.recover()
             spawn.assert_not_called()
         self.assertEqual(self.task_for(child)['status'], 'canceled')
         self.assertEqual(manager._store.control_operations(task['task_id'])[-1]['status'], 'completed')

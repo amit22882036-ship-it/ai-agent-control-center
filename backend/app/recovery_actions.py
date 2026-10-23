@@ -17,7 +17,8 @@ OWNERSHIP_BLOCKER = ('process_ownership', 'process_ownership_unknown')
 # Every marker `_resume_agent` writes before [text, supervision marker].
 RESUME_MARKERS = ('--- User Reply ---', '--- Redirect ---', '--- Delegated Decision ---',
                   '--- Similar Decisions Enabled ---', '--- Always Decide Enabled ---',
-                  '--- Automatic Similar Decision ---', '--- Automatic Always Decision ---')
+                  '--- Automatic Similar Decision ---', '--- Automatic Always Decision ---',
+                  '--- Automatic Provider Retry ---', '--- Continued after provider wait ---')
 CONTINUATION_PREFIX = '--- Parent continuation: '
 SCAN_TIMEOUT_SECONDS = 30
 _EXEC = re.compile(r'(?<![\w-])exec(?![\w-])', re.IGNORECASE)

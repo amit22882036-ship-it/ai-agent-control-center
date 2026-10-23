@@ -70,14 +70,41 @@ def migrate(db):
         raise sqlite3.IntegrityError('Work control migration found invalid references')
 
 
+OWNER_REMOVED = ("Owner Agent removed: its orchestration was bound to that Agent's session and receipt, "
+                 'so it is disabled until the Task is explicitly resolved')
+
+
 def sync(db, assignment, runtime_status):
     from . import delegation_orchestration as orchestration
+    from . import agent_removal, executions
     task = db.execute('SELECT * FROM tasks WHERE task_id=?', (assignment['task_id'],)).fetchone()
-    if orchestration.sync(db, assignment, runtime_status):
+    removal = agent_removal.live_member(db, assignment['agent_id'])
+    owner_removed = removal is not None and runtime_status != 'running' and task['control_intent'] != 'canceled'
+    # An admitted removal outranks a dormant Hybrid transition: it never keeps the
+    # retiring Agent's assignment open on behalf of its orchestration.
+    if not owner_removed and orchestration.sync(db, assignment, runtime_status):
         return
     intent = task['control_intent']
     blocked = dependencies.hard_blocked(db, task['task_id'])
-    if ('orchestration_handoff' in task.keys() and task['orchestration_handoff']
+    if runtime_status != 'running' and (executions.blocking(db, agent_id=assignment['agent_id'])
+                                        or executions.blocking(db, task_id=assignment['task_id'])):
+        # A process of this assignment may still be alive (unverified end):
+        # no end reason, status change or release until it is settled.
+        return
+    if owner_removed:
+        # Admitted removal outranks a late exit: the assignment ends `removed`
+        # and the Task never completes through this retiring worker. Cancel
+        # intent still governs its own termination below. Hybrid exception:
+        # a continuation bound to this Agent's session is disabled, not moved.
+        if orchestration.state(db, task['task_id']) is not None:
+            orchestration.revoke(db, task['task_id'], OWNER_REMOVED)
+        target = task['status'] if task['status'] in ('completed', 'canceled') else (
+            'paused' if intent == 'paused' else 'blocked' if blocked else 'pending')
+        end, reason = True, 'removed'
+        db.execute("UPDATE agents SET status='stopped',waiting_question=NULL WHERE agent_id=?", (assignment['agent_id'],))
+        if intent == 'paused' and task['resume_status'] == 'waiting':
+            db.execute("UPDATE tasks SET resume_status='pending' WHERE task_id=?", (task['task_id'],))
+    elif ('orchestration_handoff' in task.keys() and task['orchestration_handoff']
             and orchestration.state(db, task['task_id']) is None
             and intent != 'canceled' and runtime_status != 'running'):
         # A dormant orchestration continuation is not a user question and not

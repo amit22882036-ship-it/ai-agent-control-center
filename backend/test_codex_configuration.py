@@ -7,21 +7,26 @@ from uuid import uuid4
 
 from app import agent_manager as manager
 from app.codex_events import StructuredCommand
+from execution_test_support import use_attested_test_doubles
 
 
 class CodexConfigurationTests(unittest.TestCase):
     def setUp(self):
-        environment = dict(os.environ, APPDATA=r'C:\npm fixture', SystemRoot=r'C:\Windows')
+        use_attested_test_doubles(self)  # explicit test-only evidence for test doubles
+        environment = dict(os.environ, APPDATA=r'C:\npm fixture', SystemRoot=r'C:\Windows',
+                           CODEX_HOME=r'C:\codex home fixture that does not exist')
         for key in ('CONTROL_CENTER_CODEX_MODEL', 'CONTROL_CENTER_CODEX_REASONING_EFFORT'):
             environment.pop(key, None)
         self.enterContext(patch.dict(os.environ, environment, clear=True))
         self.enterContext(patch.object(manager.os, 'name', 'nt'))
         self.enterContext(patch.object(manager.Path, 'is_file', return_value=True))
+        # Command construction only: readiness probing is covered by test_providers.
+        self.enterContext(patch.object(manager, '_require_launchable'))
 
     def test_unconfigured_command_is_unchanged(self):
         self.assertEqual(manager._codex_command(),
             '"C:\\Windows\\System32\\cmd.exe" /d /s /v:off /c '
-            '""C:\\npm fixture\\npm\\codex.cmd" exec --sandbox read-only '
+            '""C:\\npm fixture\\npm\\codex.cmd" exec -c model_provider=openai --sandbox read-only '
             '--color never --skip-git-repo-check -"')
         with patch.dict(os.environ, CONTROL_CENTER_CODEX_MODEL='  ',
                         CONTROL_CENTER_CODEX_REASONING_EFFORT=''):
@@ -45,7 +50,7 @@ class CodexConfigurationTests(unittest.TestCase):
                             self.assertEqual(spawn.call_args.kwargs['stdin'], subprocess.PIPE)
                             self.assertEqual(spawn.call_args.kwargs['cwd'], 'isolated-workspace')
                             self.assertEqual(isinstance(command, StructuredCommand), structured)
-                            self.assertIn('exec --model gpt-6.1-sol -c model_reasoning_effort=low ', command)
+                            self.assertIn('exec -c model_provider=openai --model gpt-6.1-sol -c model_reasoning_effort=low ', command)
                             self.assertIn(f'--sandbox {sandbox} --color never --skip-git-repo-check ', command)
                             self.assertEqual('--json' in command, structured)
                             self.assertTrue(command.endswith(f'resume {session} -"' if session_id else ' -"'))

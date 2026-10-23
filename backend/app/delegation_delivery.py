@@ -39,7 +39,7 @@ class DeliveryService:
                     raise ValueError('Child result no longer matches successful Task completion')
                 if result['source_snapshot'] and result['source_snapshot'] != source_snapshot:
                     raise ValueError('Child source changed since result validation; inspection required')
-                if provider['agent_type'] == 'codex' and provider['sandbox'] != 'workspace-write':
+                if provider['agent_type'] != 'mock' and provider['sandbox'] != 'workspace-write':
                     base = workspace_git.source_tree(source, workspace['base_snapshot'])
                     if source_snapshot != base:
                         raise ValueError('Read-only Parent does not authorize automatic filesystem integration')

@@ -48,6 +48,7 @@ class CodexEvents:
     promotion_message: str | None = None
     items: dict = field(default_factory=dict)
     completion: str | None = None
+    condition: str | None = None  # Stage 2F classification of a provider-reported limit
 
     def feed(self, line):
         """Return readable output only. Control state is consumed after EOF."""
@@ -90,6 +91,7 @@ class CodexEvents:
             if isinstance(detail, dict) and detail.get('code') in (
                     'rate_limit_exceeded', 'usage_limit_reached', 'insufficient_quota'):
                 self.error = 'Codex provider limit reported; explicit continuation required (reset time unknown)'
+                self.condition = 'rate_limited' if detail['code'] == 'rate_limit_exceeded' else 'quota_exhausted'
             return [line.rstrip('\r\n')]
         if not self.started:
             raise ValueError('event outside a turn')

@@ -1,6 +1,7 @@
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Request
+import getpass
 from typing import Annotated, Literal
 import sqlite3
 from fastapi.middleware.cors import CORSMiddleware
@@ -8,6 +9,7 @@ from fastapi.openapi.utils import get_openapi
 from starlette.responses import JSONResponse, StreamingResponse
 from . import security
 from . import process_supervision
+from . import agent_removal, recovery_actions, responsibility, providers
 from .realtime import changes
 from pydantic import BaseModel, ConfigDict, StrictBool, field_validator, model_validator
 from .system_notifications import notifications
@@ -29,6 +31,7 @@ async def lifespan(app):
     process_supervision.self_test()
     initialize_persistence()
     manager.start_recovery_sweep()
+    manager.start_diagnostics_worker()
     try:
         yield
     finally:
@@ -96,6 +99,22 @@ class StartAgentRequest(BaseModel):
     sandbox: CodexSandbox = "read-only"
     autonomous: StrictBool = False
     project_id: str | None = None
+    model: str | None = None
+    effort: str | None = None
+    attempt_unverified: StrictBool = False
+    # Auto allocation for this root Agent's delegated Children: the user's own
+    # authorization (allowed providers), stored as the new Task's policy.
+    auto_allocation_providers: list[AgentType] | None = None
+
+    @field_validator('model')
+    @classmethod
+    def valid_model(cls, value):
+        return providers.validate_model(value)
+
+    @field_validator('effort')
+    @classmethod
+    def valid_effort(cls, value):
+        return providers.validate_effort(value)
 
     @field_validator('task')
     @classmethod
@@ -107,12 +126,38 @@ class StartAgentRequest(BaseModel):
     def eligible_autonomy(self):
         if 'project_id' in self.model_fields_set and (self.project_id is None or not self.project_id.strip()):
             raise ValueError('Select a valid Project or omit project_id for legacy creation.')
-        if self.autonomous and self.agent_type != 'codex':
-            raise ValueError('Autonomous mode requires Codex.')
+        if self.autonomous and not providers.managed_capable(self.agent_type):
+            raise ValueError('Autonomous mode is not available for this provider: '
+                             + providers.adapter(self.agent_type).capability('autonomous'))
         return self
 
 
-class RedirectAgentRequest(BaseModel):
+class PromptConfigFields(BaseModel):
+    """A next-prompt override: applies to this one instruction and never changes the Agent's defaults."""
+    model_override: StrictBool = False
+    model: str | None = None
+    effort_override: StrictBool = False
+    effort: str | None = None
+    confirm_new_session: StrictBool = False
+    attempt_unverified: StrictBool = False
+
+    @field_validator('model')
+    @classmethod
+    def valid_prompt_model(cls, value):
+        return providers.validate_model(value)
+
+    @field_validator('effort')
+    @classmethod
+    def valid_prompt_effort(cls, value):
+        return providers.validate_effort(value)
+
+    def prompt_config(self):
+        return {'model': self.model, 'model_set': self.model_override, 'effort': self.effort,
+                'effort_set': self.effort_override, 'confirm_new_session': self.confirm_new_session,
+                'attempt_unverified': self.attempt_unverified}
+
+
+class RedirectAgentRequest(PromptConfigFields):
     instruction: str
 
     @field_validator("instruction")
@@ -125,7 +170,7 @@ class RedirectAgentRequest(BaseModel):
         return value
 
 
-class ReplyAgentRequest(BaseModel):
+class ReplyAgentRequest(PromptConfigFields):
     answer: str
 
     @field_validator("answer")
@@ -168,13 +213,32 @@ def _start_agent_response(request: StartAgentRequest, parent_id: str | None = No
         capabilities = {key: True for key in (
             'planning_enabled', 'delegation_protocol_enabled', 'child_materialization_enabled',
             'hybrid_delegation_enabled', 'recursive_delegation_enabled')} if request.autonomous else {}
+        model = {'model': request.model} if request.model is not None else {}
+        if request.effort is not None:
+            model['effort'] = request.effort
+        if request.attempt_unverified:
+            model['attempt_unverified'] = True
+        if request.auto_allocation_providers is not None and (parent_id is not None or not request.autonomous):
+            raise ValueError('Auto allocation applies to delegated Children of a new autonomous root agent.')
+        if request.auto_allocation_providers is not None:
+            manager.allocation.normalize_policy(True, request.auto_allocation_providers)
         if parent_id is None:
             agent_id = start_agent(request.task, request.agent_type, request.sandbox,
-                                   **({'project_id': request.project_id} if request.project_id is not None else {}), **capabilities)
+                                   **({'project_id': request.project_id} if request.project_id is not None else {}),
+                                   **capabilities, **model)
+            if request.auto_allocation_providers is not None:
+                task_ids = manager._task_store().agent_task_ids(agent_id)
+                if task_ids:
+                    # The new root Task has no policy of its own yet: an explicit creation precondition.
+                    manager.set_auto_allocation_policy(task_ids[0], enabled=True,
+                                                       allowed=request.auto_allocation_providers, expected_revision=None)
         else:
-            agent_id = start_agent(request.task, request.agent_type, request.sandbox, parent_id=parent_id)
+            agent_id = start_agent(request.task, request.agent_type, request.sandbox, parent_id=parent_id, **model)
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except providers.ProviderRefused as exc:
+        # Actionable: the provider is not usable now (never replaced by another).
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     except (OSError, RuntimeError, sqlite3.Error) as exc:
@@ -187,7 +251,9 @@ def _start_agent_response(request: StartAgentRequest, parent_id: str | None = No
         "display_name": default_display_name(request.task),
         "display_color": "neutral",
         "agent_type": request.agent_type,
-        "sandbox": request.sandbox if request.agent_type == "codex" else None,
+        "model": request.model,
+        "effort": request.effort,
+        "sandbox": request.sandbox if request.agent_type != "mock" else None,
     }
 
 
@@ -245,6 +311,19 @@ class StartTaskAgentRequest(BaseModel):
     model_config = ConfigDict(extra='forbid')
     agent_type: AgentType = 'mock'
     sandbox: CodexSandbox = 'read-only'
+    model: str | None = None
+    effort: str | None = None
+    attempt_unverified: StrictBool = False
+
+    @field_validator('model')
+    @classmethod
+    def valid_model(cls, value):
+        return providers.validate_model(value)
+
+    @field_validator('effort')
+    @classmethod
+    def valid_effort(cls, value):
+        return providers.validate_effort(value)
 
 
 def _task_action(action):
@@ -350,6 +429,183 @@ def reverify_transitions_route(task_id: str, request: RecoveryConfirmation):
     return _task_action(lambda: manager.reverify_transitions(task_id, request.confirm_ended))
 
 
+def _execution_action(action):
+    try:
+        return action()
+    except manager.AttestationRefused as exc:
+        raise HTTPException(status_code=409, detail={'code': 'attestation_refused', 'message': str(exc),
+                                                     'reasons': exc.reasons, 'execution': exc.detail}) from exc
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail={'code': 'attestation_invalid', 'message': str(exc)}) from exc
+    except (sqlite3.Error, OSError, RuntimeError) as exc:
+        raise HTTPException(status_code=503, detail='Execution recovery is unavailable. Please retry.') from exc
+
+
+def _local_actor(request: Request):
+    """What this unauthenticated local API can honestly record about who acted: context, not identity."""
+    try:
+        account = getpass.getuser()
+    except Exception:
+        account = None
+    return {'channel': 'local_api', 'authenticated': False, 'csrf_token_presented': True,
+            'origin': request.headers.get('origin'), 'client_host': request.client.host if request.client else None,
+            'user_agent': (request.headers.get('user-agent') or '')[:200] or None, 'backend_account': account,
+            'note': 'No user authentication exists: this is the request context and the account running the backend, '
+                    'not a verified person.'}
+
+
+class AttestationRequest(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    request_key: str
+    reviewed_diagnostic_id: str
+    statement: str
+    reason: str | None = None
+
+
+@app.get('/executions/unresolved')
+def unresolved_executions_route(agent_id: str | None = None, task_id: str | None = None):
+    """Read-only: unresolved executions of an Agent (and its Tasks) or of a Task."""
+    if not agent_id and not task_id:
+        raise HTTPException(status_code=422, detail='agent_id or task_id is required')
+    return _execution_action(lambda: manager.unresolved_executions(agent_id=agent_id, task_id=task_id))
+
+
+@app.get('/executions/{execution_id}')
+def execution_route(execution_id: str):
+    return _execution_action(lambda: manager.execution_detail(execution_id))
+
+
+@app.post('/executions/{execution_id}/diagnostics')
+def refresh_execution_diagnostics_route(execution_id: str):
+    """Explicit refresh: authoritative reconciliation, then fresh observations. Never settles by itself."""
+    return _execution_action(lambda: manager.refresh_execution_diagnostics(execution_id))
+
+
+@app.post('/executions/{execution_id}/attestation')
+def attest_execution_route(execution_id: str, body: AttestationRequest, request: Request):
+    """Human responsibility attestation; the server re-checks eligibility freshly and may refuse."""
+    return _execution_action(lambda: manager.attest_execution(
+        execution_id, request_key=body.request_key, reviewed_diagnostic_id=body.reviewed_diagnostic_id,
+        statement=body.statement, reason=body.reason, actor=_local_actor(request)))
+
+
+RemovalMode = Literal['single', 'retire_branch', 'continue_children']
+RemovalDisposition = Literal['preserve', 'cancel']
+
+
+class RemovalPreviewRequest(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    mode: RemovalMode = 'single'
+    task_disposition: RemovalDisposition = 'preserve'
+
+
+class RemoveAgentRequest(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    request_key: str
+    plan_token: str
+    mode: RemovalMode = 'single'
+    task_disposition: RemovalDisposition = 'preserve'
+    reason: str | None = None
+
+
+class RemovalRetryRequest(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    confirm_ended: StrictBool = False
+
+
+def _removal_action(action):
+    """Removal errors carry a stable code; an unsettled operation is reported as 503."""
+    try:
+        result = action()
+    except agent_removal.RemovalError as exc:
+        raise HTTPException(status_code=exc.status, detail={'code': exc.code, 'message': str(exc), **exc.details}) from exc
+    except recovery_actions.RecoveryRefused as exc:
+        raise HTTPException(status_code=409, detail={'code': 'recovery_refused', 'message': str(exc)}) from exc
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except (sqlite3.Error, OSError, RuntimeError) as exc:
+        raise HTTPException(status_code=503, detail='Agent removal is unavailable; inspect the removal and retry.') from exc
+    if isinstance(result, dict) and result.get('phase') == 'recovery_required':
+        raise HTTPException(status_code=503, detail={'code': 'removal_recovery_required',
+                                                     'message': result['last_error'] or 'Removal requires attention',
+                                                     'removal': result})
+    return result
+
+
+class ResponsibilityTransferRequest(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    request_key: str
+    expected_owner_assignment_id: str | None = None
+    agent_type: AgentType = 'mock'
+    sandbox: CodexSandbox | None = None
+    reason: str | None = None
+
+
+def _responsibility_action(action):
+    try:
+        return action()
+    except responsibility.TransferError as exc:
+        raise HTTPException(status_code=exc.status, detail={'code': exc.code, 'message': str(exc), **exc.details}) from exc
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail={'code': 'transfer_refused', 'message': str(exc)}) from exc
+    except (sqlite3.Error, OSError, RuntimeError) as exc:
+        raise HTTPException(status_code=503, detail='Responsibility transfer is unavailable. Please retry.') from exc
+
+
+@app.get('/tasks/{task_id}/responsibility')
+def task_responsibility_route(task_id: str):
+    """Read-only: the Task's current owner, whether it awaits a new one, and why a transfer is refused."""
+    return _responsibility_action(lambda: manager.responsibility_state(task_id))
+
+
+@app.post('/tasks/{task_id}/responsibility/transfer')
+def transfer_responsibility_route(task_id: str, request: ResponsibilityTransferRequest):
+    """Explicit: a new Agent takes over a Task whose owner was removed (validated, journaled, idempotent)."""
+    return _responsibility_action(lambda: manager.transfer_responsibility(
+        task_id, request_key=request.request_key, expected_owner_assignment_id=request.expected_owner_assignment_id,
+        agent_type=request.agent_type, sandbox=request.sandbox, reason=request.reason))
+
+
+@app.post('/agents/{agent_id}/removal-preview')
+def removal_preview_route(agent_id: str, request: RemovalPreviewRequest | None = None):
+    request = request or RemovalPreviewRequest()
+    return _removal_action(lambda: manager.removal_preview(agent_id, request.mode, request.task_disposition))
+
+
+@app.post('/agents/{agent_id}/remove')
+def remove_agent_route(agent_id: str, request: RemoveAgentRequest):
+    return _removal_action(lambda: manager.remove_agent(
+        agent_id, request_key=request.request_key, plan_token=request.plan_token, mode=request.mode,
+        task_disposition=request.task_disposition, reason=request.reason))
+
+
+@app.get('/agents/{agent_id}/removals')
+def agent_removals_route(agent_id: str):
+    return {'removals': _removal_action(lambda: manager.list_agent_removals(agent_id))}
+
+
+@app.get('/agent-removals/{removal_id}')
+def agent_removal_route(removal_id: str):
+    try:
+        return manager.get_removal(removal_id)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except (sqlite3.Error, OSError, RuntimeError) as exc:
+        raise HTTPException(status_code=503, detail='Agent removal is unavailable. Please retry.') from exc
+
+
+@app.post('/agent-removals/{removal_id}/retry')
+def retry_agent_removal_route(removal_id: str, request: RemovalRetryRequest | None = None):
+    request = request or RemovalRetryRequest()
+    return _removal_action(lambda: manager.retry_removal(removal_id, request.confirm_ended))
+
+
 @app.post('/tasks/{task_id}/orchestration/wake', status_code=202)
 def wake_task_orchestration_route(task_id: str):
     """Explicit operator wake (for example after a restart); only queues one bounded pass."""
@@ -358,6 +614,50 @@ def wake_task_orchestration_route(task_id: str):
             raise LookupError('Task not found')
         return {'task_id': task_id, 'wake': manager.wake_orchestration(task_id, reason='operator')}
     return _task_action(wake)
+
+
+class AutoAllocationRequest(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    enabled: StrictBool
+    # Optimistic concurrency: the own policy's revision the editor loaded (null: none existed).
+    expected_revision: int | None = None
+    providers: list[AgentType] = []
+    models: dict[AgentType, list[str]] = {}
+    preferences: list[str] = []
+    profile: dict[str, dict[str, list[str]]] = {}
+
+
+@app.get('/tasks/{task_id}/auto-allocation')
+def auto_allocation_route(task_id: str):
+    """The effective Auto policy (own or inherited) and the Children's allocation decisions."""
+    return _task_action(lambda: manager.auto_allocation_view(task_id))
+
+
+AUTO_REVISION_REQUIRED = 'expected_revision is required: send the policy revision you loaded, or null only to create a policy for a Task that has none of its own. Reload the policy if you do not have it.'
+
+
+@app.put('/tasks/{task_id}/auto-allocation')
+def set_auto_allocation_route(task_id: str, request: AutoAllocationRequest):
+    """The user's explicit Auto authorization for this Task and its subtree.
+
+    Every external write carries an optimistic-concurrency precondition: the revision the
+    client loaded, or explicit null to create the Task's first own policy. A request that
+    omits it is refused, never applied without the check.
+    """
+    if 'expected_revision' not in request.model_fields_set:
+        raise HTTPException(status_code=428, detail=AUTO_REVISION_REQUIRED)
+    return _task_action(lambda: manager.set_auto_allocation_policy(
+        task_id, enabled=request.enabled, allowed=request.providers, models=request.models,
+        preferences=request.preferences, profile=request.profile, expected_revision=request.expected_revision))
+
+
+@app.delete('/tasks/{task_id}/auto-allocation')
+def clear_auto_allocation_route(task_id: str, expected_revision: int | None = None):
+    """Remove this Task's own Auto policy (it then follows an ancestor's policy, if any).
+    Requires the revision being removed; a missing or stale one is refused."""
+    if expected_revision is None:
+        raise HTTPException(status_code=428, detail=AUTO_REVISION_REQUIRED)
+    return _task_action(lambda: manager.clear_auto_allocation_policy(task_id, expected_revision=expected_revision))
 
 
 @app.get('/tasks/{task_id}/orchestration')
@@ -372,7 +672,12 @@ def task_workspace_route(task_id: str):
 
 @app.post('/tasks/{task_id}/start-agent')
 def start_task_agent_route(task_id: str, request: StartTaskAgentRequest):
-    return _task_action(lambda: manager.start_task_agent(task_id, request.agent_type, request.sandbox))
+    options = {'model': request.model} if request.model is not None else {}
+    if request.effort is not None:
+        options['effort'] = request.effort
+    if request.attempt_unverified:
+        options['attempt_unverified'] = True
+    return _task_action(lambda: manager.start_task_agent(task_id, request.agent_type, request.sandbox, **options))
 
 
 @app.get("/agents/{agent_id}/output")
@@ -405,7 +710,7 @@ def stop_mock_agent(agent_id: str):
 @app.post("/agents/{agent_id}/redirect")
 def redirect_codex_agent(agent_id: str, request: RedirectAgentRequest):
     try:
-        result = redirect_agent(agent_id, request.instruction)
+        result = redirect_agent(agent_id, request.instruction, request.prompt_config())
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     except (OSError, RuntimeError) as exc:
@@ -418,7 +723,7 @@ def redirect_codex_agent(agent_id: str, request: RedirectAgentRequest):
 @app.post("/agents/{agent_id}/reply")
 def reply_codex_agent(agent_id: str, request: ReplyAgentRequest):
     try:
-        result = reply_agent(agent_id, request.answer)
+        result = reply_agent(agent_id, request.answer, request.prompt_config())
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     except (OSError, RuntimeError) as exc:
@@ -508,6 +813,166 @@ def stop_agent_branch(agent_id: str):
     result = stop_branch(agent_id)
     if result is None:
         raise HTTPException(status_code=404, detail="Agent not found")
+    return result
+
+
+class ProviderSettingsRequest(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    enabled: StrictBool | None = None
+    billing_confirmed: StrictBool | None = None
+    models: list[str] | None = None
+
+
+class ProviderChangeRequest(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    provider: AgentType
+    model: str | None = None
+    sandbox: CodexSandbox | None = None
+    effort: str | None = None
+    attempt_unverified: StrictBool = False
+
+    @field_validator('effort')
+    @classmethod
+    def valid_change_effort(cls, value):
+        return providers.validate_effort(value)
+
+    @field_validator('model')
+    @classmethod
+    def valid_model(cls, value):
+        return providers.validate_model(value)
+
+
+def _provider_action(action):
+    try:
+        return action()
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except providers.ProviderRefused as exc:
+        raise HTTPException(status_code=409, detail=exc.as_dict()) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except (sqlite3.Error, OSError, RuntimeError) as exc:
+        raise HTTPException(status_code=503, detail='Provider operation is unavailable. Please retry.') from exc
+
+
+def _known_provider(provider):
+    if provider not in providers.IDS:
+        raise LookupError('Unknown provider')
+    return provider
+
+
+@app.get('/providers')
+def provider_list():
+    """Read-only: support, settings, usage and the last readiness check (never probes)."""
+    return _provider_action(lambda: {'providers': manager.provider_statuses(check=False)})
+
+
+@app.post('/providers/check')
+def provider_check_all():
+    """Explicit, non-billable local checks (installation, version, sign-in, billing route)."""
+    return _provider_action(lambda: {'providers': manager.provider_statuses(check=True)})
+
+
+@app.post('/providers/{provider}/check')
+def provider_check(provider: str):
+    return _provider_action(lambda: manager.check_provider(_known_provider(provider)))
+
+
+@app.put('/providers/{provider}/settings')
+def provider_settings(provider: str, request: ProviderSettingsRequest):
+    return _provider_action(lambda: manager.update_provider_settings(
+        _known_provider(provider), enabled=request.enabled, billing_confirmed=request.billing_confirmed,
+        models=request.models))
+
+
+@app.post('/providers/{provider}/usage/allow')
+def provider_allow_work(provider: str):
+    """The user's explicit decision that a usage limit renewed; no paid request checks it."""
+    return _provider_action(lambda: manager.allow_provider_work(_known_provider(provider)))
+
+
+@app.post('/agents/{agent_id}/provider')
+def change_agent_provider_route(agent_id: str, request: ProviderChangeRequest):
+    """Provider, model or narrower access change at a safe boundary; nothing is launched."""
+    result = _provider_action(lambda: manager.change_agent_provider(
+        agent_id, provider=request.provider, model=request.model, sandbox=request.sandbox, effort=request.effort,
+        attempt_unverified=request.attempt_unverified))
+    if result is None:
+        raise HTTPException(status_code=404, detail='Agent not found')
+    return result
+
+
+class AgentDefaultsRequest(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    model_set: StrictBool = False
+    model: str | None = None
+    effort_set: StrictBool = False
+    effort: str | None = None
+    attempt_unverified: StrictBool = False
+
+    @field_validator('model')
+    @classmethod
+    def valid_default_model(cls, value):
+        return providers.validate_model(value)
+
+    @field_validator('effort')
+    @classmethod
+    def valid_default_effort(cls, value):
+        return providers.validate_effort(value)
+
+
+@app.post('/agents/{agent_id}/defaults')
+def agent_defaults_route(agent_id: str, request: AgentDefaultsRequest):
+    """Change one Agent's own default model and/or effort (applies from its next instruction)."""
+    result = _provider_action(lambda: manager.update_agent_defaults(
+        agent_id, model=request.model, effort=request.effort, model_set=request.model_set,
+        effort_set=request.effort_set, attempt_unverified=request.attempt_unverified))
+    if result is None:
+        raise HTTPException(status_code=404, detail='Agent not found')
+    return result
+
+
+@app.get('/providers/{provider}/models')
+def provider_models(provider: str):
+    """The cached model catalog with status and provenance (never runs discovery)."""
+    return _provider_action(lambda: manager.model_catalog_view(_known_provider(provider)))
+
+
+@app.post('/providers/{provider}/models/refresh')
+def provider_models_refresh(provider: str, stale_only: bool = False):
+    """Non-billable model discovery (coalesced and rate limited). Never a model request."""
+    return _provider_action(lambda: manager.model_catalog_view(
+        _known_provider(provider), refresh=True, trigger='panel_stale' if stale_only else 'user'))
+
+
+@app.post('/providers/{provider}/usage/refresh')
+def provider_refresh_usage(provider: str):
+    """A supported, non-billable usage check (Claude Code /usage). Evidence only: it resumes nothing."""
+    return _provider_action(lambda: manager.refresh_provider_usage(_known_provider(provider)))
+
+
+class ResumeRequest(PromptConfigFields):
+    model_config = ConfigDict(extra='forbid')
+    explicit_retry: StrictBool = False
+
+
+@app.post('/agents/{agent_id}/resume')
+def resume_agent_route(agent_id: str, request: ResumeRequest | None = None):
+    """The user's explicit Resume of one waiting Agent after every readiness, policy and admission check."""
+    explicit = bool(request and request.explicit_retry)
+    config = request.prompt_config() if request else None
+    result = _provider_action(lambda: manager.continue_agent(agent_id, explicit_retry=explicit, config=config))
+    if result is None:
+        raise HTTPException(status_code=404, detail='Agent not found')
+    return result
+
+
+@app.post('/agents/{agent_id}/continue')
+def continue_agent_route(agent_id: str):
+    """Explicitly continue a waiting Agent after a provider wait or a provider change."""
+    result = _provider_action(lambda: manager.continue_agent(agent_id))
+    if result is None:
+        raise HTTPException(status_code=404, detail='Agent not found')
     return result
 
 

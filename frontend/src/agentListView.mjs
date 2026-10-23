@@ -1,4 +1,5 @@
 import { displayColor } from './agentIdentity.mjs'
+import { removalScope } from './agentRemoval.mjs'
 
 export const statuses = ['all', 'running', 'waiting', 'finished', 'stopped']
 
@@ -26,6 +27,8 @@ export function shouldExpandFilteredPaths(search, status, selectedColors = new S
 }
 
 export function matchesStatus(agent, status) {
+  // A removed Agent is history, never active work (its retained context is not coordination).
+  if (removalScope(agent) === 'history') return status === 'history' || status === 'all' || agent.status === status
   const currentCoordination = Boolean(agent.waiting_context)
   if (status === 'active') return agent.status === 'running' || agent.status === 'waiting' || currentCoordination
   if (status === 'history') return !currentCoordination && (agent.status === 'finished' || agent.status === 'stopped')

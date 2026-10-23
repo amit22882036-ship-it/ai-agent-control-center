@@ -39,6 +39,7 @@ class AgentNameTests(unittest.TestCase):
             db.execute('ALTER TABLE agents DROP COLUMN display_color')
             db.execute('DROP TABLE agent_name_history')
             # Remove post-v2 Task-owned tables when constructing a genuine legacy DB.
+            db.execute('DROP TABLE executions')  # The v28 journal references Tasks.
             db.execute('DROP TABLE integrations')
             db.execute('DROP TABLE agent_source_context')
             db.execute('DROP TABLE task_workspaces')
@@ -49,7 +50,7 @@ class AgentNameTests(unittest.TestCase):
         self.assertEqual(migrated, before)
         self.assertEqual(AgentStore(self.path).load_agents(), before)
         with closing(sqlite3.connect(self.path)) as db, db:
-            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 26)
+            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 36)
         self.assertEqual(migrated[1]['parent_id'], parent)
         self.assertEqual(migrated[1]['agent_id'], child)
 

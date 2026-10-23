@@ -112,7 +112,7 @@ class JobObjectTests(unittest.TestCase):
         backend.stdout.close()
         self.assertTrue(until(lambda: not alive(child) and not alive(grandchild)))
 
-    def run_failed_launch(self, **failure):
+    def run_failed_launch(self, processes=1, **failure):
         with tempfile.TemporaryDirectory() as directory:
             marker = Path(directory) / 'ran.txt'
             script = f'open({str(marker)!r}, "w").write("ran")'
@@ -125,8 +125,9 @@ class JobObjectTests(unittest.TestCase):
             with patch.object(ps.subprocess, 'Popen', side_effect=record), patch.multiple(ps, **failure):
                 with self.assertRaises(ps.SupervisionError):
                     ps.popen([PYTHON, '-c', script], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL)
-            self.assertEqual(len(created), 1)
-            self.assertIsNotNone(created[0].poll())  # Terminated while still suspended.
+            self.assertEqual(len(created), processes)
+            if created:
+                self.assertIsNotNone(created[0].poll())  # Terminated while still suspended.
             time.sleep(0.3)
             self.assertFalse(marker.exists())  # Not one line of the child ran.
 
@@ -140,7 +141,8 @@ class JobObjectTests(unittest.TestCase):
         self.run_failed_launch(_ResumeThread=lambda *_: 0xFFFFFFFF)
 
     def test_job_creation_failure_never_runs_the_process(self):
-        self.run_failed_launch(_CreateJobObjectW=lambda *_: None)
+        # The Job is created and verified before Popen: no process exists at all.
+        self.run_failed_launch(0, _CreateJobObjectW=lambda *_: None)
 
     def test_ctrl_c_in_backend_console_does_not_reach_supervised_workers(self):
         helper = textwrap.dedent(f'''

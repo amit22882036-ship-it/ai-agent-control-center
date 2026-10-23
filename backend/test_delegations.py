@@ -12,6 +12,7 @@ from app import agent_manager as manager, delegations
 from app.persistence import AgentStore
 import test_tasks
 import test_dependencies
+from execution_test_support import use_attested_test_doubles
 
 
 class DelegationTests(unittest.TestCase):
@@ -19,6 +20,7 @@ class DelegationTests(unittest.TestCase):
     request = test_dependencies.DependencyTests.request
 
     def setUp(self):
+        use_attested_test_doubles(self)  # explicit test-only evidence for test doubles
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.path = Path(self.temp.name) / 'delegations.sqlite3'
@@ -299,7 +301,7 @@ class DelegationTests(unittest.TestCase):
         self.assertEqual(self.snapshot(exclude=('delegations',)), before)
         self.assertEqual(self.store.list_delegations(self.parent['task_id']), [])
         with self.store._connection() as db:
-            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 26)
+            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 36)
             self.assertEqual(db.execute('PRAGMA foreign_key_check').fetchall(), [])
             delegations.migrate(db)
         self.assertEqual(self.snapshot(exclude=('delegations',)), before)
@@ -316,11 +318,11 @@ class DelegationTests(unittest.TestCase):
         self.assertEqual(self.snapshot(), before)
         with closing(sqlite3.connect(self.path)) as db, db:
             self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 17)
-            db.execute('PRAGMA user_version=27')
+            db.execute('PRAGMA user_version=37')
         with self.assertRaises(RuntimeError):
             AgentStore(self.path)
         with closing(sqlite3.connect(self.path)) as db:
-            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 27)
+            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 37)
 
 
 if __name__ == '__main__':

@@ -196,8 +196,13 @@ def launch(store, task_id, agent_id):
                         raise ValueError('Resource ownership generation is no longer current')
             sockets.close()
             yield
-        except BaseException:
+        except BaseException as exc:
             sockets.close()
+            from .process_supervision import TerminationUnverified
+            if isinstance(exc, TerminationUnverified):
+                # The refused launch's process may survive: keep its handoff
+                # ownership; restart recovery invalidates it conservatively.
+                raise
             with store._connection() as db:
                 db.execute('BEGIN IMMEDIATE')
                 for identifier in identifiers:

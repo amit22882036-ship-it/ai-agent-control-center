@@ -190,7 +190,7 @@ class WaitingTests(unittest.TestCase):
                         self.assertEqual(detail['waiting_question'], 'Which module next?')
                         self.assertEqual(worker_output(detail['output'])[:len(history) + 2], history + ['--- User Reply ---', answer])
                         payload = json.loads(worker_output(detail['output'])[len(history) + 3])
-                        self.assertEqual(payload['args'], ['exec', '--sandbox', sandbox, '--color', 'never',
+                        self.assertEqual(payload['args'], ['exec', '-c', 'model_provider=openai', '--sandbox', sandbox, '--color', 'never',
                                                          '--skip-git-repo-check', 'resume', session_id, '-'])
                         self.assertNotIn(answer, payload['args'])
                         self.assertIn('User request:\n' + answer, payload['prompt'])

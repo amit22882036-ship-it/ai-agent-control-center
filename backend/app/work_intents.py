@@ -154,7 +154,8 @@ def reconcile(db, tasks):
         return False
     running = {r[0] for r in db.execute("SELECT a.task_id FROM task_assignments a JOIN agents g USING(agent_id) WHERE a.ended_at IS NULL AND g.status='running'")}
     from . import replanning
-    held = replanning.held_tasks(db)
+    from . import agent_removal, executions
+    held = replanning.held_tasks(db) | agent_removal.held_tasks(db) | executions.held_tasks(db)
     for intent in rows(db):
         if intent['task_id'] in held:
             continue  # Unconfirmed replanning stop cannot relinquish scope.

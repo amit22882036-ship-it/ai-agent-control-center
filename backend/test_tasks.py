@@ -9,10 +9,12 @@ from uuid import UUID, uuid4
 from app.persistence import AgentStore
 from app.task_domain import task_title, TASK_TITLE_LIMIT
 from app import agent_manager as manager
+from execution_test_support import use_attested_test_doubles
 
 
 class TaskTests(unittest.TestCase):
     def setUp(self):
+        use_attested_test_doubles(self)  # explicit test-only evidence for test doubles
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.path = Path(self.temp.name) / 'tasks.sqlite3'
@@ -119,7 +121,7 @@ class TaskTests(unittest.TestCase):
             self.assertEqual(assignment['ended_at'] is None, record['status'] in ['running', 'waiting'])
         self.assertEqual(AgentStore(self.path).list_tasks(), store.list_tasks())
         with store._connection() as db:
-            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 26)
+            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 36)
 
     def test_startup_reconciles_running_and_retains_waiting_without_processes(self):
         # Use the real startup path but restore global runtime registries afterward.
@@ -145,12 +147,14 @@ class TaskTests(unittest.TestCase):
                 spawn.assert_not_called()
                 manager.initialize_persistence(self.path)
         self.assertEqual([t['task_id'] for t in store.list_tasks()], identities)
-        # Legacy (pre-supervision) running work has no process evidence: fail closed until confirmed.
-        self.assertEqual([t['status'] for t in store.list_tasks()], ['blocked', 'waiting'])
+        # Legacy (pre-journal) running work has no process evidence: it stays uncertain and keeps
+        # its assignment and ownership until a verified restart or kernel evidence settles it.
         self.assertEqual([b['reason_code'] for b in store.get_task(identities[0])['active_blockers']], ['process_ownership_unknown'])
-        self.assertIsNone(store.get_active_assignment_for_agent(running))
+        self.assertIsNotNone(store.get_active_assignment_for_agent(running))
         self.assertIsNotNone(store.get_active_assignment_for_agent(waiting))
-        self.assertEqual(store.list_task_assignments(identities[0])[0]['ended_reason'], 'stopped')
+        legacy, = store.agent_executions(running)
+        self.assertEqual((legacy['containment'], legacy['uncertainty']), ('legacy_unknown', 'legacy'))
+        self.assertEqual(store.get_task(identities[1])['status'], 'waiting')
 
     def test_migration_failure_rolls_back_tables_rows_and_version(self):
         self.agent('waiting')
@@ -169,11 +173,11 @@ class TaskTests(unittest.TestCase):
     def test_future_schema_is_untouched(self):
         task = self.store.create_task('keep')
         with closing(sqlite3.connect(self.path)) as db, db:
-            db.execute('PRAGMA user_version=27')
+            db.execute('PRAGMA user_version=37')
         with self.assertRaisesRegex(RuntimeError, 'Unsupported'):
             AgentStore(self.path)
         with closing(sqlite3.connect(self.path)) as db:
-            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 27)
+            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 37)
             self.assertEqual(db.execute('SELECT task_id FROM tasks').fetchone()[0], task['task_id'])
 
     def test_recovery_failure_rolls_back_task_and_assignment_together(self):

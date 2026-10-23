@@ -14,6 +14,7 @@ import test_persistence
 import test_replanning
 from test_api_security import call, headers
 from test_orchestration_wake import Clock
+from execution_test_support import rebooted
 
 MARKER = process_supervision.MARKER
 CLEAN = patch.object(recovery, 'scan_processes', return_value=[])
@@ -107,18 +108,26 @@ class RestartEvidenceTests(unittest.TestCase):
     def blockers(self, task_id):
         return [b for b in manager._store.get_task(task_id)['active_blockers'] if b['reason_code'] == 'process_ownership_unknown']
 
-    def test_supervised_running_agent_is_stopped_without_block(self):
+    def test_an_output_marker_is_not_evidence_but_a_verified_restart_is(self):
+        # Stage 2D.1b: the supervision marker is display only; the journal decides.
         with patch.object(manager.process_supervision, 'job_of', return_value=object()):
             key, _ = self.create(kind='mock')
         self.assertEqual(manager.agent_outputs[key][0], MARKER)
         task_id = self.task_of(key)
         self.recover()
         self.assertEqual(manager.agent_statuses[key], 'stopped')
+        self.assertEqual(len(self.blockers(task_id)), 1)
+        with rebooted():  # controlled evidence: Windows restarted since that execution
+            self.recover()
         self.assertEqual(self.blockers(task_id), [])
+        self.assertEqual(manager._store.get_task(task_id)['status'], 'pending')
+        self.assertIsNone(manager._store.get_active_assignment_for_task(task_id))
 
     def test_running_agent_without_evidence_blocks_until_confirmed(self):
         key, _ = self.create(kind='mock')
         task_id = self.task_of(key)
+        stray, _ = self.create(kind='mock')
+        stray_task = self.task_of(stray)
         self.recover()
         self.assertEqual(manager.agent_statuses[key], 'stopped')
         self.assertEqual(len(self.blockers(task_id)), 1)
@@ -128,21 +137,28 @@ class RestartEvidenceTests(unittest.TestCase):
             manager.start_task_agent(task_id)  # no new worker
         with self.assertRaisesRegex(Exception, 'ownership|refused'):
             manager.integrate_task(task_id)  # no integration
-        # Refusals: missing/false confirmation, stray Codex, failed scan, CSRF.
+        # Refusals: missing/false confirmation, unresolved execution, stray Codex, failed scan, CSRF.
         self.assertEqual(post(f'/tasks/{task_id}/process-ownership/confirm-stopped', b'{}')[0], 422)
         with CLEAN:
             self.assertEqual(post(f'/tasks/{task_id}/process-ownership/confirm-stopped', b'{"confirm_ended": false}')[0], 409)
-        with patch.object(recovery, 'scan_processes', return_value=[codex(4242)]):
-            status, body = post(f'/tasks/{task_id}/process-ownership/confirm-stopped')
-            self.assertEqual(status, 409)
-            self.assertIn('4242', body['detail'])
-        with patch.object(recovery, 'scan_processes', side_effect=recovery.RecoveryRefused('Process scan failed')):
-            self.assertEqual(post(f'/tasks/{task_id}/process-ownership/confirm-stopped')[0], 409)
-        self.assertEqual(call('POST', f'/tasks/{task_id}/process-ownership/confirm-stopped',
-                              headers(token=None, content_type='application/json'), CONFIRM)[0], 403)
-        self.assertEqual(len(self.blockers(task_id)), 1)
+        # Stage 2D.1b: confirmation plus a clean scan is never proof that it ended.
         with CLEAN:
             status, body = post(f'/tasks/{task_id}/process-ownership/confirm-stopped')
+        self.assertEqual(status, 409, body)
+        self.assertIn('not established', body['detail'])
+        self.assertEqual(len(self.blockers(task_id)), 1)
+        self.assertIsNotNone(manager._store.get_active_assignment_for_task(task_id))  # still held
+        with rebooted():  # controlled evidence observed by this controller
+            self.assertEqual(call('POST', f'/tasks/{task_id}/process-ownership/confirm-stopped',
+                                  headers(token=None, content_type='application/json'), CONFIRM)[0], 403)
+            # A stray Codex process refuses the action; the scan never decides settlement.
+            with patch.object(recovery, 'scan_processes', return_value=[codex(4242)]):
+                status, body = post(f'/tasks/{stray_task}/process-ownership/confirm-stopped')
+                self.assertEqual(status, 409)
+                self.assertIn('4242', body['detail'])
+            self.assertEqual(self.blockers(stray_task), [])  # lifted by the evidence, not by the action
+            with CLEAN:
+                status, body = post(f'/tasks/{task_id}/process-ownership/confirm-stopped')
         self.assertEqual(status, 200, body)
         self.assertEqual(self.blockers(task_id), [])
         self.assertEqual(manager._store.get_task(task_id)['status'], 'pending')

@@ -12,6 +12,7 @@ from app.persistence import AgentStore
 from app.project_domain import canonical_path, contains
 from workspace_test_support import make_repository
 import test_task_lifecycle
+from execution_test_support import rebooted
 
 
 class ProjectTests(unittest.TestCase):
@@ -233,7 +234,8 @@ class ProjectTests(unittest.TestCase):
         with patch.object(manager.process_supervision, 'job_of', return_value=object()):  # supervised launch
             key, _ = self.create(kind='mock')
         task = self.task_for(key)
-        self.recover()
+        with rebooted():  # Controlled evidence: the worker processes ended with Windows.
+            self.recover()
         self.assertEqual(manager._store.get_task(task['task_id'])['project_id'], task['project_id'])
         replacement = self.start_request(f"/tasks/{task['task_id']}/start-agent", {})['agent_id']
         self.assertNotEqual(replacement, key)
@@ -272,7 +274,7 @@ class ProjectTests(unittest.TestCase):
         self.assertEqual(restored.name_history(child), names)
         self.assertEqual([restored.list_task_assignments(t['task_id']) for t in tasks], assignments)
         with restored._connection() as db:
-            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 26)
+            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 36)
             self.assertEqual(db.execute('PRAGMA foreign_key_check').fetchall(), [])
             self.assertIn('projects', {row['table'] for row in db.execute('PRAGMA foreign_key_list(tasks)')})
         self.assertEqual(AgentStore(self.path).list_tasks(), restored.list_tasks())

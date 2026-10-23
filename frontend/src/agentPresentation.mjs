@@ -4,7 +4,7 @@ export function executionLabel(agent) {
 }
 export function agentName(agent) { return agent?.display_name || 'Untitled agent' }
 export function attentionAgents(agents) { return agents.filter((agent) => agent.waiting_context
-  ? ['user', 'recovery'].includes(agent.waiting_context.kind)
+  ? ['user', 'recovery', 'provider'].includes(agent.waiting_context.kind)
   : !('waiting_context' in agent) && agent.status === 'waiting') }
 
 export function agentContext(agent) {

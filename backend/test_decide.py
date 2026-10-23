@@ -102,7 +102,7 @@ class DecideTests(unittest.TestCase):
                     self.assertEqual(worker_output(detail['output'])[:len(history) + 2],
                                      history + ['--- Delegated Decision ---', 'Decide for me this time'])
                     payload = json.loads(worker_output(detail['output'])[len(history) + 3])
-                    self.assertEqual(payload['args'], ['exec', '--sandbox', sandbox, '--color', 'never',
+                    self.assertEqual(payload['args'], ['exec', '-c', 'model_provider=openai', '--sandbox', sandbox, '--color', 'never',
                                                      '--skip-git-repo-check', 'resume', session_id, '-'])
                     self.assertEqual(Path(payload['cwd']), self.workspace_path)
                     self.assertIn(manager._delegated_decision, payload['prompt'])

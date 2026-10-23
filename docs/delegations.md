@@ -260,12 +260,13 @@ Retried passes reuse the existing launch journals, so a started or uncertain Chi
 
 Nothing moves to a failed state automatically at startup. Each recovery action is a CSRF-protected `POST` with body `{"confirm_ended": true}`.
 
-**Preconditions for every action:**
+**Preconditions for every action** (Stage 2D.1b ownership policy):
 
 - There is no live execution handle in this backend.
+- Every execution of the affected Tasks (and, for `resolve-launch`, of the launch Agent) is settled. The action first [reconciles](process-supervision.md#restart-recovery) them from kernel and reboot evidence; any that stays unresolved refuses the action with its execution ids and reasons.
 - A read-only `Get-CimInstance Win32_Process` scan finds no Codex execution that is not a descendant of a process this backend supervises. A Codex execution is a `node`/`codex`/`cmd` process whose command line contains the Codex launcher and an `exec` argument.
 
-If unsupervised Codex processes are found, the action is refused and their PIDs are listed. If the scan fails, the action is refused; there is no fallback. A clean scan is a precondition, not proof.
+If unsupervised Codex processes are found, the action is refused and their PIDs are listed. If the scan fails, the action is refused; there is no fallback. The confirmation and a clean scan are preconditions, never proof that a process ended.
 
 No action launches, stops or resumes anything, and every action uses only the existing phases.
 

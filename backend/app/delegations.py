@@ -3,6 +3,7 @@
 Mutation helpers require the caller's BEGIN IMMEDIATE transaction. Assignment
 ownership remains authoritative in task_assignments, never in this history.
 """
+import json
 from uuid import uuid4
 
 from . import dependencies, work_control
@@ -71,8 +72,10 @@ def validate_request(request_key, instruction):
 
 
 def create(db, parent_task_id, *, project_id, requested_by_agent_id,
-           requested_by_assignment_id, request_key, instruction):
+           requested_by_assignment_id, request_key, instruction, allocation=None):
+    """`allocation` is a validated v3 Child allocation (None: the historical default)."""
     validate_request(request_key, instruction)
+    stored = None if allocation is None else json.dumps(allocation, sort_keys=True, separators=(',', ':'))
     parent = dependencies.task(db, parent_task_id)
     if not project_id or parent['project_id'] != project_id:
         raise ValueError('Delegation requires the Parent Task Project')
@@ -88,6 +91,9 @@ def create(db, parent_task_id, *, project_id, requested_by_agent_id,
     if existing:
         if existing['instruction'] != instruction:
             raise ValueError('Request key already belongs to a different delegation instruction')
+        if (existing['allocation_request'] if 'allocation_request' in existing.keys() else None) != stored:
+            # An accepted request is immutable: a new allocation is a conflicting replay.
+            raise ValueError('Request key already belongs to a delegation with a different Child allocation')
         # A current replacement may rediscover the request; keep original origin,
         # timestamps, child link and terminal state. Never revive or overwrite it.
         return get(db, existing['delegation_id'])
@@ -98,6 +104,11 @@ def create(db, parent_task_id, *, project_id, requested_by_agent_id,
         VALUES (?,?,?,?,?,?,?,'requested')''',
         (identifier, project_id, parent_task_id, requested_by_agent_id,
          requested_by_assignment_id, request_key, instruction))
+    if stored is not None:
+        explicit = allocation['mode'] == 'explicit'
+        db.execute('UPDATE delegations SET allocation_request=?,child_provider=?,child_model=?,child_effort=? WHERE delegation_id=?',
+                   (stored, allocation['provider'] if explicit else None, allocation.get('model') if explicit else None,
+                    allocation.get('effort') if explicit else None, identifier))
     return get(db, identifier)
 
 

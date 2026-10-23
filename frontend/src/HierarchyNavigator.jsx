@@ -2,6 +2,7 @@ import { agentName, executionLabel } from './agentPresentation.mjs'
 import { displayColor } from './agentIdentity.mjs'
 import { navigatorRows } from './hierarchyContext.mjs'
 import Icon from './Icon'
+import { removalState } from './agentRemoval.mjs'
 
 export default function HierarchyNavigator({ tree, collapsed, count, partial, loading, error, selectedId, onSelect, onToggle, search, onSearch, onReveal }) {
   const rows = navigatorRows(tree, collapsed)
@@ -15,8 +16,8 @@ export default function HierarchyNavigator({ tree, collapsed, count, partial, lo
     {count > 0 && !rows.some(({ agent }) => agent.agent_id === selectedId) && <p className="navigator-note">Selection hidden in this view. <button onClick={onReveal}>Reveal selected</button></p>}
     <ul className="navigator-list">{rows.map(({ agent, children, depth, contextOnly }) => <li key={agent.agent_id} style={{ '--depth': depth }} data-context={Boolean(contextOnly)}>
       {branched && (children.length ? <button className="navigator-toggle" disabled={!onToggle} aria-expanded={!collapsed.has(agent.agent_id)} aria-label={`${collapsed.has(agent.agent_id) ? 'Expand' : 'Collapse'} ${agentName(agent)} in navigator`} onClick={() => onToggle?.(agent.agent_id)}><Icon name={collapsed.has(agent.agent_id) ? 'chevron' : 'down'} size={12} /></button> : <span className="navigator-branch-space" aria-hidden="true" />)}
-      <button className="navigator-agent" title={agentName(agent)} aria-label={`${agentName(agent)}, ${executionLabel(agent)}${depth ? `, level ${depth + 1}` : ''}`} aria-pressed={agent.agent_id === selectedId} onClick={() => onSelect(agent.agent_id)} data-display-color={displayColor(agent.display_color)}>
-        <span className="navigator-identity"><strong>{agentName(agent)}</strong><span className={`status status-${agent.status}`}>{executionLabel(agent)}</span></span>
+      <button className={`navigator-agent${removalState(agent) === 'removed' ? ' agent-removed' : ''}`} title={agentName(agent)} aria-label={`${agentName(agent)}, ${executionLabel(agent)}${depth ? `, level ${depth + 1}` : ''}`} aria-pressed={agent.agent_id === selectedId} onClick={() => onSelect(agent.agent_id)} data-display-color={displayColor(agent.display_color)}>
+        <span className="navigator-identity"><strong className="agent-name">{removalState(agent) === 'removed' && <Icon name="removed" size={13} className="removal-mark" />}{agentName(agent)}</strong><span className={`status status-${agent.status}`}>{executionLabel(agent)}</span></span>
       </button>
     </li>)}</ul>
     {!loading && !rows.length && <p className="navigator-note">No matching agents.</p>}

@@ -19,6 +19,12 @@ ALLOWED_ORIGIN = 'http://127.0.0.1:5173'
 # Reviewed inventory. A new route must be added here deliberately: every
 # state-changing route is guarded; every GET must stay free of side effects.
 UNSAFE_ROUTES = {
+    # Stage 2F providers: explicit checks, settings, usage decisions, provider change and continue.
+    ('POST', '/providers/check'), ('POST', '/providers/{provider}/check'), ('PUT', '/providers/{provider}/settings'),
+    ('POST', '/providers/{provider}/usage/allow'), ('POST', '/agents/{agent_id}/provider'),
+    ('POST', '/agents/{agent_id}/continue'), ('POST', '/agents/{agent_id}/resume'),
+    ('POST', '/providers/{provider}/usage/refresh'), ('POST', '/agents/{agent_id}/defaults'),
+    ('POST', '/providers/{provider}/models/refresh'), ('PUT', '/tasks/{task_id}/auto-allocation'), ('DELETE', '/tasks/{task_id}/auto-allocation'),
     ('POST', '/notifications/preferences'), ('POST', '/notifications/heartbeat'),
     ('POST', '/agents/start'), ('POST', '/agents/{parent_id}/children/start'),
     ('POST', '/tasks'), ('POST', '/projects'), ('POST', '/tasks/{task_id}/start-agent'),
@@ -37,8 +43,15 @@ UNSAFE_ROUTES = {
     ('POST', '/agents/{agent_id}/recovery/handoff'), ('POST', '/tasks/{task_id}/process-ownership/confirm-stopped'),
     ('POST', '/delegations/{delegation_id}/recovery/resolve-launch'), ('POST', '/tasks/{task_id}/recovery/rearm'),
     ('POST', '/tasks/{task_id}/recovery/reverify'),
+    ('POST', '/agents/{agent_id}/removal-preview'), ('POST', '/agents/{agent_id}/remove'),
+    ('POST', '/agent-removals/{removal_id}/retry'),
+    ('POST', '/executions/{execution_id}/diagnostics'), ('POST', '/executions/{execution_id}/attestation'),
+    ('POST', '/tasks/{task_id}/responsibility/transfer'),
 }
 GET_ROUTES = {
+    '/providers',  # Stage 2F: reports the last check; never probes.
+    '/providers/{provider}/models',  # Cached catalog; never runs discovery.
+    '/tasks/{task_id}/auto-allocation',  # Policy and recorded decisions; never allocates.
     security.TOKEN_PATH, '/health', '/system/process-supervision', '/workspace', '/agents/{agent_id}/activity', '/agents/{agent_id}/hierarchy',
     '/agents', '/agents/{agent_id}', '/projects', '/projects/{project_id}', '/tasks', '/tasks/{task_id}',
     '/tasks/{task_id}/assignments', '/tasks/{task_id}/workspace', '/agents/{agent_id}/output', '/events',
@@ -47,6 +60,8 @@ GET_ROUTES = {
     '/tasks/{task_id}/deadlocks', '/resource-deadlocks/{deadlock_id}', '/tasks/{task_id}/resource-claims',
     '/tasks/{task_id}/work-intents', '/tasks/{task_id}/work-overlaps', '/tasks/{task_id}/delegations',
     '/delegations/{delegation_id}', '/tasks/{task_id}/orchestration',
+    '/agents/{agent_id}/removals', '/agent-removals/{removal_id}',
+    '/executions/unresolved', '/executions/{execution_id}', '/tasks/{task_id}/responsibility',
 }
 
 
@@ -65,6 +80,8 @@ def concrete(path):
 
 def call(method, path, headers=(), body=b'', target=app, chunks=None):
     """Run one in-process ASGI request and return (status, headers, body)."""
+    path, _, query = path.partition('?')
+
     async def run():
         messages = []
         parts = list(chunks) if chunks is not None else [body]
@@ -78,7 +95,7 @@ def call(method, path, headers=(), body=b'', target=app, chunks=None):
         async def send(message):
             messages.append(message)
         await target({'type': 'http', 'asgi': {'version': '3.0'}, 'http_version': '1.1', 'method': method,
-                      'scheme': 'http', 'path': path, 'raw_path': path.encode(), 'query_string': b'',
+                      'scheme': 'http', 'path': path, 'raw_path': path.encode(), 'query_string': query.encode(),
                       'headers': [(k.lower().encode(), v.encode()) for k, v in headers], 'root_path': '',
                       'client': ('127.0.0.1', 1234), 'server': ('127.0.0.1', 8000)}, receive, send)
         start = next(m for m in messages if m['type'] == 'http.response.start')

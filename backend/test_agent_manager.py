@@ -165,13 +165,26 @@ class AgentTests(unittest.TestCase):
             with patch.dict(os.environ, {"APPDATA": directory}):
                 with self.assertRaises(HTTPException) as error:
                     start_mock_agent(StartAgentRequest(task="Review", agent_type="codex"))
-                self.assertEqual(error.exception.status_code, 503)
+                # Stage 2F: an actionable provider refusal, not a raw file error.
+                self.assertEqual(error.exception.status_code, 409)
                 self.assertIn("npm", error.exception.detail)
+                self.assertIn("not found", error.exception.detail)
 
     def make_launcher(self, directory, script):
         npm = Path(directory) / "npm"
         npm.mkdir()
-        (npm / "echo_args.py").write_text(script, encoding="utf-8")
+        # Stage 2F readiness: the fake answers the local, non-billable version and
+        # sign-in status commands like an installed CLI signed in with ChatGPT.
+        (npm / "echo_args.py").write_text(
+            'import sys as _fake_sys\n'
+            'if _fake_sys.argv[1:] == ["--version"]:\n    print("codex-cli 0.0-test"); raise SystemExit(0)\n'
+            'if _fake_sys.argv[1:3] == ["login", "status"]:\n    print("Logged in using ChatGPT"); raise SystemExit(0)\n'
+            + script, encoding="utf-8")
+        # An isolated Codex home (never the developer's configuration) and the
+        # one-time billing acknowledgment a test user has given.
+        self.enterContext(patch.dict(os.environ, {"CODEX_HOME": str(Path(directory) / "codex-home")}))
+        import provider_test_support
+        provider_test_support.acknowledge(self, "codex")
         # Match the npm shim's second argument parsing pass, without running AI.
         (npm / "codex.cmd").write_text(
             '@echo off\nsetlocal\n'
@@ -216,7 +229,7 @@ class AgentTests(unittest.TestCase):
                     listed = next(item for item in manager.get_agents() if item["agent_id"] == agent_id)
                     self.assertEqual(listed["sandbox"], sandbox)
                     self.assertEqual(json.loads(worker_output(detail["output"])[0]), [
-                        "exec", "--sandbox", sandbox, "--color", "never",
+                        "exec", "-c", "model_provider=openai", "--sandbox", sandbox, "--color", "never",
                         "--skip-git-repo-check", "-"])
                     self.assertEqual(json.loads(worker_output(detail["output"])[1]), manager._codex_prompt(task))
                     self.assertEqual(worker_output(detail["output"])[2:], ["stderr captured"])

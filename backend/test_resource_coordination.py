@@ -9,6 +9,7 @@ from unittest.mock import patch
 from app import agent_manager as manager, dependencies, resource_coordination as coordination
 from app.persistence import AgentStore
 import test_resources
+from execution_test_support import rebooted
 
 
 class CoordinationTests(unittest.TestCase):
@@ -356,7 +357,8 @@ class CoordinationTests(unittest.TestCase):
             with self.assertRaises(OSError):
                 self.claim(b, '8000')
         incident, = self.incidents(a)
-        self.recover()
+        with rebooted():  # Controlled evidence: the worker processes ended with Windows.
+            self.recover()
         self.assertEqual(self.current(worker)['status'], 'released')
         self.assertFalse(self.incidents(a))
         self.assertEqual(self.incidents(a, 'resolved')[0]['deadlock_id'], incident['deadlock_id'])
@@ -472,7 +474,7 @@ class CoordinationTests(unittest.TestCase):
             self.assertEqual([r['claim_id'] for r in waits], [one['claim_id'], two['claim_id']])
             self.assertTrue(all(r['waiting_since'] is None for r in waits))
             self.assertEqual(db.execute('SELECT COUNT(*) FROM resource_deadlocks').fetchone()[0], 0)
-            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 26)
+            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 36)
             self.assertEqual(db.execute('PRAGMA foreign_key_check').fetchall(), [])
             coordination.migrate(db)  # Explicit idempotency, including backfill.
             self.assertEqual(len(list(db.execute('SELECT * FROM resource_waits'))), 2)
@@ -494,7 +496,7 @@ class CoordinationTests(unittest.TestCase):
             self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 13)
             self.assertIsNone(db.execute("SELECT name FROM sqlite_master WHERE name='resource_waits'").fetchone())
             self.assertNotIn('deadlock_id', [r[1] for r in db.execute('PRAGMA table_info(task_blockers)')])
-            db.execute('PRAGMA user_version=27')
+            db.execute('PRAGMA user_version=37')
         with self.assertRaises(RuntimeError):
             AgentStore(self.path)
         # Restore valid fixture for teardown only, after asserting rejection.

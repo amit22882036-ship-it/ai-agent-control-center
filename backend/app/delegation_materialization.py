@@ -5,10 +5,11 @@ TaskAssignments remain authoritative. No process/filesystem work occurs in the
 transaction helpers; the manager supplies the existing launch implementation.
 """
 from dataclasses import dataclass, replace
+import json
 from uuid import uuid4
 
 from . import delegations, dependencies, work_control, work_intents
-from . import delegation_orchestration, delegation_rounds, delegation_safety
+from . import delegation_orchestration, delegation_rounds, delegation_safety, providers
 from .task_domain import task_title
 
 NOW = delegations.NOW
@@ -63,8 +64,11 @@ def authorize(db, identifier, limits=None):
     if record['status'] not in ('requested', 'materialized') or parent['project_id'] != record['project_id']:
         raise ValueError('Delegation is canceled, closed or belongs to a different Project')
     receipt = delegation_rounds.receipt_for(db, parent['task_id'], identifier)
+    expected = {'request_key': record['request_key'], 'instruction': record['instruction']}
+    if record.get('allocation_request'):
+        expected['allocation'] = json.loads(record['allocation_request'])  # A v3 request, exactly as accepted.
     if (receipt.get('reason') != 'delegation_requested' or identifier not in receipt.get('delegation_ids', ())
-            or {'request_key': record['request_key'], 'instruction': record['instruction']} not in receipt.get('requests', ())):
+            or expected not in receipt.get('requests', ())):
         raise ValueError('Delegation has no matching accepted Parent handoff')
     # The receipt may acknowledge an idempotent request with older provenance.
     # Authority belongs to the receipt's current assignment, not that old Worker.
@@ -86,8 +90,10 @@ def authorize(db, identifier, limits=None):
     # alone is not an unrelated blocker; actual conflicts remain checked above.
     if db.execute("SELECT 1 FROM resource_claims WHERE task_id=? AND mode<>'advisory' AND status='waiting'", (parent['task_id'],)).fetchone():
         raise ValueError('Parent resource bundle is not granted')
-    if agent['agent_type'] not in ('mock', 'codex') or (agent['agent_type'] == 'codex' and agent['sandbox'] not in ('read-only', 'workspace-write')):
+    if agent['agent_type'] not in providers.IDS or (agent['agent_type'] in providers.REAL and agent['sandbox'] not in providers.SANDBOXES):
         raise ValueError('Unsupported Parent provider or sandbox')
+    if agent['agent_type'] != 'mock' and not providers.supports(agent['agent_type'], 'delegation'):
+        raise ValueError(providers.adapter(agent['agent_type']).capability('delegation'))
     return record, parent, dict(agent)
 
 
@@ -135,6 +141,8 @@ def admit(db, identifier, limits=None):
     limits = limits or configured_limits()
     record, _, provider = authorize(db, identifier, limits)
     promotion.require_ready(db, identifier)
+    from . import allocation
+    allocation.require_delegation_authorized(db, record)  # Ordinary Auto: the user's current policy.
     progress = inspect(db, identifier)
     if not progress or progress['phase'] != 'workspace_ready':
         raise ValueError('Child is not ready for a new launch')
@@ -183,14 +191,29 @@ class Materializer:
         self.limits = limits or configured_limits()
 
     def prepare(self, identifier):
-        from . import promotion
+        from . import promotion, allocation
+        held = None
         with self.store._connection() as db:
             db.execute('BEGIN IMMEDIATE')
             promoted = promotion.row_for(db, identifier)
-            record = promotion.prepare(db, identifier, self.limits) if promoted else attach(db, identifier, self.limits)
-            if not promoted:
-                db.execute('UPDATE delegations SET admission_error=NULL WHERE delegation_id=?', (identifier,))
+            request = None if promoted else allocation.delegation_request(delegations.get(db, identifier))
+            progress = inspect(db, identifier)
+            if request is not None and not (progress and progress['phase'] in ('launching', 'started', 'recovery_required')):
+                # Ordinary Auto (v3): the same engine and boundary as promotion, before any
+                # Child exists or is admitted; the decision commits even when it holds.
+                selected, explanation = allocation.decide(db, delegations.get(db, identifier), None, request)
+                if not selected:
+                    held = ('Auto allocation held: ' + explanation.splitlines()[0])[:500]
+            if held:
+                record = delegations.get(db, identifier)
+                db.execute('UPDATE delegations SET admission_error=? WHERE delegation_id=?', (held, identifier))
+            else:
+                record = promotion.prepare(db, identifier, self.limits) if promoted else attach(db, identifier, self.limits)
+                if not promoted:
+                    db.execute('UPDATE delegations SET admission_error=NULL WHERE delegation_id=?', (identifier,))
         self.publish(None)
+        if held:
+            raise ValueError(held)
         if promoted:
             with self.store._connection() as db:
                 promotion.require_ready(db, identifier)
@@ -224,6 +247,13 @@ class Materializer:
                 db.execute('BEGIN IMMEDIATE')
                 progress = inspect(db, identifier)
                 phase = 'recovery_required' if progress['phase'] == 'launching' else progress['phase']
+                from .allocation import AllocationRevoked
+                if isinstance(exc, AllocationRevoked) and phase == 'recovery_required':
+                    # Raised only inside admission before any process exists: the launch
+                    # returns to preparation instead of requiring ownership inspection.
+                    phase = 'workspace_ready'
+                    db.execute('UPDATE delegation_materializations SET launch_agent_id=NULL WHERE delegation_id=?',
+                               (identifier,))
                 db.execute(f'UPDATE delegation_materializations SET phase=?,last_error=?,updated_at={NOW} WHERE delegation_id=?',
                            (phase, type(exc).__name__ + ': ' + str(exc)[:500], identifier))
                 if isinstance(exc, (ValueError, LookupError)) and phase != 'recovery_required':

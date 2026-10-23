@@ -67,10 +67,18 @@ A watcher thread that ends without finalizing its exited process, for example be
   - exposes `watcher_lost` in `GET /agents/{id}`,
   - moves the Agent Task's own continuation to `recovery_required` with that `last_error`.
 
-  The sweep never finalizes, never runs a structured handoff, never launches and never wakes anything.
+  The sweep never finalizes, never runs a structured handoff, never launches and never wakes anything. An execution whose end could not be verified (or not yet recorded) is not a lost watcher: it is held by the [ownership policy](process-supervision.md#execution-journal-schema-v28), shows `--- Process tree end not verified: its Task and resources stay held. See Process ownership in the inspector. ---` and is never marked by the sweep.
 - **Reads.** A read of a regular (non-structured) execution may still settle its visible status, as before, without automatic continuation or scheduling.
 - **Recovery.** `POST /agents/{agent_id}/recovery/handoff` (CSRF-protected) is the explicit recovery. It runs the execution's finalization once: for a structured execution that is the durable handoff, guarded by `context.processed` and a per-execution attempt flag. It never performs automatic Always/Similar continuation, and every wake it would raise is suppressed. If it fails, the Agent is stopped with a visible reason and the action is not repeated.
 - **Parent.** The Parent continues only through `POST /tasks/{task_id}/orchestration/wake`.
+
+### Responsibility routes
+
+`GET /tasks/{task_id}/responsibility` is read-only. `POST /tasks/{task_id}/responsibility/transfer` is CSRF-protected like every unsafe route and rejects unknown fields; see [Responsibility transfer](agent-removal.md#responsibility-transfer-stage-2d2).
+
+### Execution recovery routes
+
+`GET /executions/unresolved?agent_id=…|task_id=…` and `GET /executions/{execution_id}` are read-only. `POST /executions/{execution_id}/diagnostics` (refresh) and `POST /executions/{execution_id}/attestation` are CSRF-protected like every unsafe route. The attestation body rejects unknown fields, so a client cannot send an eligibility or verification claim. Refusals are `409` with `{"code": "attestation_refused", "reasons": [...]}`. Malformed requests are `409` with `attestation_invalid`, and database failures are `503`. See [Diagnostics and human attestation](process-supervision.md#diagnostics-and-human-attestation-schema-v29).
 
 ### Known read-side writes
 

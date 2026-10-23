@@ -11,6 +11,7 @@ from app.output_history import RECENT_OUTPUT_LIMIT, OUTPUT_PAGE_SIZE, OUTPUT_MAX
 from app.persistence import AgentStore
 import test_persistence
 from api_test_support import request_headers
+from execution_test_support import rebooted
 
 
 class OutputHistoryTests(unittest.TestCase):
@@ -105,7 +106,7 @@ class OutputHistoryTests(unittest.TestCase):
         self.append(key, ['new'])
         with manager._store._connection() as db:
             rows = list(map(tuple, db.execute('SELECT * FROM output ORDER BY sequence')))
-            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 26)
+            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 36)
         self.assertEqual(rows[:-1], before)
         self.assertEqual(rows[-1], (key, 5, 'new'))
 
@@ -133,18 +134,21 @@ class OutputHistoryTests(unittest.TestCase):
             self.resume(key, lambda key: manager.redirect_agent(key, 'Correct'))
         self.output(key, 'codex\nCONTROL_CENTER_WAITING: Question\n', True)
         old = manager.get_agent(key)['output']
-        self.recover()
+        with rebooted():  # Controlled evidence: the worker processes ended with Windows.
+            self.recover()
         self.assertEqual(manager.agent_sessions[key], key)
         self.resume(key, lambda key: manager.reply_agent(key, 'Answer'))
         self.output(key, 'New output\n')
-        self.recover()
+        with rebooted():  # Controlled evidence: the worker processes ended with Windows.
+            self.recover()
         lines = manager.get_agent(key)['output']
         self.assertEqual(lines[:len(old)], old)
         self.assertEqual(lines[len(old):len(old)+3], ['--- User Reply ---', 'Answer', 'New output'])
         self.assertEqual(lines[-2], '--- Backend Restart ---')
         page = manager.get_agent_output(key)
         self.assertEqual([item['seq'] for item in page['items']], list(range(len(lines))))
-        self.recover()
+        with rebooted():  # Controlled evidence: the worker processes ended with Windows.
+            self.recover()
         self.assertEqual(manager.get_agent_output(key), page)
 
     def test_stale_reader_cannot_append_or_publish_after_replacement(self):

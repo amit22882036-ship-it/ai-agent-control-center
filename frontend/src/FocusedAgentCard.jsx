@@ -28,6 +28,6 @@ export default function FocusedAgentCard({ agent, parent, childrenCount, relatio
     </>}
     <div className="focus-section focus-actions"><p>Controls, activity and output history</p><button className="focus-details-link" onClick={() => onFullDetails(agent.agent_id)}>View full details <Icon name="arrow" size={15} /></button></div>
     {data?.events.length > 0 && <div className="focus-section"><h4>Recent activity</h4><ol className="focus-recent">{data.events.slice(0, 3).map((event) => <li key={event.id}><span>{event.label}</span>{event.at && <time dateTime={event.at}>{new Date(event.at).toLocaleString()}</time>}</li>)}</ol><p className="focus-footnote">Recent recorded events, not a complete history.</p></div>}
-    <details className="focus-technical"><summary>Technical details</summary><dl><dt>Agent ID</dt><dd>{agent.agent_id}</dd>{agent.task_id && <><dt>Task ID</dt><dd>{agent.task_id}</dd></>}<dt>Provider</dt><dd>{agent.agent_type}</dd>{agent.sandbox && <><dt>Sandbox</dt><dd>{agent.sandbox}</dd></>}</dl></details>
+    <details className="focus-technical"><summary>Technical details</summary><dl><dt>Agent ID</dt><dd>{agent.agent_id}</dd>{agent.task_id && <><dt>Task ID</dt><dd>{agent.task_id}</dd></>}<dt>Provider</dt><dd>{agent.agent_type}{agent.model ? ` · ${agent.model}` : ''}</dd>{agent.sandbox && <><dt>Sandbox</dt><dd>{agent.sandbox}</dd></>}</dl></details>
   </section>
 }

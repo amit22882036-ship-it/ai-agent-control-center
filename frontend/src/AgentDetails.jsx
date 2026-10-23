@@ -7,8 +7,18 @@ import AgentColorPicker from './AgentColorPicker'
 import AgentNameHistory from './AgentNameHistory'
 import AgentActivity from './AgentActivity'
 import HierarchyPreview from './HierarchyPreview'
+import ProcessOwnership from './ProcessOwnership'
+import RemovalSection from './RemovalSection'
+import { isRemoved } from './agentRemoval.mjs'
 import { agentName, executionLabel } from './agentPresentation.mjs'
 import { apiFetch } from './apiClient.mjs'
+import ProviderControls from './ProviderControls'
+import AgentModelSettings from './AgentModelSettings'
+import AutoAllocationPanel from './AutoAllocationPanel'
+import NextPromptConfig from './NextPromptConfig'
+import useModelCatalog from './useModelCatalog'
+import { emptyOverride, instructionPlan, instructionReady } from './modelPresentation.mjs'
+import { providerLabel, refusalMessage, supports } from './providerPresentation.mjs'
 
 function AgentDetails({ agentId, onClose, onStopped, refreshVersion, agents, onSelect, workspace }) {
   const [outputOpened, setOutputOpened] = useState(false)
@@ -41,7 +51,22 @@ function AgentDetails({ agentId, onClose, onStopped, refreshVersion, agents, onS
   const [alwaysError, setAlwaysError] = useState('')
   const [stoppingBranch, setStoppingBranch] = useState(false)
   const [branchError, setBranchError] = useState('')
+  const [replyOverride, setReplyOverride] = useState(emptyOverride)
+  const [redirectOverride, setRedirectOverride] = useState(emptyOverride)
+  const models = useModelCatalog(agent && agent.agent_type !== 'mock' ? agent.agent_type : null)
   const busy = stoppingBranch || stopping || redirecting || replying || deciding || Boolean(similarAction) || Boolean(alwaysAction)
+
+  // An explicit defaults change (only when asked) goes first; then the instruction's own fields.
+  async function instructionFields(override) {
+    const plan = instructionPlan(agent, models.catalog, override)
+    if (plan.defaults) {
+      const response = await apiFetch(`http://127.0.0.1:8000/agents/${agentId}/defaults`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(plan.defaults) })
+      const data = await response.json().catch(() => ({}))
+      if (!response.ok) throw new Error(refusalMessage(data, 'The agent defaults could not be changed.'))
+    }
+    return plan.fields
+  }
 
   async function handleStopBranch() {
     if (busy || !window.confirm('Stop this agent and all of its descendants? This does not affect its parent or siblings outside this branch.')) return
@@ -135,6 +160,7 @@ function AgentDetails({ agentId, onClose, onStopped, refreshVersion, agents, onS
       }
       const result = await response.json()
       setAnswer('')
+      setReplyOverride(emptyOverride())
       setAgent((current) => ({ ...current, status: result.status, waiting_question: null }))
       onStopped()
     } catch (err) {
@@ -146,14 +172,15 @@ function AgentDetails({ agentId, onClose, onStopped, refreshVersion, agents, onS
 
   async function handleReply(event) {
     event.preventDefault()
-    if (!answer.trim() || busy) return
+    if (!answer.trim() || busy || !instructionReady(agent, models.catalog, replyOverride)) return
     setReplying(true)
     setReplyError('')
     try {
+      const fields = await instructionFields(replyOverride)
       const response = await apiFetch(`http://127.0.0.1:8000/agents/${agentId}/reply`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ answer }),
+        body: JSON.stringify({ answer, ...fields }),
       })
       if (!response.ok) {
         const data = await response.json().catch(() => ({}))
@@ -175,14 +202,15 @@ function AgentDetails({ agentId, onClose, onStopped, refreshVersion, agents, onS
 
   async function handleRedirect(event) {
     event.preventDefault()
-    if (!instruction.trim() || busy) return
+    if (!instruction.trim() || busy || !instructionReady(agent, models.catalog, redirectOverride)) return
     setRedirecting(true)
     setRedirectError('')
     try {
+      const fields = await instructionFields(redirectOverride)
       const response = await apiFetch(`http://127.0.0.1:8000/agents/${agentId}/redirect`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ instruction }),
+        body: JSON.stringify({ instruction, ...fields }),
       })
       if (!response.ok) {
         const data = await response.json().catch(() => ({}))
@@ -192,6 +220,7 @@ function AgentDetails({ agentId, onClose, onStopped, refreshVersion, agents, onS
         throw new Error(message || 'Unable to redirect agent. Please try again.')
       }
       setInstruction('')
+      setRedirectOverride(emptyOverride())
     } catch (err) {
       setRedirectError(err.message)
     } finally {
@@ -275,7 +304,7 @@ function AgentDetails({ agentId, onClose, onStopped, refreshVersion, agents, onS
   return (
     <aside ref={panelRef} tabIndex={-1} onKeyDown={(event) => { if (event.key === 'Escape') onClose() }} className="agent-details" aria-labelledby="details-heading">
       <div className="details-header">
-        <h2 id="details-heading">{agent ? agentName(agent) : 'Agent details'}</h2>
+        <h2 id="details-heading">{agent && isRemoved(agent) && <Icon name="removed" size={18} className="removal-mark" />}{agent ? agentName(agent) : 'Agent details'}</h2>
         {agent && <span className={`status status-${agent.status}`}>{executionLabel(agent)}</span>}
         <div className="details-actions">
           <button className="close-button" type="button" onClick={onClose} aria-label="Close inspector" title="Close inspector"><Icon name="close" /></button>
@@ -299,7 +328,16 @@ function AgentDetails({ agentId, onClose, onStopped, refreshVersion, agents, onS
           {error && <p>Showing last received details.</p>}
           <details className="detail-section overview-section" open><summary>Overview</summary>
           <details className="assignment-disclosure"><summary>Assignment</summary><p className="task">{agent.task}</p></details>
-          {agent.agent_type === 'codex' && agent.status === 'waiting' && agent.waiting_context?.kind === 'user' && (
+          <p className="agent-type-note provider-summary">{providerLabel(agent.agent_type)}{agent.model ? ` · ${agent.model}` : ''}{agent.sandbox ? ` · ${agent.sandbox === 'workspace-write' ? 'Workspace write' : 'Read only'}` : ''}</p>
+          <ProviderControls key={`provider-${agentId}-${agent.agent_type}-${agent.model || ''}-${agent.sandbox || ''}`} agent={agent} agentId={agentId} disabled={busy}
+            models={models} onChanged={() => { setDetailsVersion((version) => version + 1); onStopped() }} />
+          <AutoAllocationPanel key={`allocation-${agentId}`} agent={agent} disabled={busy}
+            refreshVersion={`${refreshVersion}-${detailsVersion}`}
+            onChanged={() => { setDetailsVersion((version) => version + 1); onStopped() }} />
+          {agent.agent_type !== 'mock' && <AgentModelSettings key={`models-${agentId}-${agent.agent_type}-${agent.model || ''}-${agent.effort || ''}-${models.catalog ? 'listed' : 'loading'}`}
+            agent={agent} agentId={agentId} models={models} disabled={busy}
+            onChanged={() => { setDetailsVersion((version) => version + 1); onStopped() }} />}
+          {supports(agent.agent_type, 'reply') && agent.status === 'waiting' && agent.waiting_context?.kind === 'user' && (
             <section className="waiting-panel" aria-labelledby="waiting-heading">
               <h3 id="waiting-heading">Waiting for you</h3>
               <p className="waiting-question">{agent.waiting_question}</p>
@@ -313,8 +351,9 @@ function AgentDetails({ agentId, onClose, onStopped, refreshVersion, agents, onS
                   required
                   disabled={busy}
                 />
+                <NextPromptConfig agent={agent} models={models} value={replyOverride} onChange={setReplyOverride} disabled={busy} />
                 <button className="start-button" type="submit"
-                  disabled={busy || !answer.trim()}>
+                  disabled={busy || !answer.trim() || !instructionReady(agent, models.catalog, replyOverride)}>
                   {replying ? 'Sending...' : 'Reply'}
                 </button>
                 <button className="close-button" type="button" onClick={handleDecide}
@@ -348,6 +387,11 @@ function AgentDetails({ agentId, onClose, onStopped, refreshVersion, agents, onS
             </section>
           )}
           </details>
+          <ProcessOwnership agentId={agentId} refreshVersion={`${refreshVersion}-${detailsVersion}`}
+            onChanged={() => { setDetailsVersion((version) => version + 1); onStopped() }} />
+          <RemovalSection key={`removal-${agentId}`} agent={agent} agentId={agentId} agents={agents} onSelect={onSelect}
+            refreshVersion={`${refreshVersion}-${detailsVersion}`}
+            onChanged={() => { setDetailsVersion((version) => version + 1); onStopped() }} />
           {activityError && <p className="agent-type-note" role="status">{activityError}{activity ? ' Showing last received activity.' : ''}</p>}
           {!activity && !activityError && <p className="agent-type-note">Loading work activity…</p>}
           <HierarchyPreview agent={agent} refreshVersion={refreshVersion + detailsVersion} onSelect={onSelect} workspace={workspace} />
@@ -370,7 +414,7 @@ function AgentDetails({ agentId, onClose, onStopped, refreshVersion, agents, onS
             </button>
           )}
           </div>
-          {agent.agent_type === 'codex' && agent.always_decide_enabled && (
+          {supports(agent.agent_type, 'decisions') && agent.always_decide_enabled && (
             <div className="waiting-panel">
               <p>Always decide for this agent: On</p>
               <p className="agent-type-note">Always Decide takes precedence over Similar Decisions. The agent can still ask for genuinely missing information.</p>
@@ -379,7 +423,7 @@ function AgentDetails({ agentId, onClose, onStopped, refreshVersion, agents, onS
               </button>
             </div>
           )}
-          {agent.agent_type === 'codex' && agent.similar_decisions_enabled && (
+          {supports(agent.agent_type, 'decisions') && agent.similar_decisions_enabled && (
             <div className="waiting-panel">
               <p>Auto-decide similar questions: {agent.always_decide_enabled ? 'Saved (Always Decide is active)' : 'On'}</p>
               <button className="close-button" type="button" disabled={busy} onClick={() => handleSimilar(true)}>
@@ -387,7 +431,7 @@ function AgentDetails({ agentId, onClose, onStopped, refreshVersion, agents, onS
               </button>
             </div>
           )}
-          {agent.agent_type === 'codex' && agent.status === 'running' && (
+          {supports(agent.agent_type, 'redirect') && agent.status === 'running' && (
             agent.session_id ? (
               <details className="detail-section"><summary>Redirect this agent</summary><form className="redirect-form" onSubmit={handleRedirect}>
                 <label htmlFor="redirect-instruction">Redirect agent</label>
@@ -400,12 +444,13 @@ function AgentDetails({ agentId, onClose, onStopped, refreshVersion, agents, onS
                   required
                   disabled={busy}
                 />
+                <NextPromptConfig agent={agent} models={models} value={redirectOverride} onChange={setRedirectOverride} disabled={busy} />
                 <button className="start-button" type="submit"
-                  disabled={busy || !instruction.trim()}>
+                  disabled={busy || !instruction.trim() || !instructionReady(agent, models.catalog, redirectOverride)}>
                   {redirecting ? 'Sending...' : 'Send'}
                 </button>
               </form></details>
-            ) : <p className="agent-type-note">Redirect will be available once the Codex session starts.</p>
+            ) : <p className="agent-type-note">Redirect will be available once the provider session starts.</p>
           )}
           </details>
           <details className="detail-section" onToggle={(event) => { if (event.currentTarget.open) setOutputOpened(true) }}><summary>Output history</summary>
@@ -413,8 +458,11 @@ function AgentDetails({ agentId, onClose, onStopped, refreshVersion, agents, onS
           </details>
           <AgentNameHistory agentId={agentId} refreshVersion={`${refreshVersion}-${detailsVersion}`} />
           <details className="detail-section advanced"><summary>Advanced information</summary><dl>
-            <dt>Agent UUID</dt><dd>{agentId}</dd><dt>Codex session</dt><dd>{agent.session_id || 'Not available'}</dd>
-            <dt>Agent type</dt><dd>{agent.agent_type}</dd><dt>Sandbox</dt><dd>{agent.sandbox || 'Not applicable'}</dd>
+            <dt>Agent UUID</dt><dd>{agentId}</dd><dt>Provider session</dt><dd>{agent.session_id || 'Not available'}</dd>
+            <dt>Provider</dt><dd>{providerLabel(agent.agent_type)}</dd><dt>Model</dt><dd>{agent.model || 'Provider default'}</dd>
+            <dt>Sandbox</dt><dd>{agent.sandbox || 'Not applicable'}</dd>
+            {agent.provider_history?.length > 0 && <><dt>Provider changes</dt><dd>{agent.provider_history.map((change) =>
+              `${providerLabel(change.from_provider)}${change.from_model ? ` (${change.from_model})` : ''} → ${providerLabel(change.to_provider)}${change.to_model ? ` (${change.to_model})` : ''}${change.session_retained ? ', session kept' : ', new session'}`).join('; ')}</dd></>}
             <dt>Internal status</dt><dd>{agent.status}</dd>
           </dl></details>
         </>

@@ -10,6 +10,7 @@ from app import agent_manager as manager, replanning, promotion, delegation_orch
 from app.persistence import AgentStore
 import test_promotion as existing
 from test_promotion import selection
+from execution_test_support import use_attested_test_doubles
 
 
 class ReplanningTests(unittest.TestCase):
@@ -24,6 +25,7 @@ class ReplanningTests(unittest.TestCase):
     accepted=existing.PromotionTests.accepted
 
     def setUp(self):
+        use_attested_test_doubles(self)  # explicit test-only evidence for test doubles
         existing.PromotionTests.setUp(self)
         self.intent,_ = self.store.create_work_intent(self.task['task_id'],namespace='component',key='parent',mode='single_owner')
         self.key,_ = self.accepted([selection(),selection('b')],continuation=dict(instruction='Independent parent work',intent_ids=[self.intent]))
@@ -412,7 +414,7 @@ class ReplanningTests(unittest.TestCase):
 
     def test_schema_v26_and_migration_rollback(self):
         with self.store._connection() as db:
-            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0],26)
+            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0],36)
             db.execute('DROP TABLE replan_transitions');db.execute('DROP TABLE replan_decisions');db.execute('DROP TABLE replan_signals')
             db.execute('PRAGMA user_version=25')
         original=replanning.migrate

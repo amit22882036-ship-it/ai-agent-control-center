@@ -13,6 +13,7 @@ from app import agent_manager as manager, delegation_protocol as protocol, deleg
 from app.codex_events import CodexEvents, Execution, StructuredCommand
 from app.persistence import AgentStore
 import test_delegations
+from execution_test_support import use_attested_test_doubles
 
 
 def envelope(*keys):
@@ -61,7 +62,9 @@ class AdapterTests(unittest.TestCase):
     def test_windows_command_keeps_json_resume_and_stdin_options(self):
         session = str(uuid4())
         with patch.object(manager.os, 'name', 'nt'), patch.object(manager.Path, 'is_file', return_value=True), \
-             patch.dict(manager.os.environ, APPDATA='C:\\npm-fixture', SystemRoot='C:\\Windows'):
+             patch.object(manager, '_require_launchable'), \
+             patch.dict(manager.os.environ, APPDATA='C:\\npm-fixture', SystemRoot='C:\\Windows',
+                        CODEX_HOME='C:\\codex-home-fixture'):
             command = manager._codex_command('workspace-write', session, structured=True)
         self.assertIsInstance(command, StructuredCommand)
         self.assertIn('--sandbox workspace-write --color never --skip-git-repo-check --json resume ' + session + ' -', command)
@@ -296,7 +299,7 @@ class HandoffTests(unittest.TestCase):
         self.assertEqual(self.snapshot(), before)
         self.store = AgentStore(self.path)
         with self.store._connection() as db:
-            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 26)
+            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 36)
             self.assertEqual(db.execute('PRAGMA foreign_key_check').fetchall(), [])
         self.assertIsNone(self.store.get_task(self.parent['task_id'])['orchestration_handoff'])
         self.assertFalse(self.store.execution_settings(self.origin['agent_id']))
@@ -304,6 +307,7 @@ class HandoffTests(unittest.TestCase):
 
 class RuntimeTests(unittest.TestCase):
     def setUp(self):
+        use_attested_test_doubles(self)  # explicit test-only evidence for test doubles
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)

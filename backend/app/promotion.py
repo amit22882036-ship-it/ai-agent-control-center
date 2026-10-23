@@ -7,7 +7,8 @@ import json
 from uuid import UUID, uuid5
 
 from . import planning, delegation_protocol, delegation_continuation, delegation_handoff
-from . import delegation_materialization, delegations, dependencies, work_control, work_intents, resources
+from . import delegation_materialization, delegations, dependencies, work_control, work_intents, resources, providers
+from . import allocation
 
 PROTOCOL = 'control-center.promotion.v1'
 MAX_CONTEXT = 16384
@@ -44,8 +45,23 @@ def validate(message):
         raise ValueError('Promotion requires 1-16 selected items')
     seen = set()
     for item in items:
-        if not isinstance(item, dict) or set(item) != {'proposal_id', 'scope', 'resources', 'depends_on_task_ids', 'reuse_task_id'}:
+        if (not isinstance(item, dict) or not ITEM_FIELDS <= set(item)
+                or not set(item) <= ITEM_FIELDS | OPTIONAL_ITEM_FIELDS):
             raise ValueError('Invalid promotion item fields')
+        # Stage 2F: an optional Child provider/model request. It is a request,
+        # never authority: admission checks it, and a refusal is never replaced.
+        if 'provider' in item and item['provider'] not in providers.IDS:
+            raise ValueError('Unknown Child provider; use one of ' + ', '.join(providers.IDS))
+        if 'model' in item:
+            if item['model'] is not None and 'provider' not in item:
+                raise ValueError('A Child model requires an explicit Child provider')
+            providers.validate_model(item['model'])
+        if 'allocation' in item:
+            # Auto allocation asks the backend to choose; it is exclusive with an explicit
+            # request and grants nothing by itself (the user's policy authorizes it).
+            if 'provider' in item or 'model' in item:
+                raise ValueError('An item requests either an explicit provider/model or Auto allocation, not both')
+            allocation.validate_request(item['allocation'])
         key = planning.key(item['proposal_id'])
         if key in seen:
             raise ValueError('Duplicate selected proposal')
@@ -101,13 +117,21 @@ def migrate(db):
         FOREIGN KEY(task_id,revision) REFERENCES planning_revisions(task_id,revision))''')
 
 
+ITEM_FIELDS = {'proposal_id', 'scope', 'resources', 'depends_on_task_ids', 'reuse_task_id'}
+OPTIONAL_ITEM_FIELDS = {'provider', 'model', 'allocation'}
+
+
+def _managed_provider(provider):
+    return provider in providers.IDS and providers.managed_capable(provider)
+
+
 def _origin(db, origin, session_id):
     task = dependencies.task(db, origin.parent_task_id)
     agent = db.execute('SELECT * FROM agents WHERE agent_id=?', (origin.agent_id,)).fetchone()
     assignment = db.execute('SELECT * FROM task_assignments WHERE assignment_id=?', (origin.assignment_id,)).fetchone()
     if (not agent or not all(agent[k] for k in ('planning_enabled', 'delegation_protocol_enabled',
             'child_materialization_enabled', 'hybrid_delegation_enabled'))
-            or agent['agent_type'] != 'codex' or agent['sandbox'] not in ('read-only', 'workspace-write')
+            or not _managed_provider(agent['agent_type']) or agent['sandbox'] not in ('read-only', 'workspace-write')
             or agent['execution_generation'] != origin.generation or not session_id or agent['session_id'] != session_id
             or not assignment or assignment['agent_id'] != origin.agent_id or assignment['task_id'] != task['task_id']
             or task['project_id'] != origin.project_id):
@@ -127,6 +151,10 @@ def accept(db, origin, message, *, session_id, message_id):
         if previous['content'] != encoded(value):
             raise ValueError('Conflicting promotion decision replay')
         return json.loads(previous['receipt'])  # Receipt only, never another launch.
+    from . import agent_removal
+    # Exact replays above are read-only receipts; anything new after removal
+    # admission is refused inside this same transaction.
+    agent_removal.require_operational(db, origin.agent_id)
     if assignment['ended_at'] is not None or agent['status'] != 'running':
         raise ValueError('Promotion requires a running current assignment')
     work_control.require_active(task, db=db)
@@ -194,6 +222,9 @@ def accept(db, origin, message, *, session_id, message_id):
     for item, request in zip(value['items'], requests):
         record = db.execute('SELECT delegation_id FROM delegations WHERE parent_task_id=? AND request_key=?',
                             (task['task_id'], request['request_key'])).fetchone()
+        if item.get('provider') is not None:
+            db.execute('''UPDATE delegations SET child_provider=?,child_model=? WHERE delegation_id=?
+                AND child_provider IS NULL AND child_model IS NULL''', (item['provider'], item.get('model'), record[0]))
         db.execute('''INSERT OR IGNORE INTO promotion_items(task_id,proposal_id,decision_key,revision,
             proposal,coordination,delegation_id,disposition,reason) VALUES (?,?,?,?,?,?,?,'pending','Admission pending')''',
             (task['task_id'], item['proposal_id'], value['decision_key'], value['revision'],
@@ -250,6 +281,28 @@ def prepare(db, identifier, limits=None):
              'Existing work requires explicit result review; it is not automatically accepted or re-executed')
         return record
     parent = dependencies.task(db, row['task_id'])
+    if item.get('allocation') is not None:
+        # Auto: the provider/model/effort is chosen here, before any Child admission, and
+        # recorded durably; from then on the launch path treats it as an explicit request.
+        selected, explanation = allocation.decide(db, record, row, item['allocation'])
+        record = delegations.get(db, identifier)
+        if not selected:
+            _set(db, identifier, 'blocked', ('Auto allocation held: ' + explanation.splitlines()[0])[:500])
+            return record
+    requested = record.get('child_provider')
+    if requested is not None:
+        # Durable policy only (no probe inside this transaction); the launch path
+        # rechecks installation, sign-in and billing before any process exists.
+        config = providers.settings(db, requested)
+        reason = providers.adapter(requested).capability('delegated_child')
+        blocks = providers.active_blocks(db, requested, record.get('child_model'))
+        if reason or not config['enabled'] or blocks:
+            why = reason or (f'{providers.LABELS[requested]} is not enabled for new work' if not config['enabled']
+                             else blocks[0]['reason'])
+            _set(db, identifier, 'blocked', (f'Requested Child provider {providers.LABELS[requested]} is unavailable: '
+                                            f'{why}. No other provider is substituted; request an available provider '
+                                            'or ask the user to enable this one.')[:500])
+            return record
     namespace, key = work_intents.normalize(scope['namespace'], scope['key'])
     source = scope['from_intent_id']
     if source:
@@ -339,6 +392,10 @@ def require_ready(db, identifier):
     record = delegations.get(db, identifier)
     child = dependencies.task(db, record['child_task_id'])
     item = json.loads(row['coordination'])
+    if item.get('allocation') is not None:
+        # An Auto selection is admitted only while the user's current policy still permits it;
+        # a prepared disposition alone is not authority. Explicit requests are unaffected.
+        allocation.require_authorized(db, record)
     scope = item['scope']
     namespace, key = work_intents.normalize(scope['namespace'], scope['key'])
     if scope['from_intent_id']:
@@ -379,7 +436,8 @@ def inspect(db, task_id, limit=None):
         value = dict(row)
         record = delegations.get(db, row['delegation_id'])
         value.update(child_task_id=record['child_task_id'], delegation_status=record['status'],
-                     materialization=record.get('materialization'))
+                     materialization=record.get('materialization'),
+                     allocation=allocation.summary(db, row['delegation_id']))
         child = dependencies.task(db, record['child_task_id']) if record['child_task_id'] else None
         value['child_status'] = child['status'] if child else None
         value['admission_disposition'] = value['disposition']
@@ -412,6 +470,8 @@ def context(db, task_id):
     own_tasks = {task_id} | {r['child_task_id'] for r in items}
     for item in items:
         row = {k: item[k] for k in ('proposal_id', 'revision', 'disposition', 'reason', 'child_task_id', 'delegation_status')}
+        if item.get('allocation'):
+            row['allocated'] = {k: item['allocation'][k] for k in ('status', 'provider', 'model', 'effort')}
         if len(encoded(dict(promotions=rows + [row], related_work=related)).encode()) > MAX_CONTEXT:
             break
         rows.append(row)
@@ -447,7 +507,11 @@ def instruction(task_id):
 Planning alone never executes work. Only when useful and authorized for this execution, select accepted
 proposal IDs by emitting a FINAL standalone JSON object with exactly protocol, task_id, revision,
 decision_key (stable ASCII key), items (1-16), continuation.
-Each item has exactly proposal_id, scope, resources, depends_on_task_ids, reuse_task_id.
+Each item has exactly proposal_id, scope, resources, depends_on_task_ids, reuse_task_id, and optionally
+provider (one of mock, codex, claude, gemini) and model (an identifier or null) to request the Child's
+provider; without provider the Child uses yours. A requested provider that is unavailable is reported as
+blocked and is never replaced by another provider. Only where the user authorized Auto allocation (stated
+below when it applies) may an item carry allocation instead of provider/model.
 scope is null (blocked as ambiguous) or {{"namespace":"component","key":"logical/scope","from_intent_id":null}}.
 Only reference known containing ancestor intents; never invent IDs. Declare resources using existing
 resource_type, resource_key, scope, mode, recursive fields (max 8); use [] when none are needed.

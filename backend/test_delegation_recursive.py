@@ -20,6 +20,7 @@ from app.workspace_freshness import ensure_workspace_current
 from workspace_test_support import make_repository
 import test_delegation_protocol as baseline
 import test_delegation_hybrid as hybrid
+from execution_test_support import use_attested_test_doubles
 
 
 class RecursiveTests(unittest.TestCase):
@@ -28,6 +29,7 @@ class RecursiveTests(unittest.TestCase):
     finish = baseline.RuntimeTests.finish
 
     def setUp(self):
+        use_attested_test_doubles(self)  # explicit test-only evidence for test doubles
         baseline.RuntimeTests.setUp(self)
         self.patch(patch.dict(os.environ, CONTROL_CENTER_DELEGATION_DEPTH='4'))
         self.patch(patch.object(manager, '_schedule_materialization'))
@@ -524,7 +526,7 @@ class RecursiveTests(unittest.TestCase):
             self.assertNotIn('recursive_delegation_enabled', {r['name'] for r in db.execute('PRAGMA table_info(agents)')})
         AgentStore(self.store.path)
         with self.store._connection() as db:
-            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 26)
+            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 36)
             self.assertIsNone(db.execute('PRAGMA foreign_key_check').fetchone())
 
     def real_workspaces(self):

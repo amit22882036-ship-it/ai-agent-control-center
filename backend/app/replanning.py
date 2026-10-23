@@ -9,7 +9,7 @@ from hashlib import sha256
 from uuid import uuid4
 
 from . import planning, promotion, delegations, delegation_orchestration as hybrid
-from . import delegation_safety, dependencies, work_control, work_intents, resources
+from . import delegation_safety, dependencies, work_control, work_intents, resources, providers
 
 PROTOCOL = 'control-center.replanning.v1'
 TERMINAL = ('applied', 'rejected', 'canceled')
@@ -180,7 +180,7 @@ def signal(db, task_id, key, evidence):
 def require_owner(db, decision):
     current, task, agent = hybrid.owner(db, decision['task_id'], allow_running=True)
     if (agent['agent_id'] != decision['agent_id'] or current['assignment_id'] != decision['assignment_id']
-            or not agent['planning_enabled'] or agent['agent_type'] != 'codex'
+            or not agent['planning_enabled'] or not providers.managed_capable(agent['agent_type'])
             or agent['sandbox'] not in ('read-only','workspace-write')
             or (task['parent_task_id'] and not agent['recursive_delegation_enabled'])
             or task['control_intent'] != 'active' or task['stop_required']):
@@ -208,6 +208,10 @@ def accept(db, origin, message, *, session_id, message_id):
         if previous['content'] != promotion.encoded(value):
             raise ValueError('Conflicting replanning replay')
         return json.loads(previous['receipt'])
+    from . import agent_removal
+    # Exact replays above are read-only receipts; anything new after removal
+    # admission is refused inside this same transaction.
+    agent_removal.require_operational(db, origin.agent_id)
     if assignment['ended_at'] is not None or agent['status'] != 'running':
         raise ValueError('Replanning requires a current running assignment')
     work_control.require_active(task,db=db)
@@ -570,6 +574,10 @@ class TransitionService:
             child = dependencies.task(db,row['task_id'])
             if child['status'] == 'completed':
                 raise ValueError('Completed work requires integration and result review before retirement')
+            from . import agent_removal
+            worker = db.execute('SELECT agent_id FROM task_assignments WHERE task_id=? AND ended_at IS NULL',(row['task_id'],)).fetchone()
+            if row['phase'] != 'stopping' and worker and agent_removal.removal_pending(db,worker[0]):
+                raise ValueError('Target worker removal is in progress; explicit fresh decision required after it settles')
             impact = dependencies.impact(db,row['task_id'],'cancel')
             for member in [row['task_id'], *impact['descendant_task_ids']]:
                 delegation_safety.require_known_ownership(db,member)

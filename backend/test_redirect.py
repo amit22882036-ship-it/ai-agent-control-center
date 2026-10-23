@@ -137,7 +137,7 @@ class RedirectTests(unittest.TestCase):
                     self.assertEqual(detail["session_id"], session_id)
                     self.assertEqual(worker_output(detail["output"])[:4], history + ["--- Redirect ---", instruction])
                     resumed = json.loads(worker_output(detail["output"])[5])
-                    self.assertEqual(resumed["args"], ["exec", "--sandbox", sandbox, "--color", "never",
+                    self.assertEqual(resumed["args"], ["exec", "-c", "model_provider=openai", "--sandbox", sandbox, "--color", "never",
                                                      "--skip-git-repo-check", "resume", session_id, "-"])
                     self.assertEqual(resumed["prompt"], manager._codex_prompt(instruction))
                     self.assertEqual(resumed["cwd"], json.loads(history[1])["cwd"])

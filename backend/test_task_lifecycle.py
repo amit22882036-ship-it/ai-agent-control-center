@@ -11,6 +11,7 @@ from app.main import app
 from app.persistence import AgentStore
 import test_persistence
 from api_test_support import request_headers
+from execution_test_support import rebooted
 
 
 class TaskLifecycleTests(unittest.TestCase):
@@ -105,7 +106,8 @@ class TaskLifecycleTests(unittest.TestCase):
     def test_legacy_and_child_start_remain_compatible_with_independent_tasks(self):
         root = self.start_request('/agents/start', {'task': 'Legacy description'})
         child = self.start_request(f"/agents/{root['agent_id']}/children/start", {'task': 'Child description'})
-        self.assertEqual(set(root), {'agent_id', 'status', 'parent_id', 'task', 'display_name', 'display_color', 'agent_type', 'sandbox'})
+        self.assertEqual(set(root), {'agent_id', 'status', 'parent_id', 'task', 'display_name', 'display_color', 'agent_type', 'model',
+                                     'effort', 'sandbox'})
         self.assertEqual(child['parent_id'], root['agent_id'])
         tasks = manager._store.list_tasks()
         self.assertEqual(len(tasks), 2)
@@ -190,7 +192,8 @@ class TaskLifecycleTests(unittest.TestCase):
         waiting, _ = self.create()
         self.output(waiting, f'session id: {waiting}\nCONTROL_CENTER_WAITING: Question\n', True)
         assignment = manager._store.get_active_assignment_for_agent(waiting)
-        self.recover()
+        with rebooted():  # Controlled evidence: the worker processes ended with Windows.
+            self.recover()
         self.assertEqual(self.task_for(running)['status'], 'pending')
         self.assertIsNone(manager._store.get_active_assignment_for_agent(running))
         self.assertEqual(self.task_for(waiting)['status'], 'waiting')
@@ -362,6 +365,7 @@ class TaskV5MigrationTests(unittest.TestCase):
         missing_task = self.task_for(missing)
         with manager._store._connection() as db:
             db.execute('DROP TABLE task_workspaces')  # Restore the pre-workspace migration fixture.
+            db.execute('DELETE FROM executions')  # v4 predates the execution journal too.
             db.execute('DELETE FROM task_assignments WHERE task_id=?', (missing_task['task_id'],))
             db.execute('DELETE FROM tasks WHERE task_id=?', (missing_task['task_id'],))
             db.execute('PRAGMA user_version=4')
@@ -380,6 +384,7 @@ class TaskV5MigrationTests(unittest.TestCase):
         missing_task = self.task_for(missing)
         with manager._store._connection() as db:
             db.execute('DROP TABLE task_workspaces')  # Restore the pre-workspace migration fixture.
+            db.execute('DELETE FROM executions')  # v4 predates the execution journal too.
             db.execute('DELETE FROM task_assignments WHERE task_id=?', (missing_task['task_id'],))
             db.execute('DELETE FROM tasks WHERE task_id=?', (missing_task['task_id'],))
             db.execute('PRAGMA user_version=4')
@@ -401,6 +406,7 @@ class TaskV5MigrationTests(unittest.TestCase):
         represented_task = self.task_for(keys['stopped'])
         with manager._store._connection() as db:
             db.execute('DROP TABLE task_workspaces')  # Restore the pre-workspace migration fixture.
+            db.execute('DELETE FROM executions')  # v4 predates the execution journal too.
             db.execute('DELETE FROM task_assignments WHERE agent_id<>?', (keys['stopped'],))
             db.execute('DELETE FROM tasks WHERE task_id<>?', (represented_task['task_id'],))
             db.execute('PRAGMA user_version=4')

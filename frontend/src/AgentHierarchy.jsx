@@ -3,6 +3,7 @@ import { agentName, agentContext, executionLabel } from './agentPresentation.mjs
 import { displayColor } from './agentIdentity.mjs'
 import { topologyOf, layoutHierarchy, indexHierarchy, zoomCamera, fitCamera, focusCamera, selectionCamera, retainCamera, connectorPath, directionalTarget, nodeWidth, nodeHeight } from './hierarchyLayout.mjs'
 import Icon from './Icon'
+import { removalState } from './agentRemoval.mjs'
 
 export default function AgentHierarchy({ nodes, allNodes, collapsed, onToggle, selectedAgentId, onSelect, filterKey }) {
   const labelId = useId()
@@ -75,8 +76,9 @@ export default function AgentHierarchy({ nodes, allNodes, collapsed, onToggle, s
         </svg>
         {layout.nodes.map((node) => {
           const entry = indexed.get(node.id), agent = entry.agent
-          return <article key={node.id} className={`hierarchy-node agent-card${selectedAgentId === node.id ? ' selected' : ''}${visible.get(node.id)?.contextOnly ? ' context-only' : ''}`} data-display-color={displayColor(agent.display_color)} data-status={agent.status} style={{ left: node.x, top: node.y, width: nodeWidth, height: nodeHeight }}>
-            <button className="hierarchy-select" ref={(element) => { if (element) buttons.current.set(node.id, element); else buttons.current.delete(node.id) }} aria-pressed={selectedAgentId === node.id} aria-label={agentName(agent)} aria-describedby={`${labelId}-${node.id}`}
+          const removal = removalState(agent)
+          return <article key={node.id} className={`hierarchy-node agent-card${selectedAgentId === node.id ? ' selected' : ''}${visible.get(node.id)?.contextOnly ? ' context-only' : ''}${removal === 'removed' ? ' agent-removed' : removal ? ' agent-removing' : ''}`} data-display-color={displayColor(agent.display_color)} data-status={agent.status} data-removal={removal || undefined} style={{ left: node.x, top: node.y, width: nodeWidth, height: nodeHeight }}>
+            <button className="hierarchy-select" ref={(element) => { if (element) buttons.current.set(node.id, element); else buttons.current.delete(node.id) }} aria-pressed={selectedAgentId === node.id} aria-label={`${agentName(agent)}${removal === 'removed' ? ', removed' : ''}`} aria-describedby={`${labelId}-${node.id}`}
                 onClick={() => onSelect(node.id)} onFocus={() => {
                   const { width, height } = size()
                   if (camera.scale < 0.5 || node.x * camera.scale + camera.x < 0 || (node.x + nodeWidth) * camera.scale + camera.x > width || node.y * camera.scale + camera.y < 0 || (node.y + nodeHeight) * camera.scale + camera.y > height) {
@@ -84,11 +86,12 @@ export default function AgentHierarchy({ nodes, allNodes, collapsed, onToggle, s
                     setCamera((current) => focusCamera(node, { ...current, scale: Math.max(0.75, current.scale) }, width, height))
                   }
                 }} onKeyDown={(event) => keyNavigate(event, node)}>
-            <span className="hierarchy-node-heading"><span className="agent-avatar" aria-hidden="true"><Icon name="agent" size={18} /></span><strong title={agentName(agent)}>{agentName(agent)}</strong></span>
+            <span className="hierarchy-node-heading"><span className="agent-avatar" aria-hidden="true">{removal === 'removed' ? <Icon name="removed" size={18} className="removal-mark" /> : <Icon name="agent" size={18} />}</span><strong className="agent-name" title={agentName(agent)}>{agentName(agent)}</strong></span>
             <span className="hierarchy-responsibility">{agentContext(agent) || agent.task}</span>
             <span className="hierarchy-node-state"><span id={`${labelId}-${node.id}`} className={`status status-${agent.status}`}>{executionLabel(agent)}</span>
               {agent.historical_assignment && <span className="agent-type-note">Past worker</span>}
-              {agent.task_status === 'canceled' && <span className="agent-type-note">Task canceled</span>}</span>
+              {agent.task_status === 'canceled' && <span className="agent-type-note">Task canceled</span>}
+              {entry.parentHidden && <span className="agent-type-note">Parent removed · hidden</span>}</span>
             </button>
             {entry.descendants > 0 && <button className="hierarchy-branch" disabled={!onToggle} aria-expanded={!collapsed.has(node.id)} onClick={() => onToggle?.(node.id)} aria-label={`${collapsed.has(node.id) ? 'Expand' : 'Collapse'} ${agentName(agent)} branch`}>
               <Icon name={collapsed.has(node.id) ? 'chevron' : 'down'} size={12} />{entry.descendants} descendants{entry.active > 0 ? ` · ${entry.active} working` : ''}{entry.attention > 0 ? ` · ${entry.attention} need attention` : ''}</button>}
