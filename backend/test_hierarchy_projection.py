@@ -33,7 +33,7 @@ class HierarchyProjectionTests(unittest.TestCase):
             self.assertFalse(snapshot['incomplete_ancestry'])
         with self.store._connection() as db:
             self.assertEqual(before, list(db.iterdump()))
-            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 36)
+            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 37)
 
     def test_missing_agent_is_404_and_orphan_is_explicit(self):
         self.seed([('orphan', 'missing'), ('single', None)])

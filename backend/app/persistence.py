@@ -12,7 +12,7 @@ from .agent_names import default_display_name, validate_display_color
 from .output_history import OUTPUT_PAGE_SIZE, OUTPUT_MAX_LIMIT
 from .project_domain import DEFAULT_ROOT, canonical_path, contains, project_name
 from . import delegation_orchestration, delegation_rounds, delegation_safety
-from . import planning, promotion, replanning, agent_removal, executions, execution_attestation, responsibility, providers, model_catalog, allocation
+from . import planning, promotion, replanning, agent_removal, executions, execution_attestation, responsibility, providers, model_catalog, allocation, provider_policy, provider_onboarding
 
 
 class ControllerConflict(RuntimeError):
@@ -27,7 +27,7 @@ class AgentStore:
         self._lock = RLock()
         with self._connection() as db:
             version = db.execute('PRAGMA user_version').fetchone()[0]
-            if version not in range(37):
+            if version not in range(38):
                 raise RuntimeError(f'Unsupported control-center database schema version: {version}')
             if version < 27:
                 # Table rebuilds (v11, v12, v27) need enforcement off on this
@@ -341,6 +341,19 @@ class AgentStore:
                     if db.execute('PRAGMA foreign_key_check').fetchone():
                         raise sqlite3.IntegrityError('Invalid policy revision migration references')
                     db.execute('PRAGMA user_version = 36')
+                    version = 36
+                if version == 36:
+                    if not db.in_transaction:
+                        db.execute('BEGIN IMMEDIATE')
+                    provider_policy.migrate_v37(db)
+                    provider_onboarding.migrate_v37(db)
+                    if db.execute('PRAGMA foreign_key_check').fetchone():
+                        raise sqlite3.IntegrityError('Invalid provider onboarding migration references')
+                    db.execute('PRAGMA user_version = 37')
+                db.execute('SELECT allowed_providers,default_provider,revision FROM provider_global_policy LIMIT 0')
+                db.execute('SELECT task_id,providers,revision FROM task_provider_restrictions LIMIT 0')
+                db.execute('SELECT operation_id,provider,action,status FROM provider_operations LIMIT 0')
+                db.execute('SELECT provider,status,latest_version FROM provider_update_checks LIMIT 0')
                 db.execute('SELECT revision FROM auto_allocation_policies LIMIT 0')
                 db.execute('SELECT revision,task_id,action FROM auto_allocation_policy_revisions LIMIT 0')
                 db.execute('SELECT allocation_request FROM delegations LIMIT 0')

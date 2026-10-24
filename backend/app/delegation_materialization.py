@@ -204,6 +204,14 @@ class Materializer:
                 selected, explanation = allocation.decide(db, delegations.get(db, identifier), None, request)
                 if not selected:
                     held = ('Auto allocation held: ' + explanation.splitlines()[0])[:500]
+            if not held and not promoted:
+                # Hard provider permission of the Parent's Task subtree (explicit, Auto or inherited).
+                from . import provider_policy, promotion as promotion_module
+                current = delegations.get(db, identifier)
+                expected = current.get('child_provider') or promotion_module._parent_provider(db, current['parent_task_id'])
+                denied = provider_policy.denial(db, expected, current['parent_task_id']) if expected else None
+                if denied and not (progress and progress['phase'] in ('launching', 'started', 'recovery_required')):
+                    held = f'Child provider not permitted: {denied}'[:500]
             if held:
                 record = delegations.get(db, identifier)
                 db.execute('UPDATE delegations SET admission_error=? WHERE delegation_id=?', (held, identifier))

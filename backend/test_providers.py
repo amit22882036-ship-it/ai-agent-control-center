@@ -263,7 +263,7 @@ class PolicyStoreTests(unittest.TestCase):
             providers.migrate(db)
             sql = db.execute("SELECT sql FROM sqlite_master WHERE name='responsibility_transfers'").fetchone()[0]
             self.assertIn("'claude','gemini'", sql)
-            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 36)
+            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 37)
 
     def test_v30_responsibility_table_is_rebuilt_with_rows(self):
         with self.db() as db:
@@ -390,6 +390,7 @@ class SupervisedFakeProviderTests(unittest.TestCase):
         for provider in ('claude', 'gemini'):
             manager.update_provider_settings(provider, enabled=True, billing_confirmed=True)
         manager.update_provider_settings('codex', billing_confirmed=True)
+        fake.allow_providers()  # Stage 2G: global permission is separate from enablement.
 
     def tearDown(self):
         for agent_id, process in list(manager.agents.items()):

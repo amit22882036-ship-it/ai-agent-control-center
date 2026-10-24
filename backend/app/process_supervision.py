@@ -311,6 +311,23 @@ class Job:
         self.ended = {**info, 'verified_at': _now()}
         return self.ended
 
+    def release(self):
+        """Clear kill on close, then close: the processes still in the Job keep running.
+
+        Only for programs an interactive command started for the user and that outlive it
+        (a provider sign-in opening a browser). Raises if the limit cannot be cleared; the
+        caller then still owns the handle (and closing it ends those processes).
+        """
+        limits = _ExtendedLimits()
+        limits.BasicLimitInformation.LimitFlags = 0
+        with self._lock:
+            if self.handle is None:
+                raise SupervisionError('Process supervision: Job handle is closed')
+            if not _SetInformationJobObject(self.handle, JOB_OBJECT_EXTENDED_LIMIT_INFORMATION,
+                                            ctypes.byref(limits), ctypes.sizeof(limits)):
+                _fail('SetInformationJobObject')
+        self.close()
+
     def close(self):
         """Close the handle; KILL_ON_JOB_CLOSE ends any remaining descendants."""
         with self._lock:

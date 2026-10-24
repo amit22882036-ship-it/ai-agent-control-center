@@ -15,12 +15,13 @@ import { apiFetch } from './apiClient.mjs'
 import ProviderControls from './ProviderControls'
 import AgentModelSettings from './AgentModelSettings'
 import AutoAllocationPanel from './AutoAllocationPanel'
+import ProviderRestrictions from './ProviderRestrictions'
 import NextPromptConfig from './NextPromptConfig'
 import useModelCatalog from './useModelCatalog'
 import { emptyOverride, instructionPlan, instructionReady } from './modelPresentation.mjs'
 import { providerLabel, refusalMessage, supports } from './providerPresentation.mjs'
 
-function AgentDetails({ agentId, onClose, onStopped, refreshVersion, agents, onSelect, workspace }) {
+function AgentDetails({ agentId, onClose, onStopped, refreshVersion, agents, onSelect, workspace, onOpenProviders }) {
   const [outputOpened, setOutputOpened] = useState(false)
   const panelRef = useRef(null)
   useEffect(() => {
@@ -332,6 +333,9 @@ function AgentDetails({ agentId, onClose, onStopped, refreshVersion, agents, onS
           <ProviderControls key={`provider-${agentId}-${agent.agent_type}-${agent.model || ''}-${agent.sandbox || ''}`} agent={agent} agentId={agentId} disabled={busy}
             models={models} onChanged={() => { setDetailsVersion((version) => version + 1); onStopped() }} />
           <AutoAllocationPanel key={`allocation-${agentId}`} agent={agent} disabled={busy}
+            refreshVersion={`${refreshVersion}-${detailsVersion}`}
+            onChanged={() => { setDetailsVersion((version) => version + 1); onStopped() }} />
+          <ProviderRestrictions key={`restrictions-${agentId}`} agent={agent} disabled={busy} onOpenProviders={onOpenProviders}
             refreshVersion={`${refreshVersion}-${detailsVersion}`}
             onChanged={() => { setDetailsVersion((version) => version + 1); onStopped() }} />
           {agent.agent_type !== 'mock' && <AgentModelSettings key={`models-${agentId}-${agent.agent_type}-${agent.model || ''}-${agent.effort || ''}-${models.catalog ? 'listed' : 'loading'}`}

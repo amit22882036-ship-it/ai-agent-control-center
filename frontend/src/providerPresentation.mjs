@@ -109,7 +109,7 @@ export function conditionText(condition) {
   const reset = condition.reset_at ? ` Provider-reported reset: ${condition.reset_at} (not a guarantee of availability).` : ''
   const next = {
     usage_limited: 'The agent, task, output and provider session are kept. Nothing resumes automatically, not even after a reset time.',
-    auth_required: 'Sign in again with the provider CLI, choose Check again in the provider panel, then resume.',
+    auth_required: 'Sign in again (AI Providers > Sign in, or the provider CLI), choose Check again, then resume.',
     billing_blocked: 'The provider reported a billing problem. Nothing is retried automatically.',
     provider_unavailable: 'The provider was temporarily unavailable. Resume when it is available again.',
     resume_ready: 'The next run uses the selected provider. Its context comes from the task and workspace.',

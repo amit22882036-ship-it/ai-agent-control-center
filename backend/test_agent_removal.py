@@ -627,7 +627,7 @@ class AgentRemovalMigrationTests(unittest.TestCase):
                   self.rows(path, 'tasks'))
         AgentStore(path)
         with closing(sqlite3.connect(path)) as db:
-            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 36)
+            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 37)
             self.assertEqual(db.execute('PRAGMA foreign_key_check').fetchall(), [])
             self.assertEqual(db.execute('PRAGMA integrity_check').fetchone()[0], 'ok')
             indexes = {r[0] for r in db.execute("SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='task_assignments'")}
@@ -665,7 +665,7 @@ class AgentRemovalMigrationTests(unittest.TestCase):
             self.assertNotIn("'removed'", db.execute("SELECT sql FROM sqlite_master WHERE name='task_assignments'").fetchone()[0])
         self.assertEqual({t: self.rows(path, t) for t in before}, before)
         with closing(sqlite3.connect(path)) as db, db:
-            db.execute('PRAGMA user_version=37')
+            db.execute('PRAGMA user_version=38')
         with self.assertRaises(RuntimeError):
             AgentStore(path)
 

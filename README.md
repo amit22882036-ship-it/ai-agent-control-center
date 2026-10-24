@@ -38,6 +38,7 @@ The Control Center puts that work behind one local backend:
 - One adapter contract for Codex, Claude Code and Gemini CLI, plus Mock. Readiness (installed, signed in, enabled, billing route, usage limits) is shown with the next step when a provider is unavailable.
 - Per-agent model and reasoning effort, chosen from the models the provider CLI reports for your account; unavailable models stay visible but disabled with the provider's reason. A one-time override can change model or effort for a single instruction.
 - Usage awareness: provider-reported limits block new work, a run that reaches a limit waits with its Task, output and session preserved, and work resumes only when you choose Resume.
+- **AI Providers** view: installation, sign-in, enablement, permission, billing, models and updates per provider; reviewed install, update, sign-in and sign-out operations that run only after you approve the exact operation (supervised, never while that provider's agents run); daily update checks with in-app notices; and hard provider permissions, global and per Task subtree, with defaults for new agents.
 
 **Quality-first Auto allocation**
 - For delegated Children, you can let the backend choose the provider, model and effort among the providers you allow. Suitability for the specific work comes first (from the Parent's assessment or your per-category profile); usage only separates comparably suitable candidates. Without evidence, the work waits instead of being downgraded.
@@ -174,7 +175,7 @@ codex login status
 
 `codex login` opens a browser so you can sign in. The backend launches Codex through npm's global launcher at `%APPDATA%\npm\codex.cmd`, which is where `npm install -g` puts it by default; if you changed npm's global prefix, real agents report that Codex was not found.
 
-Claude Code (`%USERPROFILE%\.local\bin\claude.exe` or `%APPDATA%\npm\claude.cmd`) and Gemini CLI (`%APPDATA%\npm\gemini.cmd`) are installed and signed in with their own official instructions; the provider panel shows what is missing and links to the documentation. Their supported sign-in routes and billing checks are described in [providers](docs/providers.md).
+Claude Code (`%USERPROFILE%\.local\bin\claude.exe` or `%APPDATA%\npm\claude.cmd`) and Gemini CLI (`%APPDATA%\npm\gemini.cmd`) are installed and signed in with their own official instructions, or from **AI Providers** in the top navigation: it shows what is missing and offers reviewed install, update, sign-in and sign-out operations that run only after you approve them (Gemini CLI's sign-in and Claude Code's native installer stay manual steps). AI Providers is also where you choose which providers agents may use. Their supported sign-in routes and billing checks are described in [providers](docs/providers.md).
 
 No Control Center configuration is required. Optional settings are listed in [configuration](docs/configuration.md).
 
@@ -267,11 +268,11 @@ Everything has a working default, and environment variables are read by the back
 - **Sandboxes and workspaces are boundaries, not guarantees.** Provider permission modes are enforced by each CLI. Task worktrees share repository history, and snapshots exclude common secret and build paths by filename, but this is not a secret scanner. Symlinks and submodules are not supported in Task snapshots.
 - **Private runtime data.** Prompts, agent output and workspace paths are stored in `data/control_center.sqlite3` and the task-workspace folder. Both are excluded from Git. Do not publish them.
 - **Tested, not guaranteed.** The automated suites use mocks, fake provider CLIs, process shims and real temporary Git repositories. Agent status does not prove that an agent's work is correct, so review results before relying on them.
+- **Provider setup.** Setup operations in AI Providers are Windows only and were tested with a fake npm and fake CLIs, not by installing or signing in to real CLIs. Provider permissions apply globally and per Task subtree; there are no project-level permissions.
 - **UI coverage.** Some controls exist only as API endpoints, including Task lifecycle, resources, work intents and integration. The UI has no separate Project or Task management screens.
 
 ## Roadmap
 
-- **Provider onboarding (Stage 2G):** guided installation, sign-in and connection management for each provider.
 - **Real-provider integration testing:** authenticated end-to-end runs with Claude Code and Gemini CLI, and mixed-provider hierarchies.
 - **User experience redesign and production readiness (Stage 2J):** a substantial redesign of the interface and workflows, not only visual polish.
 - **Convenient launch and presentation (Stage 2K):** a simpler way to start the application on the desktop (the packaging approach is not decided yet) and a project demonstration video.
@@ -302,7 +303,7 @@ The full backend suite takes about 30 minutes on Windows. It uses temporary data
 | [Configuration and troubleshooting](docs/configuration.md) | Environment variables, state locations, delegation limits and common problems |
 | [Dashboard](docs/dashboard.md) | Autonomous creation, the managed execution policy, the hierarchy explorer and verification |
 | [Planning and promotion](docs/planning.md) | Orchestration decisions, proposals and promotion to Child Tasks |
-| [Providers](docs/providers.md) | Provider adapters, readiness, billing and usage policy, the model catalog, per-agent model and effort, Auto allocation and mixed hierarchies |
+| [Providers](docs/providers.md) | Provider adapters, readiness, billing and usage policy, the model catalog, per-agent model and effort, Auto allocation, AI Providers setup and updates, provider permissions and mixed hierarchies |
 | [Delegations](docs/delegations.md) | Request protocol, Child materialization, result delivery, recursion and limits |
 | [Task lifecycle](docs/task-lifecycle.md) | Task identity, assignments, controls, dependencies and recovery |
 | [Agent removal](docs/agent-removal.md) | Removing an Agent or a whole branch while preserving Tasks, and transferring responsibility |

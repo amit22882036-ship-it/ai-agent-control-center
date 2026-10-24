@@ -60,9 +60,46 @@ if provider == 'codex' and args[:1] == ['debug']:
 if '--help' in args:
     print('' if os.environ.get('FAKE_' + provider.upper() + '_OLD') else HELP[provider])
     sys.exit(0)
+# Stage 2G: the official sign-in and sign-out commands change a sign-in kept in a state file.
+state_file = os.environ.get('FAKE_AUTH_STATE')
+
+
+def signed_in(default):
+    if state_file and os.path.exists(state_file):
+        with open(state_file, encoding='utf-8') as handle:
+            return json.load(handle).get(provider, default)
+    return default
+
+
+def set_sign_in(route):
+    current = {}
+    if state_file and os.path.exists(state_file):
+        with open(state_file, encoding='utf-8') as handle:
+            current = json.load(handle)
+    current[provider] = route
+    if state_file:
+        with open(state_file, 'w', encoding='utf-8') as handle:
+            json.dump(current, handle)
+
+
+if args in (['login'], ['auth', 'login', '--claudeai'], ['logout'], ['auth', 'logout']):
+    record('logout' if 'logout' in args else 'login')
+    if os.environ.get('FAKE_LOGIN_BROWSER_SLEEP') and log:
+        import subprocess  # A program the sign-in opens for the user (like a browser) that outlives it.
+        browser = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(' + os.environ['FAKE_LOGIN_BROWSER_SLEEP'] + ')'],
+                                   stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        with open(log, 'a', encoding='utf-8') as handle:
+            handle.write(json.dumps({'provider': provider, 'kind': 'browser', 'pid': browser.pid, 'args': [], 'env': [],
+                                     'prompt': None, 'scenario': scenario}) + '\n')
+    if os.environ.get('FAKE_LOGIN_SLEEP'):
+        time.sleep(float(os.environ['FAKE_LOGIN_SLEEP']))
+    if not os.environ.get('FAKE_LOGIN_ABANDON'):
+        set_sign_in('none' if 'logout' in args else {'codex': 'chatgpt', 'claude': 'subscription'}[provider])
+    print('Successfully logged in' if 'login' in args else 'Logged out')
+    sys.exit(int(os.environ.get('FAKE_LOGIN_EXIT', '0')))
 if provider == 'claude' and args[:2] == ['auth', 'status']:
     record('auth')
-    route = os.environ.get('FAKE_CLAUDE_AUTH', 'subscription')
+    route = signed_in(os.environ.get('FAKE_CLAUDE_AUTH', 'subscription'))
     print(json.dumps({'subscription': {'loggedIn': True, 'authMethod': 'claude.ai', 'apiProvider': 'firstParty'},
                       'none': {'loggedIn': False, 'authMethod': 'none', 'apiProvider': 'firstParty'},
                       'apikey': {'loggedIn': True, 'authMethod': 'api_key', 'apiProvider': 'firstParty'}}[route]))
@@ -84,7 +121,7 @@ if provider == 'claude' and '--input-format' in args:
             record('UNEXPECTED_USER_MESSAGE')
     sys.exit(0)
 if provider == 'codex' and args[:2] == ['login', 'status']:
-    route = os.environ.get('FAKE_CODEX_LOGIN', 'chatgpt')
+    route = signed_in(os.environ.get('FAKE_CODEX_LOGIN', 'chatgpt'))
     print({'chatgpt': 'Logged in using ChatGPT', 'apikey': 'Logged in using an API key - sk-****',
            'none': 'Not logged in'}[route])
     sys.exit(0)
@@ -190,6 +227,14 @@ DEFAULT_CODEX_MODELS_JSON = {'identity': 'fake-account-1', 'models': [{'slug': '
 FAKE_CLI = FAKE_CLI.replace('@@CLAUDE_MODELS@@', repr(json.dumps(DEFAULT_CLAUDE_MODELS_JSON))).replace(
     '@@CODEX_MODELS@@', repr(json.dumps(DEFAULT_CODEX_MODELS_JSON)))
 
+def launcher(name, script='fake_provider_cli.py', folder='%~dp0'):
+    """An npm-style `.cmd` launcher for a fake Python script."""
+    return ('@echo off\nsetlocal\n'
+            f'set "_prog={sys.executable}"\n'
+            'endLocal & goto #_undefined_# 2>NUL || title %COMSPEC% & '
+            f'"%_prog%" "{folder}{script}" {name} %*\n')
+
+
 def install(appdata, names=('claude', 'gemini', 'codex')):
     """Write the fake script and npm-style launchers under `appdata\\npm`."""
     npm = Path(appdata) / 'npm'
@@ -197,12 +242,87 @@ def install(appdata, names=('claude', 'gemini', 'codex')):
     script = npm / 'fake_provider_cli.py'
     script.write_text(FAKE_CLI, encoding='utf-8')
     for name in names:
-        (npm / f'{name}.cmd').write_text(
-            '@echo off\nsetlocal\n'
-            f'set "_prog={sys.executable}"\n'
-            'endLocal & goto #_undefined_# 2>NUL || title %COMSPEC% & '
-            f'"%_prog%" "%~dp0fake_provider_cli.py" {name} %*\n', encoding='utf-8')
+        (npm / f'{name}.cmd').write_text(launcher(name), encoding='utf-8')
     return npm
+
+
+FAKE_NPM = r'''
+import json, os, sys, time
+args = sys.argv[2:]
+
+
+def ini(path):
+    values = {}
+    try:
+        with open(path, encoding='utf-8') as handle:
+            for line in handle:
+                if '=' in line and not line.lstrip().startswith((';', '#')):
+                    key, value = line.split('=', 1)
+                    values[key.strip().lower()] = value.strip()
+    except OSError:
+        pass
+    return values
+
+
+# npm's configuration precedence: command line, then npm_config_* environment variables, then
+# the project, user and global npmrc files, then npm's defaults.
+cli = {}
+for argument in args:
+    if argument.startswith('--'):
+        key, _, value = argument[2:].partition('=')
+        cli[key.lower()] = value if _ else 'true'
+environment = {k[11:].lower().replace('_', '-'): v for k, v in os.environ.items() if k.lower().startswith('npm_config_')}
+project = ini(os.path.join(os.getcwd(), '.npmrc'))
+user = ini(cli.get('userconfig') or environment.get('userconfig') or os.path.join(os.environ.get('USERPROFILE', ''), '.npmrc'))
+glob = ini(cli.get('globalconfig') or environment.get('globalconfig')
+           or os.path.join(os.environ.get('APPDATA', ''), 'npm', 'etc', 'npmrc'))
+
+
+def setting(name, default=None):
+    for source in (cli, environment, project, user, glob):
+        if name in source:
+            return source[name]
+    return default
+
+
+effective = {'registry': setting('registry', 'https://registry.npmjs.org/'),
+             'prefix': setting('prefix', os.path.join(os.environ.get('APPDATA', ''), 'npm')),
+             'ignore-scripts': setting('ignore-scripts', 'false'), 'script-shell': setting('script-shell'),
+             'userconfig': cli.get('userconfig'), 'globalconfig': cli.get('globalconfig')}
+log = os.environ.get('FAKE_CLI_LOG')
+if log:
+    with open(log, 'a', encoding='utf-8') as handle:
+        handle.write(json.dumps({'provider': 'npm', 'kind': 'npm', 'args': args, 'env': sorted(os.environ),
+                                 'cwd': os.getcwd(), 'cwd_entries': sorted(os.listdir(os.getcwd())),
+                                 'effective': effective, 'prompt': None, 'scenario': None}) + '\n')
+print('npm output with a secret: token=abcdef0123456789 and sk-test1234567890abcd', flush=True)
+if os.environ.get('FAKE_NPM_CHILD_SLEEP'):
+    import subprocess  # A descendant that outlives npm, like a stray installer helper.
+    subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(' + os.environ['FAKE_NPM_CHILD_SLEEP'] + ')'])
+time.sleep(float(os.environ.get('FAKE_NPM_SLEEP', '0')))
+code = int(os.environ.get('FAKE_NPM_EXIT', '0'))
+packages = {'@openai/codex': 'codex', '@anthropic-ai/claude-code': 'claude', '@google/gemini-cli': 'gemini'}
+spec = next((a for a in args[1:] if not a.startswith('-')), None)
+if code == 0 and args[:1] == ['install'] and spec and not os.environ.get('FAKE_NPM_NOOP'):
+    name = packages[spec.rsplit('@', 1)[0]]
+    with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'launcher.txt'), encoding='utf-8') as handle:
+        text = handle.read().replace('@@NAME@@', name)
+    os.makedirs(effective['prefix'], exist_ok=True)
+    with open(os.path.join(effective['prefix'], name + '.cmd'), 'w', encoding='utf-8') as handle:
+        handle.write(text)
+sys.exit(code)
+'''
+
+
+def install_npm(program_files, appdata):
+    """A fake npm at the Node.js installer location. `install -g <package>@<tag>` writes that
+    provider's fake launcher, like a global npm install; it never touches the network."""
+    folder = Path(program_files) / 'nodejs'
+    folder.mkdir(parents=True, exist_ok=True)
+    (folder / 'fake_npm.py').write_text(FAKE_NPM, encoding='utf-8')
+    (folder / 'npm.cmd').write_text(launcher('npm', 'fake_npm.py'), encoding='utf-8')
+    (folder / 'launcher.txt').write_text(launcher('@@NAME@@', folder=f'{Path(appdata) / "npm"}\\'), encoding='utf-8')
+    return folder / 'npm.cmd'
 
 
 def gemini_settings(home, selected='oauth-personal', overage='never'):
@@ -239,6 +359,17 @@ def acknowledge(test, *providers_to_acknowledge):
         else:
             providers.acknowledge_without_persistence(provider)
             test.addCleanup(providers._memory_settings.pop, provider, None)
+
+
+def allow_providers(db=None, allowed=('codex', 'claude', 'gemini')):
+    """Stage 2G: the user's global provider permission, which is separate from enablement.
+    With `db`, inside the caller's write transaction; otherwise in the manager's store."""
+    from app import agent_manager as manager, provider_policy
+    if db is not None:
+        return provider_policy.set_global(db, allowed=list(allowed))
+    with manager._store._connection() as db:
+        db.execute('BEGIN IMMEDIATE')
+        return provider_policy.set_global(db, allowed=list(allowed))
 
 
 def isolated_environment(root):

@@ -29,7 +29,7 @@ catalog are read, so no transaction waits on an external process.
 import json
 import re
 
-from . import model_catalog, providers
+from . import model_catalog, provider_policy, providers
 
 NOW = providers.NOW
 CATEGORIES = ('architecture', 'implementation', 'bug_fix', 'review', 'security', 'testing', 'documentation',
@@ -269,6 +269,10 @@ def _model_allowed(policy, provider, model):
 def _check(db, policy, parent, request, provider, model, effort):
     """(eligible effort or None, exclusion reason or None, uncertainties)."""
     uncertain = []
+    # The hard provider permission (global and Task subtree) comes before any Auto rule.
+    denied = provider_policy.denial(db, provider, parent.get('task_id'))
+    if denied:
+        return None, denied, uncertain
     if provider not in policy['providers']:
         return None, 'not in the providers you allowed for Auto', uncertain
     if not _model_allowed(policy, provider, model):
@@ -429,6 +433,9 @@ def require_authorized(db, record):
         raise AllocationRevoked('The Child provider no longer matches its recorded Auto selection; nothing was launched.')
     policy = policy_for(db, record['parent_task_id'])
     label = _label(*selected)
+    hard = provider_policy.denial(db, selected[0], record['parent_task_id'])
+    if hard:
+        raise AllocationRevoked(f'Auto allocation of {label} is no longer permitted: {hard}')
     if policy is None or not policy['enabled']:
         reason = 'the user disabled Auto for this Task'
     elif selected[0] not in policy['providers']:
@@ -501,6 +508,7 @@ def decide(db, record, row, request):
     parent = db.execute('''SELECT g.* FROM task_assignments a JOIN agents g USING(agent_id) WHERE a.task_id=?
         ORDER BY a.rowid DESC LIMIT 1''', (record['parent_task_id'],)).fetchone()
     parent = dict(parent) if parent else dict(agent_type='mock', sandbox='read-only')
+    parent['task_id'] = record['parent_task_id']  # The Child inherits this Task subtree's permissions.
     if previous and previous['status'] == 'selected':
         _, reason, _ = _check(db, policy, parent, request, previous['provider'], previous['model'], previous['effort'])
         if reason is None:

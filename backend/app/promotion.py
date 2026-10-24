@@ -8,7 +8,7 @@ from uuid import UUID, uuid5
 
 from . import planning, delegation_protocol, delegation_continuation, delegation_handoff
 from . import delegation_materialization, delegations, dependencies, work_control, work_intents, resources, providers
-from . import allocation
+from . import allocation, provider_policy
 
 PROTOCOL = 'control-center.promotion.v1'
 MAX_CONTEXT = 16384
@@ -238,6 +238,12 @@ def accept(db, origin, message, *, session_id, message_id):
     return receipt
 
 
+def _parent_provider(db, task_id):
+    row = db.execute('''SELECT g.agent_type FROM task_assignments a JOIN agents g USING(agent_id)
+        WHERE a.task_id=? ORDER BY a.rowid DESC LIMIT 1''', (task_id,)).fetchone()
+    return row[0] if row else None
+
+
 def row_for(db, delegation_id):
     return db.execute('SELECT * FROM promotion_items WHERE delegation_id=?', (delegation_id,)).fetchone()
 
@@ -290,6 +296,11 @@ def prepare(db, identifier, limits=None):
             _set(db, identifier, 'blocked', ('Auto allocation held: ' + explanation.splitlines()[0])[:500])
             return record
     requested = record.get('child_provider')
+    expected = requested or _parent_provider(db, row['task_id'])
+    denied = provider_policy.denial(db, expected, row['task_id']) if expected else None
+    if denied:
+        _set(db, identifier, 'blocked', f'Child provider not permitted: {denied}'[:500])
+        return record
     if requested is not None:
         # Durable policy only (no probe inside this transaction); the launch path
         # rechecks installation, sign-in and billing before any process exists.

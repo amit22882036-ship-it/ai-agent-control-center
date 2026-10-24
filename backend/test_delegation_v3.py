@@ -3,6 +3,7 @@
 Isolated databases, test doubles for provider processes and seeded catalogs only.
 """
 import json
+import os
 from pathlib import Path
 import unittest
 from unittest.mock import patch
@@ -12,6 +13,7 @@ from app import agent_manager as manager, allocation, delegation_continuation, d
 from app import delegations, model_catalog, providers
 from app.codex_events import StructuredCommand
 from app.persistence import AgentStore
+import provider_test_support as fake
 import test_allocation as alloc
 import test_delegation_protocol as protocol_tests
 
@@ -215,6 +217,8 @@ class OrdinaryAutoTests(unittest.TestCase):
         with self.store._connection() as db:
             db.execute('BEGIN IMMEDIATE')
             providers.update_settings(db, 'claude', enabled=False)
+            # Stage 2G: allowed but disabled, so the launch reaches the readiness refusal under test.
+            fake.allow_providers(db, ('codex', 'claude'))
         self.accept(request('explicit', dict(mode='explicit', provider='codex', model='gpt-fast', effort='low')),
                     request('auto', auto(alloc.candidate('mock'))),
                     request('legacy'),
@@ -232,6 +236,40 @@ class OrdinaryAutoTests(unittest.TestCase):
             error = db.execute('SELECT last_error FROM delegation_materializations m JOIN delegations d USING(delegation_id) '
                                "WHERE d.request_key='refused'").fetchone()[0]
         self.assertIn('ProviderRefused: Claude Code', error)  # The actual refusal reason, never another provider.
+
+    def test_explicit_request_outside_the_permissions_is_held_without_a_child(self):
+        # Stage 2G: enabled is not enough; the request is held with the permission reason, never substituted.
+        with self.store._connection() as db:
+            db.execute('BEGIN IMMEDIATE')
+            providers.update_settings(db, 'claude', enabled=True, billing_confirmed=True)
+        self.accept(request('held', dict(mode='explicit', provider='claude', model='sonnet')), request('legacy'))
+        manager.materialize_delegations(self.task['task_id'])
+        held = self.record('held')
+        self.assertEqual((held['child_provider'], held['child_task_id']), ('claude', None))
+        self.assertIn('Child provider not permitted: Claude Code is not in your allowed providers', held['admission_error'])
+        self.assertEqual([manager.agent_types[a] for a in self.child_agents()], ['codex'])  # The permitted one runs.
+
+    def test_explicit_request_under_a_deep_ancestor_restriction_is_held(self):
+        # Review finding: an ancestor 70 levels up still bounds an explicit allocation. The delegation
+        # depth limit (4 by default) is raised here so that only the permission can stop the Child.
+        self.patch(patch.dict(os.environ, CONTROL_CENTER_DELEGATION_DEPTH='100'))
+        with self.store._connection() as db:
+            db.execute('BEGIN IMMEDIATE')
+            providers.update_settings(db, 'claude', enabled=True, billing_confirmed=True)
+            fake.allow_providers(db, ('codex', 'claude'))
+        top = parent = self.store.create_task('Top work', title='Top', project_id=self.task['project_id'])['task_id']
+        for index in range(70):
+            parent = self.store.create_task(f'Level {index}', title=f'Level {index}', parent_task_id=parent,
+                                            project_id=self.task['project_id'])['task_id']
+        with self.store._connection() as db:
+            db.execute('BEGIN IMMEDIATE')
+            db.execute('UPDATE tasks SET parent_task_id=? WHERE task_id=?', (parent, self.task['task_id']))
+        manager.set_task_provider_restrictions(top, ['codex'], expected_revision=None)
+        self.accept(request('held', dict(mode='explicit', provider='claude', model='sonnet')))
+        manager.materialize_delegations(self.task['task_id'])
+        held = self.record('held')
+        self.assertIsNone(held['child_task_id'])
+        self.assertIn('provider restriction on Task "Top" excludes it', held['admission_error'])
 
     def test_request_identity_includes_the_allocation(self):
         self.parent = manager.start_agent('Parent work', 'codex', 'read-only', task_id=self.task['task_id'],

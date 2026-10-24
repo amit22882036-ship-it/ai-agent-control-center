@@ -895,7 +895,7 @@ class AttestationSchemaTests(unittest.TestCase):
         AgentStore(self.store.path)
         AgentStore(self.store.path)
         with closing(sqlite3.connect(self.store.path)) as db:
-            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 36)
+            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 37)
             names = {r[0] for r in db.execute("SELECT name FROM sqlite_master WHERE type IN ('table','trigger','index')")}
             self.assertTrue({'execution_diagnostics', 'execution_attestations', 'execution_attestation_settled',
                              'execution_diagnostics_latest', *(n for n, _ in attestation.TRIGGERS)} <= names)

@@ -414,7 +414,7 @@ class ReplanningTests(unittest.TestCase):
 
     def test_schema_v26_and_migration_rollback(self):
         with self.store._connection() as db:
-            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0],36)
+            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0],37)
             db.execute('DROP TABLE replan_transitions');db.execute('DROP TABLE replan_decisions');db.execute('DROP TABLE replan_signals')
             db.execute('PRAGMA user_version=25')
         original=replanning.migrate

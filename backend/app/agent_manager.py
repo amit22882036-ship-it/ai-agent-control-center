@@ -42,7 +42,7 @@ from . import responsibility
 from . import executions
 from . import execution_recovery
 from . import execution_diagnostics, execution_attestation
-from . import providers, provider_events, model_catalog, allocation, delegation_v3
+from . import providers, provider_events, model_catalog, allocation, delegation_v3, provider_policy, provider_onboarding
 from . import delegations as delegations_module
 
 logger = logging.getLogger(__name__)
@@ -646,6 +646,10 @@ def initialize_persistence(path=None) -> None:
         request_diagnostics(execution_id, 'controller_restart')  # observed later by the lifespan worker
     from .integrations import recover_integrations
     recover_integrations(store)
+    with store._connection() as db:
+        db.execute('BEGIN IMMEDIATE')
+        provider_onboarding.recover(db)  # A setup operation cut off by a restart has an unknown outcome.
+    provider_onboarding.accept_operations()  # This backend runs again (after an earlier shutdown in-process).
     store.reconcile_task_recovery()
     records = store.load_agents(output_limit=RECENT_OUTPUT_LIMIT)
     with _data_lock:
@@ -738,6 +742,10 @@ def _require_launchable(provider, *, model=None, sandbox='read-only', managed=Fa
             model_catalog.ensure_fresh(_store._connection, provider)
     config = _execution_config()
     with _provider_db() as db:
+        task_id, _launch.policy_task_id = getattr(_launch, 'policy_task_id', None), None  # Used once.
+        if db is not None:
+            provider_policy.require_allowed(db, provider, task_id)
+            provider_onboarding.require_no_maintenance(db, provider)  # Early; rechecked at the final admission.
         state = providers.require_launchable(db, provider, model=model, sandbox=sandbox, managed=managed, child=child,
                                              override=_usage_override(), effort=effort)
         if provider in providers.REAL and db is not None:
@@ -820,12 +828,13 @@ def _provider_command(provider, sandbox='read-only', session_id=None, *, structu
 def _prompt_config(config):
     """One logical instruction's configuration (a next-prompt override never changes Agent defaults)."""
     previous = (getattr(_launch, 'prompt_config', None), getattr(_launch, 'continuity', None),
-                getattr(_launch, 'execution_config', None))
-    _launch.prompt_config, _launch.continuity, _launch.execution_config = config or {}, None, None
+                getattr(_launch, 'execution_config', None), getattr(_launch, 'policy_task_id', None))
+    _launch.prompt_config, _launch.continuity, _launch.execution_config, _launch.policy_task_id = config or {}, None, None, None
     try:
         yield
     finally:
-        _launch.prompt_config, _launch.continuity, _launch.execution_config = previous
+        (_launch.prompt_config, _launch.continuity, _launch.execution_config,
+         _launch.policy_task_id) = previous
 
 
 def _effective_config(agent_id):
@@ -838,6 +847,20 @@ def _effective_config(agent_id):
 
 
 def _agent_command(agent_id, *, structured=False, session_id=None, fresh=False):
+    """Continue an Agent within its Task's provider permissions (replies, redirects, resumes).
+
+    The Task id is scoped to this one command: whatever path the command takes, it is
+    restored afterwards, so it can never apply to a later, unrelated launch.
+    """
+    previous = getattr(_launch, 'policy_task_id', None)
+    _launch.policy_task_id = _agent_task_id(agent_id)
+    try:
+        return _agent_command_for(agent_id, structured=structured, session_id=session_id, fresh=fresh)
+    finally:
+        _launch.policy_task_id = previous
+
+
+def _agent_command_for(agent_id, *, structured=False, session_id=None, fresh=False):
     """Continue an Agent with its own provider, model, effort, access policy and session.
 
     A model or effort the provider cannot apply to the existing session needs the
@@ -1024,8 +1047,131 @@ def _allocation_fields(agent_id):
         row = db.execute('SELECT delegation_id FROM delegations WHERE child_task_id=?', (task_id,)).fetchone()
         decision = allocation.summary(db, row[0]) if row else None
         policy = allocation.policy_for(db, task_id)
-    return {'allocation': decision, 'allocation_task_id': task_id,
+        permission = provider_policy.view(db, agent_types.get(agent_id), task_id)
+    return {'allocation': decision, 'allocation_task_id': task_id, 'provider_permission': permission,
             'auto_allocation': {k: policy[k] for k in ('task_id', 'enabled', 'providers')} if policy else None}
+
+
+# ---------------------------------------------------------------- Stage 2G: provider permissions and onboarding
+
+def provider_policy_view():
+    """The global allowlist and new-root defaults, with any problem of a saved default."""
+    store = _task_store()
+    with store._connection() as db:
+        policy = provider_policy.global_policy(db)
+        if policy is None:
+            raise RuntimeError('Provider permissions are unavailable; the database has not been migrated.')
+        policy['default_problem'] = provider_policy.default_problem(
+            db, policy, policy['default_provider'], policy['default_model'], policy['default_effort'])
+    return policy
+
+
+def set_provider_policy(**values):
+    store = _task_store()
+    with store._connection() as db:
+        db.execute('BEGIN IMMEDIATE')
+        provider_policy.set_global(db, **values)
+    _emit_agent_change(None)
+    return provider_policy_view()
+
+
+def task_provider_restrictions(task_id):
+    store = _task_store()
+    with store._connection() as db:
+        dependencies.task(db, task_id)
+        allowed, sources = provider_policy.effective(db, task_id)
+        inherited, _ = provider_policy.inherited(db, task_id)
+        own = provider_policy.own_restriction(db, task_id)
+    return {'task_id': task_id, 'own': own, 'effective': allowed, 'inherited': inherited, 'sources': sources}
+
+
+def set_task_provider_restrictions(task_id, providers_list, **version):
+    store = _task_store()
+    with store._connection() as db:
+        db.execute('BEGIN IMMEDIATE')
+        dependencies.task(db, task_id)
+        provider_policy.set_restriction(db, task_id, providers_list, **version)
+    _emit_agent_change(None)
+    return task_provider_restrictions(task_id)
+
+
+def clear_task_provider_restrictions(task_id, **version):
+    store = _task_store()
+    with store._connection() as db:
+        db.execute('BEGIN IMMEDIATE')
+        dependencies.task(db, task_id)
+        provider_policy.clear_restriction(db, task_id, **version)
+    _emit_agent_change(None)
+    return task_provider_restrictions(task_id)
+
+
+def onboarding_view():
+    """Everything the AI Providers view shows. Reads cached state only: nothing is probed here."""
+    store = _task_store()
+    with store._connection() as db:
+        policy = provider_policy.global_policy(db)
+        result = []
+        for provider in providers.IDS:
+            status = providers.status(db, provider, probe_installation=False)
+            entry = {'provider': provider, 'status': status}
+            if provider in providers.REAL:
+                entry.update(discovery=provider_onboarding.discover(provider),
+                             operations=provider_onboarding.latest_operations(db, provider),
+                             active_work=provider_onboarding.active_work(db, provider),
+                             allowed=bool(policy and provider in policy['allowed']),
+                             catalog=model_catalog.catalog_view(db, provider, status['state']['state'])['refresh'])
+            result.append(entry)
+    return {'providers': result, 'updates': provider_onboarding.update_view(store._connection),
+            'policy': provider_policy_view() if policy else None}
+
+
+def plan_provider_operation(provider, action, channel=None):
+    with _task_store()._connection() as db:
+        return provider_onboarding.propose(db, provider, action, channel)
+
+
+def start_provider_operation(provider, plan_id, digest):
+    # Owned by this backend's controller identity, so a later backend can tell whether it is gone.
+    return provider_onboarding.start(_task_store()._connection, provider, plan_id, digest,
+                                     publish=lambda: _emit_agent_change(None), controller=_controller_identity())
+
+
+def resolve_provider_operation(operation_id, confirm_ended):
+    result = provider_onboarding.resolve(_task_store()._connection, operation_id, confirm_ended=confirm_ended)
+    _emit_agent_change(None)
+    return result
+
+
+def provider_operation(operation_id):
+    return provider_onboarding.operation(_task_store()._connection, operation_id)
+
+
+def cancel_provider_operation(operation_id):
+    return provider_onboarding.cancel(_task_store()._connection, operation_id)
+
+
+def check_provider_updates():
+    result = provider_onboarding.check_updates(_task_store()._connection, force=True)
+    _emit_agent_change(None)
+    return result
+
+
+def provider_notifications():
+    if _store is None:
+        return []
+    return provider_onboarding.notifications(_store._connection)
+
+
+def dismiss_provider_notification(provider, version, mode):
+    result = provider_onboarding.dismiss(_task_store()._connection, provider, version, mode)
+    _emit_agent_change(None)
+    return result
+
+
+def start_update_scheduler():
+    if _store is None:
+        return None
+    return provider_onboarding.UpdateScheduler(_store._connection, lambda: _emit_agent_change(None)).start()
 
 
 def model_catalog_view(provider, *, refresh=False, trigger='user'):
@@ -1236,6 +1382,8 @@ def change_agent_provider(agent_id, *, provider, model=None, sandbox=None, effor
         if executions.blocking(db, agent_id=agent_id) or executions.blocking(db, task_id=task_id):
             raise ValueError(executions.REFUSED)
         agent_removal.require_operational(db, agent_id)
+    with store._connection() as db:
+        provider_policy.require_allowed(db, provider, task_id)  # A change never escapes the Task's permissions.
     # The new provider must be usable now (no fallback is ever chosen for it).
     previous_config = getattr(_launch, 'execution_config', None)
     _launch.execution_config = dict(model=model, effort=effort, source='agent_default', attempt=bool(attempt_unverified))
@@ -2247,6 +2395,13 @@ def _admitted_spawn(task_id, agent_id, command, agent_type, cwd, *, materializat
             # every known limit (durable or not) and newer negative readiness,
             # revalidated at this boundary. An explicit user retry may override
             # only limits whose renewal cannot be confirmed; it commits with the launch.
+            # Stage 2G: the hard provider permission of this Task subtree, in the same
+            # transaction as the launch (a revocation after preparation refuses it here).
+            provider_policy.require_allowed(db, agent_type, task_id)
+            # Maintenance and execution exclude each other per provider: a setup operation that
+            # is running or has an unverified end refuses the launch here, and an operation
+            # starts only when no execution of the provider is open (provider_onboarding.start).
+            provider_onboarding.require_no_maintenance(db, agent_type)
             overridden = providers.admission_check(db, agent_type, model=model,
                                                    policy=getattr(command, 'policy', None), override=_usage_override())
             if overridden:

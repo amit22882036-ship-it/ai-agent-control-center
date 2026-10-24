@@ -25,6 +25,11 @@ UNSAFE_ROUTES = {
     ('POST', '/agents/{agent_id}/continue'), ('POST', '/agents/{agent_id}/resume'),
     ('POST', '/providers/{provider}/usage/refresh'), ('POST', '/agents/{agent_id}/defaults'),
     ('POST', '/providers/{provider}/models/refresh'), ('PUT', '/tasks/{task_id}/auto-allocation'), ('DELETE', '/tasks/{task_id}/auto-allocation'),
+    ('PUT', '/provider-policy'), ('PUT', '/tasks/{task_id}/provider-restrictions'),
+    ('DELETE', '/tasks/{task_id}/provider-restrictions'), ('POST', '/providers/{provider}/operations/plan'),
+    ('POST', '/providers/{provider}/operations'), ('POST', '/provider-operations/{operation_id}/cancel'),
+    ('POST', '/providers/updates/check'), ('POST', '/providers/{provider}/notifications/dismiss'),
+    ('POST', '/provider-operations/{operation_id}/resolve'),
     ('POST', '/notifications/preferences'), ('POST', '/notifications/heartbeat'),
     ('POST', '/agents/start'), ('POST', '/agents/{parent_id}/children/start'),
     ('POST', '/tasks'), ('POST', '/projects'), ('POST', '/tasks/{task_id}/start-agent'),
@@ -52,6 +57,8 @@ GET_ROUTES = {
     '/providers',  # Stage 2F: reports the last check; never probes.
     '/providers/{provider}/models',  # Cached catalog; never runs discovery.
     '/tasks/{task_id}/auto-allocation',  # Policy and recorded decisions; never allocates.
+    '/provider-policy', '/tasks/{task_id}/provider-restrictions',  # Stage 2G permissions (read only).
+    '/providers/onboarding', '/provider-operations/{operation_id}', '/providers/notifications',  # No probe, no run.
     security.TOKEN_PATH, '/health', '/system/process-supervision', '/workspace', '/agents/{agent_id}/activity', '/agents/{agent_id}/hierarchy',
     '/agents', '/agents/{agent_id}', '/projects', '/projects/{project_id}', '/tasks', '/tasks/{task_id}',
     '/tasks/{task_id}/assignments', '/tasks/{task_id}/workspace', '/agents/{agent_id}/output', '/events',

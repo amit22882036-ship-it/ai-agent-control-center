@@ -3,9 +3,10 @@ import { apiFetch, API_BASE } from './apiClient.mjs'
 import { PROVIDER_IDS, PROVIDER_NOTES, providerLabel, refusalMessage, stateLabel, stateOf, stateTone, statusFor, usageLines,
   usageSummary, windowRows } from './providerPresentation.mjs'
 
-// Stage 2F: compact, inline provider status, usage and enablement. Full
-// onboarding (installation walkthroughs, connection management) belongs to Stage 2G.
-export default function ProviderPanel({ statuses, onChanged, disabled = false }) {
+// Stage 2F: compact, inline provider status, usage and enablement. Installation,
+// sign-in, updates and permissions live in the Stage 2G AI Providers view, which
+// reuses this panel for one provider at a time.
+export default function ProviderPanel({ statuses, onChanged, disabled = false, providerIds = PROVIDER_IDS, title = 'Providers and usage' }) {
   const id = useId()
   const [busy, setBusy] = useState('')
   const [error, setError] = useState('')
@@ -31,9 +32,9 @@ export default function ProviderPanel({ statuses, onChanged, disabled = false })
   const working = (provider, label) => busy === `${provider}:${label}`
 
   return <details className="provider-panel">
-    <summary>Providers and usage</summary>
+    <summary>{title}</summary>
     <ul className="provider-list" aria-label="Agent providers">
-      {PROVIDER_IDS.map((provider) => {
+      {providerIds.map((provider) => {
         const status = statusFor(statuses, provider)
         const state = stateOf(status)
         const config = status?.settings

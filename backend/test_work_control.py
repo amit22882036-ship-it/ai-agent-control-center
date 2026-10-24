@@ -394,7 +394,7 @@ class WorkControlTests(unittest.TestCase):
         self.assertEqual(store.create_task('Blocked', status='blocked')['status'], 'blocked')
         self.assertEqual(AgentStore(self.path).list_tasks(), store.list_tasks())
         with store._connection() as db:
-            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 36)
+            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 37)
             self.assertEqual(db.execute('PRAGMA foreign_key_check').fetchall(), [])
 
     def test_migration_rollback_is_atomic(self):

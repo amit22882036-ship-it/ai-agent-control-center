@@ -730,7 +730,7 @@ class ResponsibilityMigrationTests(unittest.TestCase):
         AgentStore(path)
         AgentStore(path)
         with closing(sqlite3.connect(path)) as db:
-            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 36)
+            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 37)
             self.assertEqual(db.execute('SELECT COUNT(*) FROM responsibility_transfers').fetchone()[0], 0)
             self.assertEqual(db.execute('SELECT task_id FROM tasks').fetchall(), [(task['task_id'],)])
             self.assertEqual(db.execute('PRAGMA foreign_key_check').fetchall(), [])

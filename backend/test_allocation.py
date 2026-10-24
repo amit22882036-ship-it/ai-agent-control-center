@@ -10,7 +10,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from app import agent_manager as manager, allocation, model_catalog, promotion, providers
+from app import agent_manager as manager, allocation, model_catalog, promotion, provider_policy, providers
 from app.persistence import AgentStore
 import test_promotion as base
 import test_planning as plans
@@ -69,6 +69,7 @@ class EvaluationTests(unittest.TestCase):
             db.execute('BEGIN IMMEDIATE')
             for provider in ('codex', 'claude', 'gemini'):
                 providers.update_settings(db, provider, enabled=True, billing_confirmed=True)
+            provider_policy.set_global(db, allowed=['codex', 'claude', 'gemini'])  # Stage 2G permission.
         seed_catalogs(self.store._connection)
         self.policy = dict(allocation.normalize_policy(True, ['codex', 'claude', 'gemini', 'mock']), task_id='root')
         self.parent = dict(agent_type='codex', sandbox='read-only')
@@ -186,6 +187,38 @@ class EvaluationTests(unittest.TestCase):
             self.assertIn('not ready', self.evaluate(request(candidate('codex', model='gpt-deep')))['explanation'])
         coordinated = self.evaluate(request(candidate('gemini'), capabilities=['coordination']))
         self.assertEqual(coordinated['status'], 'blocked')
+
+    def test_provider_permission_is_a_hard_gate_before_any_auto_rule(self):
+        # Stage 2G: the global and Task permission excludes a candidate whatever the Auto policy allows.
+        with self.store._connection() as db:
+            db.execute('BEGIN IMMEDIATE')
+            provider_policy.set_global(db, allowed=['codex', 'gemini'])
+        refused = self.evaluate(request(candidate('claude', model='opus')))
+        self.assertEqual(refused['status'], 'blocked')
+        self.assertIn('Claude Code is not in your allowed providers', refused['explanation'])
+        task = self.store.create_task('Restricted', title='Restricted')['task_id']
+        with self.store._connection() as db:
+            db.execute('BEGIN IMMEDIATE')
+            provider_policy.set_restriction(db, task, ['gemini'])
+        with self.store._connection() as db:
+            restricted = allocation.evaluate(db, self.policy, dict(self.parent, task_id=task),
+                                             request(candidate('codex', model='gpt-deep'), candidate('gemini')))
+        self.assertEqual(restricted['provider'], 'gemini')  # A listed, permitted alternative only.
+        self.assertIn('provider restriction on Task "Restricted" excludes it', restricted['explanation'])
+
+    def test_deep_descendants_keep_ancestor_restrictions_for_auto(self):
+        # Review finding: restrictions more than 64 ancestors up must still apply.
+        root = parent = self.store.create_task('Root', title='Root')['task_id']
+        for index in range(70):
+            parent = self.store.create_task(f'Level {index}', title=f'Level {index}', parent_task_id=parent)['task_id']
+        with self.store._connection() as db:
+            db.execute('BEGIN IMMEDIATE')
+            provider_policy.set_restriction(db, root, ['gemini'])
+        with self.store._connection() as db:
+            decision = allocation.evaluate(db, self.policy, dict(self.parent, task_id=parent),
+                                           request(candidate('claude', model='opus'), candidate('gemini')))
+        self.assertEqual(decision['provider'], 'gemini')
+        self.assertIn('provider restriction on Task "Root" excludes it', decision['explanation'])
 
     def test_effort_specific_preferences_match_only_that_effort(self):
         low_high = request(candidate('codex', 'preferred', 'gpt-deep', effort='low'),
@@ -324,6 +357,9 @@ class AllocationPromotionTests(unittest.TestCase):
 
     def test_explicit_requests_keep_their_semantics_under_an_auto_policy(self):
         self.authorize(allowed=('codex', 'claude'))
+        with self.store._connection() as db:
+            db.execute('BEGIN IMMEDIATE')
+            provider_policy.set_global(db, allowed=['codex', 'claude'])  # Allowed (2G), still disabled.
         self.accepted(items=[base.selection(provider='claude', model='sonnet')])
         row, = self.rows()
         self.assertEqual(row['disposition'], 'blocked')
@@ -461,6 +497,32 @@ class AllocationPromotionTests(unittest.TestCase):
     def setUp_clean(self):
         self.doCleanups()
         self.setUp()
+
+    def test_permission_revoked_after_preparation_is_refused_before_launch(self):
+        # Stage 2G: a global or Task permission change between preparation and launch.
+        def global_change():
+            current = manager.provider_policy_view()
+            manager.set_provider_policy(allowed=[], expected_revision=current['revision'])
+
+        def task_change():
+            manager.set_task_provider_restrictions(self.task['task_id'], [], expected_revision=None)
+        for name, change in {'global': global_change, 'task': task_change}.items():
+            for at in ('admit', 'final'):
+                with self.subTest(change=name, at=at):
+                    self.setUp_clean()
+                    self.authorize()
+                    self.accepted(items=[self.item()])
+                    self.assertEqual(self.rows()[0]['disposition'], 'ready')
+                    self.workspace_fixture()
+                    before = len(self.commands)
+                    with self.revoke_between_preparation_and_launch(change, at=at):
+                        manager.materialize_delegations(self.task['task_id'])
+                    self.assertEqual(len(self.commands), before)  # No process was created.
+                    child = self.children()[0]
+                    self.assertFalse([a for a in self.store.list_task_assignments(child['task_id']) if a['ended_at'] is None])
+                    self.assertIn('not', self.delegation_error())
+                    self.assertIn('Codex', self.delegation_error())
+                    self.assertEqual(self.delegation()['child_provider'], 'codex')  # Nothing substituted.
 
     def test_removed_provider_or_model_is_refused_before_launch(self):
         changes = {

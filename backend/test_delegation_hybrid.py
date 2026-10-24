@@ -508,7 +508,7 @@ class HybridDomainTests(unittest.TestCase):
             self.assertFalse(db.execute("SELECT 1 FROM sqlite_master WHERE name='delegation_results'").fetchone())
         self.store=AgentStore(self.path)
         with self.store._connection() as db:
-            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 36)
+            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 37)
             self.assertEqual(db.execute('SELECT hybrid_delegation_enabled FROM agents').fetchone()[0],0)
             self.assertIsNone(db.execute('PRAGMA foreign_key_check').fetchone())
 

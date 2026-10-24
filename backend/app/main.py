@@ -9,7 +9,7 @@ from fastapi.openapi.utils import get_openapi
 from starlette.responses import JSONResponse, StreamingResponse
 from . import security
 from . import process_supervision
-from . import agent_removal, recovery_actions, responsibility, providers
+from . import agent_removal, recovery_actions, responsibility, providers, provider_onboarding
 from .realtime import changes
 from pydantic import BaseModel, ConfigDict, StrictBool, field_validator, model_validator
 from .system_notifications import notifications
@@ -32,9 +32,14 @@ async def lifespan(app):
     initialize_persistence()
     manager.start_recovery_sweep()
     manager.start_diagnostics_worker()
+    # In-process update awareness only: about once a day while running, never while closed.
+    updates = manager.start_update_scheduler()
     try:
         yield
     finally:
+        if updates is not None:
+            updates.stop()
+        provider_onboarding.shutdown()  # Ends and records running setup operations before the database closes.
         shutdown_agents()
 
 
@@ -658,6 +663,138 @@ def clear_auto_allocation_route(task_id: str, expected_revision: int | None = No
     if expected_revision is None:
         raise HTTPException(status_code=428, detail=AUTO_REVISION_REQUIRED)
     return _task_action(lambda: manager.clear_auto_allocation_policy(task_id, expected_revision=expected_revision))
+
+
+# ---------------------------------------------------------------- Stage 2G: AI Providers
+
+class ProviderPolicyRequest(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    allowed: list[Literal['codex', 'claude', 'gemini']]
+    default_provider: AgentType | None = None
+    default_model: str | None = None
+    default_effort: str | None = None
+    expected_revision: int
+
+
+@app.get('/provider-policy')
+def provider_policy_route():
+    """Global provider permissions (an empty allowlist means no real provider) and new-root defaults."""
+    return _task_action(manager.provider_policy_view)
+
+
+@app.put('/provider-policy')
+def set_provider_policy_route(request: ProviderPolicyRequest):
+    """The user's global allowlist and defaults; the revision loaded is required (409 when stale)."""
+    return _task_action(lambda: manager.set_provider_policy(
+        allowed=request.allowed, default_provider=request.default_provider, default_model=request.default_model,
+        default_effort=request.default_effort, expected_revision=request.expected_revision))
+
+
+class TaskProviderRestrictionRequest(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    providers: list[Literal['codex', 'claude', 'gemini']]
+    expected_revision: int | None = None
+
+
+@app.get('/tasks/{task_id}/provider-restrictions')
+def task_provider_restrictions_route(task_id: str):
+    return _task_action(lambda: manager.task_provider_restrictions(task_id))
+
+
+@app.put('/tasks/{task_id}/provider-restrictions')
+def set_task_provider_restrictions_route(task_id: str, request: TaskProviderRestrictionRequest):
+    """Narrow the providers this Task subtree may use (never wider than inherited)."""
+    if 'expected_revision' not in request.model_fields_set:
+        raise HTTPException(status_code=428, detail=PROVIDER_REVISION_REQUIRED)
+    return _task_action(lambda: manager.set_task_provider_restrictions(
+        task_id, request.providers, expected_revision=request.expected_revision))
+
+
+@app.delete('/tasks/{task_id}/provider-restrictions')
+def clear_task_provider_restrictions_route(task_id: str, expected_revision: int | None = None):
+    if expected_revision is None:
+        raise HTTPException(status_code=428, detail=PROVIDER_REVISION_REQUIRED)
+    return _task_action(lambda: manager.clear_task_provider_restrictions(task_id, expected_revision=expected_revision))
+
+
+PROVIDER_REVISION_REQUIRED = ('expected_revision is required: send the restriction revision you loaded, or null only to '
+                              'create a restriction for a Task that has none.')
+
+
+@app.get('/providers/onboarding')
+def provider_onboarding_route():
+    """Installation, sign-in, enablement, permission, billing, models, usage and updates (no probe)."""
+    return _task_action(manager.onboarding_view)
+
+
+class ProviderOperationPlanRequest(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    action: Literal['install', 'update', 'login', 'logout']
+    channel: Literal['latest', 'stable', 'preview', 'nightly'] | None = None
+
+
+@app.post('/providers/{provider}/operations/plan')
+def plan_provider_operation_route(provider: str, request: ProviderOperationPlanRequest):
+    """The exact operation an approval would authorize; nothing runs."""
+    return _task_action(lambda: manager.plan_provider_operation(_known_provider(provider), request.action, request.channel))
+
+
+class ProviderOperationStartRequest(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    plan_id: str
+    digest: str
+    approved: StrictBool
+
+
+@app.post('/providers/{provider}/operations', status_code=202)
+def start_provider_operation_route(provider: str, request: ProviderOperationStartRequest):
+    """Run a reviewed plan. The approval is bound to its identity and digest and is used once."""
+    if request.approved is not True:
+        raise HTTPException(status_code=422, detail='Explicit approval is required to run a setup operation.')
+    return _task_action(lambda: manager.start_provider_operation(_known_provider(provider), request.plan_id, request.digest))
+
+
+@app.get('/provider-operations/{operation_id}')
+def provider_operation_route(operation_id: str):
+    return _task_action(lambda: manager.provider_operation(operation_id))
+
+
+@app.post('/provider-operations/{operation_id}/cancel')
+def cancel_provider_operation_route(operation_id: str):
+    return _task_action(lambda: manager.cancel_provider_operation(operation_id))
+
+
+class ProviderOperationResolveRequest(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    confirm_ended: StrictBool
+
+
+@app.post('/provider-operations/{operation_id}/resolve')
+def resolve_provider_operation_route(operation_id: str, request: ProviderOperationResolveRequest):
+    """Your confirmation that an operation whose end could not be verified has ended (refused while its Job runs)."""
+    return _task_action(lambda: manager.resolve_provider_operation(operation_id, request.confirm_ended))
+
+
+@app.post('/providers/updates/check')
+def check_provider_updates_route():
+    """Read release metadata now (rate limited); never installs anything."""
+    return _task_action(manager.check_provider_updates)
+
+
+@app.get('/providers/notifications')
+def provider_notifications_route():
+    return _task_action(manager.provider_notifications)
+
+
+class ProviderNotificationRequest(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    version: str
+    mode: Literal['dismiss', 'remind_later']
+
+
+@app.post('/providers/{provider}/notifications/dismiss')
+def dismiss_provider_notification_route(provider: str, request: ProviderNotificationRequest):
+    return _task_action(lambda: manager.dismiss_provider_notification(_known_provider(provider), request.version, request.mode))
 
 
 @app.get('/tasks/{task_id}/orchestration')

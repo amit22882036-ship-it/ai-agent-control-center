@@ -11,6 +11,7 @@ from unittest.mock import patch
 from uuid import uuid4
 
 from app import agent_manager as manager, promotion, planning, delegation_materialization, delegation_orchestration, providers
+from app import provider_policy
 from app.persistence import AgentStore
 import test_delegation_protocol as baseline
 import test_planning as plans
@@ -84,6 +85,9 @@ class PromotionTests(unittest.TestCase):
 
     def test_requested_child_provider_is_recorded_and_never_substituted(self):
         # Stage 2F: Claude Code is disabled by default, so the request is blocked, not replaced.
+        with self.store._connection() as db:
+            db.execute('BEGIN IMMEDIATE')
+            provider_policy.set_global(db, allowed=['codex', 'claude'])  # Allowed (2G), still disabled.
         self.accepted(items=[selection(provider='claude', model='sonnet')])
         row, = self.rows()
         self.assertEqual(row['disposition'], 'blocked')
@@ -96,11 +100,35 @@ class PromotionTests(unittest.TestCase):
         with self.store._connection() as db:
             db.execute('BEGIN IMMEDIATE')
             providers.update_settings(db, 'gemini', enabled=True, billing_confirmed=True)
+            provider_policy.set_global(db, allowed=['codex', 'gemini'])  # Stage 2G: enabled and allowed.
         self.accepted(items=[selection(provider='gemini')])
         row, = self.rows()
         self.assertEqual(row['disposition'], 'ready')
         with self.store._connection() as db:
             self.assertEqual(db.execute('SELECT child_provider FROM delegations').fetchone()[0], 'gemini')
+
+    def test_enabled_but_not_permitted_child_provider_is_blocked(self):
+        # Stage 2G: permission is separate from enablement and is never substituted.
+        with self.store._connection() as db:
+            db.execute('BEGIN IMMEDIATE')
+            providers.update_settings(db, 'gemini', enabled=True, billing_confirmed=True)
+        self.accepted(items=[selection(provider='gemini')])
+        row, = self.rows()
+        self.assertEqual(row['disposition'], 'blocked')
+        self.assertIn('Child provider not permitted: Gemini CLI is not in your allowed providers', row['reason'])
+        with self.store._connection() as db:
+            self.assertIsNone(db.execute('SELECT child_task_id FROM delegations').fetchone()[0])
+
+    def test_inherited_child_provider_respects_the_parent_task_restriction(self):
+        key, process = self.launch()
+        with self.store._connection() as db:
+            db.execute('BEGIN IMMEDIATE')  # Set while the Parent runs: running work is not stopped.
+            provider_policy.set_restriction(db, self.task['task_id'], [])
+        self.stream(key, process, [self.plan(), self.message([selection()])])
+        self.finish(key, process)
+        row, = self.rows()
+        self.assertEqual(row['disposition'], 'blocked')
+        self.assertIn('not allowed for this Task', row['reason'])
 
     def test_persisted_plan_and_exact_retry(self):
         _, process = self.active()
@@ -325,7 +353,7 @@ class PromotionTests(unittest.TestCase):
             self.assertFalse(db.execute("SELECT 1 FROM sqlite_master WHERE name='promotion_items'").fetchone())
         AgentStore(self.store.path)
         with self.store._connection() as db:
-            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 36)
+            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 37)
             self.assertIsNone(db.execute('PRAGMA foreign_key_check').fetchone())
 
     def workspace_fixture(self):

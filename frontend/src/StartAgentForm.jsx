@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useId, useState } from 'react'
+import { useCallback, useEffect, useId, useRef, useState } from 'react'
 import Icon from './Icon'
 import ProjectSelection from './ProjectSelection'
 import ProviderPanel from './ProviderPanel'
@@ -9,6 +9,7 @@ import { AUTO_SUMMARY, providerChoices } from './allocationPresentation.mjs'
 import { initialAutonomousChoice, autonomyEligible, creationPayload } from './autonomousCreation.mjs'
 import { apiFetch } from './apiClient.mjs'
 import { PROVIDER_IDS, capabilityReason, providerLabel, selectable, stateLabel, stateOf, stateTone, statusFor } from './providerPresentation.mjs'
+import { defaultChoice, defaultText, permissionFor } from './onboardingPresentation.mjs'
 
 // Explicit local checks (installation, version, sign-in, billing route); never a model request.
 async function loadProviders() {
@@ -21,6 +22,17 @@ async function loadProviders() {
   }
 }
 
+// Stage 2G: the global provider permission and the defaults for new root agents.
+async function loadPolicy() {
+  try {
+    const response = await apiFetch('http://127.0.0.1:8000/provider-policy')
+    const data = await response.json().catch(() => ({}))
+    return response.ok && Array.isArray(data.allowed) ? data : null
+  } catch {
+    return null
+  }
+}
+
 export default function StartAgentForm({
   parentId = null,
   onStarted,
@@ -28,6 +40,8 @@ export default function StartAgentForm({
   onStartingChange,
   onCancel,
   sectionId,
+  onOpenProviders,
+  visible = true,
 }) {
   const id = useId()
   const [task, setTask] = useState('')
@@ -42,11 +56,16 @@ export default function StartAgentForm({
   const [error, setError] = useState('')
   const [statuses, setStatuses] = useState(null)
   const [statusError, setStatusError] = useState('')
+  const [policy, setPolicy] = useState(null)
+  const [appliedDefault, setAppliedDefault] = useState(null)
+  const touched = useRef(false)  // A provider the user picked is never replaced by a default.
+  const defaultApplied = useRef(false)
   const unavailable = disabled || starting
   const child = parentId !== null
   const status = statusFor(statuses, agentType)
   const real = agentType !== 'mock'
-  const usable = selectable(status, agentType)
+  const permission = permissionFor(policy, agentType)
+  const usable = selectable(status, agentType) && permission.allowed
   const [catalogVersion, setCatalogVersion] = useState(0)
   const models = useModelCatalog(real ? agentType : null, catalogVersion)
   const config = chosenConfig(models.catalog, modelChoice)
@@ -69,6 +88,30 @@ export default function StartAgentForm({
     loadProviders().then((result) => { if (active) applyProviders(result) })
     return () => { active = false }
   }, [applyProviders])
+  // Re-read permissions (and readiness) when the form is shown again, e.g. after setup.
+  const wasVisible = useRef(visible)
+  useEffect(() => {
+    let active = true
+    if (visible) {
+      loadPolicy().then((result) => {
+        if (!active) return
+        setPolicy(result)
+        // The saved default applies once to a new root agent, as saved: an unusable
+        // default is selected and explained, never swapped for another provider or model.
+        if (child || !result || touched.current || defaultApplied.current) return
+        defaultApplied.current = true
+        const choice = defaultChoice(result)
+        setAppliedDefault(choice)
+        if (choice) {
+          setAgentType(choice.provider)
+          setModelChoice(initialChoice(choice.model, choice.effort))
+        }
+      })
+      if (!wasVisible.current) refreshProviders()
+    }
+    wasVisible.current = visible
+    return () => { active = false }
+  }, [visible, refreshProviders, child])
 
   async function handleStart(event) {
     event.preventDefault()
@@ -134,16 +177,22 @@ export default function StartAgentForm({
               const state = value === 'mock' ? 'ready' : stateOf(item)
               return <label key={value}>
                 <input type="radio" name={`${id}-type`} value={value} checked={agentType === value}
-                  onChange={() => { setAgentType(value); setModelChoice(initialChoice()) }} disabled={unavailable}
+                  onChange={() => { touched.current = true; setAgentType(value); setModelChoice(initialChoice()) }}
+                  disabled={unavailable || !permissionFor(policy, value).allowed}
                   aria-describedby={`${id}-provider-state`} />
-                <span>{providerLabel(value)}{value !== 'mock' && <small className={`provider-dot provider-${stateTone(state)}`} aria-label={stateLabel(state)} title={stateLabel(state)} />}</span>
+                <span title={permissionFor(policy, value).reason || undefined}>{providerLabel(value)}{value !== 'mock' && <small className={`provider-dot provider-${permissionFor(policy, value).allowed ? stateTone(state) : 'blocked'}`}
+                  aria-label={permissionFor(policy, value).allowed ? stateLabel(state) : 'Not allowed'} title={permissionFor(policy, value).allowed ? stateLabel(state) : 'Not allowed'} />}</span>
               </label>
             })}
           </div>
           <p id={`${id}-provider-state`} className="agent-type-note" role="status">
-            {real ? `${providerLabel(agentType)}: ${stateLabel(stateOf(status))}.${!usable && status?.state?.reason ? ` ${status.state.reason}` : ''}${!usable && status?.state?.guidance ? ` ${status.state.guidance}` : ''}`
-              : 'Mock only simulates work and uses no provider.'}
+            {real && !permission.allowed ? permission.reason
+              : real ? `${providerLabel(agentType)}: ${stateLabel(stateOf(status))}.${!usable && status?.state?.reason ? ` ${status.state.reason}` : ''}${!usable && status?.state?.guidance ? ` ${status.state.guidance}` : ''}`
+                : 'Mock only simulates work and uses no provider.'}
           </p>
+          {appliedDefault && agentType === appliedDefault.provider && <p className={`agent-type-note${appliedDefault.problem ? ' provider-reason' : ''}`}>{defaultText(appliedDefault)}</p>}
+          {real && !usable && onOpenProviders && <button type="button" className="close-button provider-setup-link" onClick={onOpenProviders}>
+            Set up in AI Providers<Icon name="arrow" size={14} /></button>}
           {statusError && <p className="agent-type-note">{statusError}</p>}
         </fieldset>
         {real && (
@@ -189,10 +238,10 @@ export default function StartAgentForm({
               : "Children use the provider the plan requests, or this agent's; an unavailable one is never replaced."}</p>
             {childAllocation === 'auto' && <div className="allocation-providers" role="group" aria-label="Providers Auto may use">
               {providerChoices(statuses).map((choice) => <label key={choice.id} className="attestation-check">
-                <input type="checkbox" checked={autoProviders.includes(choice.id)} disabled={unavailable}
+                <input type="checkbox" checked={autoProviders.includes(choice.id)} disabled={unavailable || !permissionFor(policy, choice.id).allowed}
                   onChange={(event) => setAutoProviders(event.target.checked ? [...autoProviders, choice.id]
                     : autoProviders.filter((item) => item !== choice.id))} />
-                <span>{choice.label}{choice.ready ? '' : ` (${choice.state.replace('_', ' ')})`}</span></label>)}
+                <span>{choice.label}{!permissionFor(policy, choice.id).allowed ? ' (not allowed)' : choice.ready ? '' : ` (${choice.state.replace('_', ' ')})`}</span></label>)}
             </div>}
           </fieldset>}
         </div>}

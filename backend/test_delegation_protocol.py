@@ -299,7 +299,7 @@ class HandoffTests(unittest.TestCase):
         self.assertEqual(self.snapshot(), before)
         self.store = AgentStore(self.path)
         with self.store._connection() as db:
-            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 36)
+            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 37)
             self.assertEqual(db.execute('PRAGMA foreign_key_check').fetchall(), [])
         self.assertIsNone(self.store.get_task(self.parent['task_id'])['orchestration_handoff'])
         self.assertFalse(self.store.execution_settings(self.origin['agent_id']))
