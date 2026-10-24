@@ -4,7 +4,7 @@ import ThemeControl from './ThemeControl'
 import { workspaceSummary } from './agentPresentation.mjs'
 import { noticeText } from './onboardingPresentation.mjs'
 export default function WorkspaceBar({ agents, search, onSearch, notifications, showStart, onStart, newAgentButtonRef, startingAgent,
-  view = 'workspace', onView, providerNotices = { notices: [] } }) {
+  view = 'workspace', onView, providerNotices = { notices: [] }, onReviewUpdate }) {
   const notificationsBlocked = notifications.permission === 'denied'
   const notices = providerNotices.notices || []
   return <header className="workspace-bar">
@@ -26,7 +26,9 @@ export default function WorkspaceBar({ agents, search, onSearch, notifications, 
         {notices.length > 0 && <ul className="provider-notices" aria-label="Provider updates">{notices.map((notice) => <li key={notice.id}>
           <p>{noticeText(notice)}</p>
           <div className="provider-actions">
-            <button type="button" className="close-button" onClick={() => onView?.('providers')}>Review update</button>
+            {/* Opens that provider's update review; nothing runs until its exact plan is approved there. */}
+            <button type="button" className="close-button" data-popover-close
+              onClick={() => (onReviewUpdate ? onReviewUpdate(notice.provider) : onView?.('providers'))}>Review update</button>
             <button type="button" className="close-button" onClick={() => providerNotices.dismiss(notice, 'remind_later')}>Remind me later</button>
             <button type="button" className="close-button" onClick={() => providerNotices.dismiss(notice, 'dismiss')}>Dismiss</button>
           </div></li>)}</ul>}

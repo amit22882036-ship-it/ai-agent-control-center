@@ -85,6 +85,7 @@ PLAN_SECONDS = 600
 OPERATION_TIMEOUT = {'install': 900, 'update': 900, 'login': 900, 'logout': 120}
 OUTPUT_LIMIT = 32768
 UPDATE_INTERVAL = 24 * 3600
+RETRY_INTERVAL = 3600  # A failed release-metadata read is retried sooner than a successful one.
 MANUAL_CHECK_INTERVAL = 60
 FETCH_TIMEOUT = 10
 FETCH_LIMIT = 65536
@@ -262,6 +263,11 @@ def require_no_maintenance(db, provider):
 
 
 # ---------------------------------------------------------------- discovery (never executes)
+
+def _clause(found):
+    """A probe's reason for use inside a sentence (its own final period dropped)."""
+    return (found.reason or found.state).rstrip('.')
+
 
 def _env(name):
     value = os.environ.get(name)
@@ -600,7 +606,7 @@ def start(connect, provider, plan_id, digest, publish=lambda: None, controller=N
     with connect() as db:
         plan = build_plan(db, provider, action, channel, resolved)
     if plan.digest() != expected or plan.blockers or not plan.executable:
-        reasons = '; '.join(plan.blockers) or 'the operation changed since it was reviewed'
+        reasons = '; '.join(line.rstrip('.') for line in plan.blockers) or 'the operation changed since it was reviewed'
         raise ValueError(f'The operation can no longer run as approved ({reasons}). Review it again.')
     operation_id, job_name, owner = str(uuid4()), ps.new_job_name(), _controller(controller)
     with connect() as db:
@@ -770,13 +776,17 @@ def _finish(connect, operation_id, plan, exit_code, output, error, state, eviden
     found = providers.probe(plan.provider, force=True)
     if plan.provider in providers.REAL:
         model_catalog.mark_stale(connect, plan.provider)  # Version or account may have changed.
+        try:  # The fresh probe is new version evidence for the recorded update comparison.
+            reevaluate_updates(connect, [plan.provider])
+        except Exception:
+            logger.exception('Update comparison for %s was not refreshed', plan.provider)
     installed = found.state not in (providers.NOT_INSTALLED, providers.INVALID_INSTALLATION)
     bound = parse_version(plan.target_version) if plan.target_version else None
     reported = parse_version(found.version)
     if state['stopped'] and not canceled:
-        status, result = 'interrupted', f'The backend stopped; the operation was ended. {label} was checked again: {found.reason or found.state}.'
+        status, result = 'interrupted', f'The backend stopped; the operation was ended. {label} was checked again: {_clause(found)}.'
     elif canceled:
-        status, result = 'canceled', f'Canceled; its processes ended. {label} was checked again: {found.reason or found.state}.'
+        status, result = 'canceled', f'Canceled; its processes ended. {label} was checked again: {_clause(found)}.'
     elif error:
         status, result = 'failed', error
     elif evidence.get('timed_out'):
@@ -799,21 +809,21 @@ def _finish(connect, operation_id, plan, exit_code, output, error, state, eviden
         else:
             status = 'failed'
             result = (f'The {plan.action} exited with code {exit_code}. {label} now reports: '
-                      f'{found.reason or found.state}. Nothing was claimed as installed.')
+                      f'{_clause(found)}. Nothing was claimed as installed.')
     elif plan.action == 'login':
         if found.authenticated and found.ready:
             status, result = 'succeeded', f'{label} is signed in on an approved subscription route.'
         elif found.authenticated:
-            status, result = 'needs_attention', f'{label} is signed in, but not ready: {found.reason or found.state}.'
+            status, result = 'needs_attention', f'{label} is signed in, but not ready: {_clause(found)}.'
         else:
             status = 'needs_attention'
             result = (f'The sign-in window closed (exit code {exit_code}), but {label} does not report a sign-in: '
-                      f'{found.reason or found.state}. Try again or sign in manually.')
+                      f'{_clause(found)}. Try again or sign in manually.')
     else:
         if exit_code == 0 and not found.authenticated:
             status, result = 'succeeded', f'{label} is signed out on this computer.'
         else:
-            status, result = 'failed', f'{label} still reports: {found.reason or found.state}.'
+            status, result = 'failed', f'{label} still reports: {_clause(found)}.'
     with connect() as db:
         db.execute('BEGIN IMMEDIATE')
         db.execute(f'''UPDATE provider_operations SET status=?,exit_code=?,after_version=?,output_tail=?,result=?,evidence=?,
@@ -935,8 +945,25 @@ def fetch_dist_tags(provider):
     return tags
 
 
-def evaluate_update(provider, tags, found):
-    version_text = _version_text(provider)
+def installed_version(provider, found):
+    """The installed CLI's version as evidence for an update comparison: the cached readiness
+    probe, else a fresh one. A probe runs only local, non-billable commands (`--version`, `--help`
+    and the local sign-in status), is coalesced per provider and never makes a model request."""
+    if found['state'] != 'installed':
+        return None
+    version = _version_text(provider)
+    if version is None:
+        try:
+            version = providers.probe(provider).version
+        except Exception as exc:  # No evidence: the comparison stays unresolved, never "up to date".
+            logger.warning('Installed-version probe for %s failed (%s)', provider, type(exc).__name__)
+            version = None
+    return version
+
+
+def evaluate_update(provider, tags, found, version_text=None):
+    if version_text is None:
+        version_text = _version_text(provider)
     method = found['method']
     channel = _channel(provider, version_text, method)
     latest = tags.get(channel)
@@ -977,14 +1004,19 @@ def check_updates(connect, *, force=False, trigger='manual'):
             _last_manual = time.monotonic()
         for provider in providers.REAL:
             previous = rows.get(provider)
-            if not force and previous and _age(previous['checked_at']) < UPDATE_INTERVAL:
+            if not force and previous and _age(previous['checked_at']) < _recheck_after(previous):
+                # Recent release metadata: only re-compare it with newer version evidence (no fetch).
+                _reevaluate(connect, provider, previous)
                 continue
             found = discover(provider)
+            # Version evidence first, so a cold start never records an unresolved comparison
+            # merely because no readiness check has run yet.
+            version = installed_version(provider, found)
             try:
-                result = evaluate_update(provider, fetch_dist_tags(provider), found)
+                result = evaluate_update(provider, fetch_dist_tags(provider), found, version)
             except (OSError, ValueError, json.JSONDecodeError) as exc:
-                result = dict(status='check_failed', installed_version=_version_text(provider),
-                              channel=_channel(provider, _version_text(provider), found['method']), latest_version=None,
+                result = dict(status='check_failed', installed_version=version,
+                              channel=_channel(provider, version, found['method']), latest_version=None,
                               method=found['method'], source='npm_registry_dist_tags',
                               error=f'Release metadata could not be read ({type(exc).__name__}).')
             with connect() as db:
@@ -999,6 +1031,53 @@ def check_updates(connect, *, force=False, trigger='manual'):
         return update_view(connect)
     finally:
         _check_lock.release()
+
+
+def _recheck_after(row):
+    return RETRY_INTERVAL if row.get('status') == 'check_failed' else UPDATE_INTERVAL
+
+
+def _reevaluate(connect, provider, row):
+    """Compare recorded release metadata with the current version evidence, without reading the
+    registry. Used when a version becomes known after the metadata was read (for example a
+    check that ran before any readiness probe, or an update that just finished). The row keeps
+    its checked_at: that is when the metadata was read. A changed channel needs fresh metadata,
+    so it is left for the next check. Returns True when the stored result changed."""
+    if not row or row.get('status') == 'check_failed' or not row.get('latest_version'):
+        return False
+    found = discover(provider)
+    version = _version_text(provider) if found['state'] == 'installed' else None
+    if found['state'] == 'installed' and version is None:
+        return False  # No new evidence: never resolved by assumption.
+    result = evaluate_update(provider, {row['channel']: row['latest_version']}, found, version)
+    if found['state'] == 'installed' and result['channel'] != row['channel']:
+        return False
+    if all(result[key] == row.get(key) for key in ('status', 'installed_version', 'method')):
+        return False
+    with connect() as db:
+        db.execute('BEGIN IMMEDIATE')
+        current = db.execute('SELECT checked_at, latest_version, channel FROM provider_update_checks WHERE provider=?',
+                             (provider,)).fetchone()
+        if current is None or (current['checked_at'], current['latest_version'], current['channel']) != (
+                row['checked_at'], row['latest_version'], row['channel']):
+            return False  # A newer check wrote meanwhile; it wins.
+        db.execute('UPDATE provider_update_checks SET status=?, installed_version=?, method=? WHERE provider=?',
+                   (result['status'], result['installed_version'], result['method'], provider))
+    return True
+
+
+def reevaluate_updates(connect, provider_ids=None):
+    """After new version evidence (a readiness check or a finished setup operation): refresh the
+    recorded comparisons without registry traffic. Returns whether anything changed."""
+    with connect() as db:
+        if not providers._has(db, 'provider_update_checks'):
+            return False
+        rows = {r['provider']: dict(r) for r in db.execute('SELECT * FROM provider_update_checks')}
+    changed = False
+    for provider in provider_ids or providers.REAL:
+        if provider in rows:
+            changed = _reevaluate(connect, provider, rows[provider]) or changed
+    return changed
 
 
 def _age(stamp):
@@ -1042,12 +1121,14 @@ class UpdateScheduler:
     def _loop(self):
         delay = self.first_delay
         while not self.stop_event.wait(delay):
+            delay = UPDATE_INTERVAL
             try:
-                check_updates(self.connect, trigger='scheduled')
+                view = check_updates(self.connect, trigger='scheduled') or {}
                 self.publish()
+                if any(row.get('status') == 'check_failed' for row in view.values()):
+                    delay = RETRY_INTERVAL  # Unreadable metadata is retried within the hour, not tomorrow.
             except Exception:
                 logger.exception('Provider update check failed')
-            delay = UPDATE_INTERVAL
 
     def stop(self):
         self.stop_event.set()

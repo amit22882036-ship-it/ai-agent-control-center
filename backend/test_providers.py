@@ -317,7 +317,12 @@ class ReadinessProbeTests(unittest.TestCase):
         self.assertEqual(self.probe('codex', FAKE_CODEX_LOGIN='apikey').state, providers.BILLING_BLOCKED)
         self.assertEqual(self.probe('codex', FAKE_CODEX_LOGIN='none').state, providers.NOT_AUTHENTICATED)
         self.assertEqual(self.probe('claude', FAKE_CLAUDE_BROKEN='1').state, providers.INVALID_INSTALLATION)
-        self.assertEqual(self.probe('claude', FAKE_CLAUDE_OLD='1').state, providers.UNSUPPORTED_VERSION)
+        old = self.probe('claude', FAKE_CLAUDE_OLD='1')
+        self.assertEqual(old.state, providers.UNSUPPORTED_VERSION)
+        # Guidance matches the installation found: an npm shim is not updated with `claude update`.
+        self.assertNotIn('claude update', old.guidance)
+        self.assertIn('npm', old.guidance)
+        self.assertIn('claude update', providers.adapter('claude').update_guidance(Path('claude.exe')))
         fake.gemini_settings(self.root / 'home', selected=None)
         self.assertEqual(self.probe('gemini').state, providers.NOT_AUTHENTICATED)
         fake.gemini_settings(self.root / 'home', selected='gemini-api-key')

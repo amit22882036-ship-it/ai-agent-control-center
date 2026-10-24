@@ -99,7 +99,7 @@ test('global permissions: an empty set allows none, and the revision loaded is r
 
 test('the New Agent form disables a disallowed provider with its reason; Mock is never restricted', () => {
   const policy = { allowed: ['codex'] }
-  assert.deepEqual(permissionFor(policy, 'codex'), { allowed: true, reason: null })
+  assert.deepEqual(permissionFor(policy, 'codex'), { allowed: true, reason: null, state: 'allowed' })
   assert.equal(permissionFor(policy, 'claude').allowed, false)
   assert.match(permissionFor(policy, 'claude').reason, /Claude Code is not in your allowed providers/)
   assert.equal(permissionFor({ allowed: [] }, 'mock').allowed, true)
@@ -116,7 +116,7 @@ test('a forbidden or unusable default is shown with its reason and never replace
   assert.equal(defaultText(defaultChoice({ default_provider: 'codex', default_model: 'gpt-5', default_effort: 'high' })),
     'Using your default: Codex · gpt-5 · high effort.')
   const form = source('StartAgentForm.jsx')
-  assert.match(form, /touched\.current \|\| defaultApplied\.current/)  // Applied once, never over the user's choice.
+  assert.match(form, /!touched\.current && !defaultApplied\.current/)  // Applied once, never over the user's choice.
 })
 
 test('Task restrictions narrow inherited permissions and explain where they come from', () => {

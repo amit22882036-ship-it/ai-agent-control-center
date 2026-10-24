@@ -24,6 +24,8 @@ function App() {
   // The AI Providers view replaces the workspace in place; the New Agent composer stays
   // mounted (hidden) so its draft survives a visit to set up a provider.
   const [view, setView] = useState('workspace')
+  // "Review update" on a notice: which provider card to bring into view and prepare a review for.
+  const [providerFocus, setProviderFocus] = useState(null)
   const [rootStarting, setRootStarting] = useState(false)
   const [agents, setAgents] = useState([])
   const [overview, setOverview] = useState(null)
@@ -115,6 +117,11 @@ function App() {
     window.scrollTo?.({ top: 0 })
   }
 
+  function reviewUpdate(provider) {
+    setProviderFocus((current) => ({ provider, action: 'update', nonce: (current?.nonce || 0) + 1 }))
+    openView('providers')
+  }
+
   function newAgentPressed() {
     if (view !== 'workspace') {
       openView('workspace')
@@ -135,9 +142,9 @@ function App() {
         showStart={showStart && view === 'workspace'}
         onStart={newAgentPressed}
         newAgentButtonRef={newAgentButtonRef} startingAgent={rootStarting}
-        view={view} onView={openView} providerNotices={providerNotices} />
+        view={view} onView={openView} providerNotices={providerNotices} onReviewUpdate={reviewUpdate} />
       {view === 'providers' && <main id="providers" className="dashboard">
-        <ProvidersView refreshVersion={detailsRefresh} onClose={() => openView('workspace')} />
+        <ProvidersView refreshVersion={detailsRefresh} onClose={() => openView('workspace')} focus={providerFocus} />
       </main>}
       <main id="workspace" className="dashboard" hidden={view !== 'workspace'}>
         <header className="workspace-heading"><div><p className="eyebrow">YOUR AGENTS, IN FOCUS</p><h1>Agent Workspace</h1><p className="subtitle">Monitor, collaborate, and guide your AI agents.</p></div>
@@ -145,7 +152,7 @@ function App() {
         </header>
       {showStart && <StartAgentForm sectionId="new-agent-composer" onCancel={closeStartComposer}
         onStartingChange={setRootStarting} onStarted={rootAgentStarted} onOpenProviders={() => openView('providers')}
-        visible={view === 'workspace'} />}
+        visible={view === 'workspace'} refreshVersion={detailsRefresh} />}
       {overview && <div className="workspace-overview" aria-label="Recorded workspace totals">
         {Object.entries({ active_agents: 'Active agents', completed_tasks: 'Completed tasks', waiting_tasks: 'Waiting tasks', needs_input: 'Need your input', pending_responsibilities: 'Pending responsibilities' }).map(([key, label]) => <div key={key}><strong>{overview[key]}</strong><span>{label}</span></div>)}
       </div>}

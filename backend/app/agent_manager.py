@@ -1198,7 +1198,21 @@ def provider_statuses(*, check=False):
     if _store is not None:
         providers.reconcile(_store._connection)
     with _provider_db() as db:
-        return [providers.status(db, provider, force=check, probe_installation=check) for provider in providers.IDS]
+        result = [providers.status(db, provider, force=check, probe_installation=check) for provider in providers.IDS]
+    if check:
+        _reevaluate_updates()
+    return result
+
+
+def _reevaluate_updates(provider_ids=None):
+    """Fresh version evidence re-compares recorded release metadata (no registry read)."""
+    if _store is None:
+        return
+    try:
+        if provider_onboarding.reevaluate_updates(_store._connection, provider_ids):
+            _emit_agent_change(None)
+    except Exception:
+        logger.exception('Recorded update comparisons could not be refreshed')
 
 
 def _refresh_catalog_quietly(provider, trigger):
@@ -1221,6 +1235,8 @@ def check_provider(provider):
             providers.clear_blocks(db, provider, by='provider_signal', conditions=(providers.AUTH_FAILED,))
             db.commit()
         result = providers.status(db, provider, probe_installation=False)
+    if provider in providers.REAL:
+        _reevaluate_updates([provider])
     _emit_agent_change(None)
     return result
 
@@ -2020,6 +2036,17 @@ def _resume_cwd(agent_id):
     return _execution_workspace(related[0] if related else None)
 
 
+def _parent_policy_task(parent_id):
+    """The Task whose provider permissions a new Child of `parent_id` inherits (early check only;
+    the final admission checks the Child's own Task)."""
+    if parent_id is None or _store is None:
+        return None
+    assignment = _store.get_active_assignment_for_agent(parent_id)
+    if assignment:
+        return assignment['task_id']
+    return _agent_task_id(parent_id)
+
+
 def _agent_task_id(agent_id):
     related = _store.agent_task_ids(agent_id) if _store is not None else []
     return related[0] if related else None
@@ -2161,8 +2188,15 @@ def _prepare_agent_start(task: str, agent_type: AgentType, sandbox: CodexSandbox
         _store.require_agent_operational(parent_id)
     providers.adapter(agent_type)
     # Readiness, enablement, billing, usage and access policy are checked here,
-    # before any Task, workspace, reservation or process is created.
-    command = _provider_command(agent_type, sandbox, model=model, effort=effort)
+    # before any Task, workspace, reservation or process is created. A Child (or a
+    # start on an existing Task) is checked against the provider permissions it will
+    # inherit, so an inherited restriction is reported as such before readiness or usage.
+    previous_policy_task = getattr(_launch, 'policy_task_id', None)
+    _launch.policy_task_id = task_id if task_id is not None else _parent_policy_task(parent_id)
+    try:
+        command = _provider_command(agent_type, sandbox, model=model, effort=effort)
+    finally:
+        _launch.policy_task_id = previous_policy_task
     # Resolve logical ownership from the canonical context, then execute only
     # in the Task Workspace regardless of provider.
     cwd = root_path = _project_root

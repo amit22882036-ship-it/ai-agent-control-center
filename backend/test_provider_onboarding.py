@@ -478,8 +478,9 @@ class OnboardingOperationTests(Store, unittest.TestCase):
         plan = self.propose('codex', 'install')
         fake.install(self.appdata, names=('codex',))  # Installed meanwhile: the reviewed install is obsolete.
         providers.invalidate('codex')
-        with self.assertRaisesRegex(ValueError, 'can no longer run as approved.*already installed'):
+        with self.assertRaisesRegex(ValueError, 'can no longer run as approved.*already installed') as refused:
             onboarding.start(self.connect, 'codex', plan['plan_id'], plan['digest'])
+        self.assertNotIn('.)', str(refused.exception))  # No doubled punctuation around the reason.
         self.assertEqual(self.npm_calls(), [])
 
     def test_a_failed_or_ineffective_install_is_never_reported_as_installed(self):
@@ -488,6 +489,7 @@ class OnboardingOperationTests(Store, unittest.TestCase):
             result = self.run_plan(self.propose('gemini', 'install', 'preview'))
         self.assertEqual(result['status'], 'failed')
         self.assertIn('exited with code 1', result['result'])
+        self.assertNotIn('..', result['result'])  # The provider's own reason is embedded without its period.
         self.assertEqual(self.npm_calls()[-1][:3], ['install', '--global', '@google/gemini-cli@0.30.0'])
         with patch.dict(os.environ, FAKE_NPM_NOOP='1'):
             result = self.run_plan(self.propose('gemini', 'install'))
@@ -1004,6 +1006,109 @@ class UpdateCheckTests(Store, unittest.TestCase):
             with self.assertRaises(ValueError):
                 onboarding.dismiss(self.connect, *bad)
 
+    # Browser E2E finding P2-3: a cold start compared releases before any version was known.
+    def probe_with(self, versions):
+        calls = []
+
+        def probe(provider, force=False):
+            calls.append(provider)
+            if isinstance(versions.get(provider), Exception):
+                raise versions[provider]
+            return providers.Readiness(provider, providers.READY, version=versions.get(provider))
+        self.enterContext(patch.object(providers, 'probe', side_effect=probe))
+        return calls
+
+    def installed_everywhere(self):
+        self.enterContext(patch.object(onboarding, 'discover', side_effect=lambda p: dict(
+            provider=p, state='installed', method='npm', location='x')))
+
+    def test_a_cold_start_check_obtains_version_evidence_before_comparing(self):
+        cold = dict(self.versions)
+        self.versions.update(codex=None, claude=None, gemini=None)  # Nothing probed yet (fresh backend).
+        self.installed_everywhere()
+        probes = self.probe_with(cold)
+        self.tags['codex'] = {'latest': '0.155.0'}
+        view = onboarding.check_updates(self.connect, trigger='scheduled')
+        self.assertEqual(sorted(probes), ['claude', 'codex', 'gemini'])  # Local, non-billable probes only.
+        self.assertEqual((view['codex']['status'], view['codex']['installed_version']), ('update_available', '0.154.0'))
+        self.assertEqual(view['claude']['status'], 'up_to_date')
+        self.assertEqual([n['available_version'] for n in onboarding.notifications(self.connect)], ['0.155.0'])
+
+    def test_an_unresolved_comparison_is_resolved_by_later_evidence_without_registry_traffic(self):
+        self.versions.update(codex=None, claude=None, gemini=None)
+        self.installed_everywhere()
+        self.probe_with({'codex': OSError('probe failed'), 'claude': None, 'gemini': None})
+        self.tags['codex'] = {'latest': '0.155.0'}
+        view = onboarding.check_updates(self.connect, trigger='scheduled')
+        self.assertEqual(view['codex']['status'], 'unknown')  # Never "up to date" by assumption.
+        self.assertEqual(view['codex']['latest_version'], '0.155.0')
+        self.assertEqual(onboarding.notifications(self.connect), [])
+        checked, fetches = view['codex']['checked_at'], self.fetch.call_count
+        self.assertFalse(onboarding.reevaluate_updates(self.connect))  # Still no evidence: unchanged.
+        self.versions['codex'] = 'codex-cli 0.154.0'  # A later readiness check found the version.
+        self.assertTrue(onboarding.reevaluate_updates(self.connect, ['codex']))
+        view = onboarding.update_view(self.connect)
+        self.assertEqual((view['codex']['status'], view['codex']['installed_version']), ('update_available', '0.154.0'))
+        self.assertEqual(view['codex']['checked_at'], checked)  # When the metadata was read, not now.
+        self.assertEqual(self.fetch.call_count, fetches)
+        self.assertEqual([n['available_version'] for n in onboarding.notifications(self.connect)], ['0.155.0'])
+        # A restarted backend reads the resolved comparison; a recent scheduled pass does not refetch.
+        restarted = AgentStore(self.root / 'data' / 'onboarding.sqlite3')._connection
+        self.assertEqual(onboarding.update_view(restarted)['codex']['status'], 'update_available')
+        onboarding.check_updates(restarted, trigger='scheduled')
+        self.assertEqual(self.fetch.call_count, fetches)
+
+    def test_a_recent_scheduled_pass_re_compares_an_unknown_result_instead_of_freezing_it(self):
+        self.versions['claude'] = None
+        self.installed_everywhere()
+        self.probe_with({'claude': None})
+        self.tags['claude'] = {'latest': '2.1.199'}
+        self.assertEqual(onboarding.check_updates(self.connect, trigger='scheduled')['claude']['status'], 'unknown')
+        fetches = self.fetch.call_count
+        self.versions['claude'] = '2.1.198 (Claude Code)'
+        view = onboarding.check_updates(self.connect, trigger='scheduled')
+        self.assertEqual(view['claude']['status'], 'update_available')
+        self.assertEqual(self.fetch.call_count, fetches)  # Within the day: no registry read.
+
+    def test_re_evaluation_never_overrides_a_newer_check_or_a_changed_channel(self):
+        onboarding.check_updates(self.connect)
+        rows = self.read(lambda db: {r['provider']: dict(r) for r in db.execute('SELECT * FROM provider_update_checks')})
+        self.write(lambda db: db.execute("UPDATE provider_update_checks SET checked_at='2026-10-24T00:00:00.000Z' "
+                                         "WHERE provider='codex'"))
+        self.versions['codex'] = 'codex-cli 0.150.0'
+        self.assertFalse(onboarding._reevaluate(self.connect, 'codex', rows['codex']))  # Raced by a newer check.
+        self.versions['gemini'] = '0.31.0-preview.2'  # Now on the preview channel: needs fresh metadata.
+        self.assertFalse(onboarding._reevaluate(self.connect, 'gemini', rows['gemini']))
+        self.assertEqual(onboarding.update_view(self.connect)['gemini']['status'], 'up_to_date')
+
+    def test_a_failed_metadata_read_is_retried_within_the_hour_not_the_day(self):
+        self.fetch.side_effect = OSError('offline')
+        onboarding.check_updates(self.connect, trigger='scheduled')
+        self.assertEqual(self.fetch.call_count, 3)
+        onboarding.check_updates(self.connect, trigger='scheduled')
+        self.assertEqual(self.fetch.call_count, 3)  # Not hammered.
+        self.write(lambda db: db.execute(
+            "UPDATE provider_update_checks SET checked_at=strftime('%Y-%m-%dT%H:%M:%fZ','now','-2 hours')"))
+        self.fetch.side_effect = lambda p: dict(self.tags[p])
+        view = onboarding.check_updates(self.connect, trigger='scheduled')
+        self.assertEqual(self.fetch.call_count, 6)
+        self.assertEqual(view['codex']['status'], 'up_to_date')
+        checks = []
+
+        def failing_check(*args, **kwargs):
+            checks.append(kwargs)
+            return {'codex': {'status': 'check_failed'}}
+        with patch.object(onboarding, 'RETRY_INTERVAL', 0.05), patch.object(onboarding, 'UPDATE_INTERVAL', 30), \
+                patch.object(onboarding, 'check_updates', side_effect=failing_check), \
+                patch.dict(os.environ, {'CONTROL_CENTER_DISABLE_UPDATE_CHECKS': ''}):
+            scheduler = onboarding.UpdateScheduler(self.connect, lambda: None, first_delay=0.01).start()
+            deadline = time.monotonic() + 5
+            while len(checks) < 3 and time.monotonic() < deadline:
+                time.sleep(0.02)
+            scheduler.stop()
+            scheduler.thread.join(5)
+        self.assertGreaterEqual(len(checks), 3)  # The retry interval, not the daily one.
+
     def test_the_scheduler_runs_in_process_only_and_stops(self):
         calls = []
         with patch.object(onboarding, 'check_updates', side_effect=lambda *a, **k: calls.append(k)):
@@ -1107,6 +1212,23 @@ class LaunchPermissionTests(unittest.TestCase):
         self.allow('codex', 'claude')
         claude = manager.start_agent('Root work', 'claude', 'read-only')  # Checked against no stale Task.
         self.assertEqual(self.wait_status(claude, 'finished'), 'finished')
+
+    def test_a_child_is_refused_for_its_inherited_restriction_before_readiness_or_usage(self):
+        # Browser E2E finding: a quota refusal was reported for a Child the Task restriction forbids.
+        with patch.dict(os.environ, FAKE_CLAUDE_SCENARIO='waiting'):
+            parent = manager.start_agent('Plan the parser', 'claude', 'workspace-write')
+            self.assertEqual(self.wait_status(parent, 'waiting'), 'waiting')
+        manager.set_task_provider_restrictions(manager._agent_task_id(parent), ['codex'], expected_revision=None)
+        tasks, runs = len(self.rows('SELECT * FROM tasks')), len(fake.runs(self.log, 'claude'))
+        limited = providers.ProviderRefused('claude', 'usage_limited', 'Session limit.')
+        with patch.object(providers, 'require_launchable', side_effect=limited):
+            with self.assertRaisesRegex(policy.ProviderNotPermitted, 'not allowed for this Task'):
+                manager.start_agent('Child work', 'claude', 'read-only', parent_id=parent)
+        self.assertEqual(len(self.rows('SELECT * FROM tasks')), tasks)  # No Child Task was created.
+        self.assertEqual(len(fake.runs(self.log, 'claude')), runs)
+        self.assertIsNone(getattr(manager._launch, 'policy_task_id', None))  # The scope never leaks.
+        codex = manager.start_agent('Child work', 'codex', 'read-only', parent_id=parent)  # Permitted: unchanged.
+        self.assertEqual(self.wait_status(codex, 'finished'), 'finished')
 
     def test_revoking_a_permission_never_stops_running_work(self):
         with patch.dict(os.environ, FAKE_CLAUDE_SCENARIO='slow', FAKE_SLOW_SECONDS='2'):

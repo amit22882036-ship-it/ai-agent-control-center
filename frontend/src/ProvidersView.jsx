@@ -1,16 +1,27 @@
-import { useCallback, useEffect, useId, useState } from 'react'
+import { useCallback, useEffect, useId, useRef, useState } from 'react'
 import Icon from './Icon'
 import ModelPicker from './ModelPicker'
 import ProviderPanel from './ProviderPanel'
 import useModelCatalog from './useModelCatalog'
 import { apiFetch, API_BASE } from './apiClient.mjs'
+import { createViewLoader } from './providersViewLoader.mjs'
 import { chosenConfig, selectionReady } from './modelPresentation.mjs'
 import { providerLabel, refusalMessage } from './providerPresentation.mjs'
-import { ACTION_LABELS, CHANNELS, REAL_PROVIDERS, allowedText, approvalRequest, availableActions, entryFor, nextStep,
-  operationText, operationTone, planCommand, planRequest, planSource, policyDraft, policyPayload, readinessBadge, summaryRows } from './onboardingPresentation.mjs'
+import { ACTION_LABELS, BACKEND_UNAVAILABLE, CHANNELS, REAL_PROVIDERS, allowedText, approvalRequest, availableActions, entryFor,
+  isConnectionFailure, nextStep, operationText, operationTone, planCommand, planRequest, planSource, policyDraft, policyPayload,
+  readinessBadge, summaryRows } from './onboardingPresentation.mjs'
 
 async function call(path, init = {}) {
-  const response = await apiFetch(`${API_BASE}${path}`, init)
+  let response
+  try {
+    response = await apiFetch(`${API_BASE}${path}`, init)
+  } catch (cause) {
+    // No HTTP answer at all: the backend is down or restarting. This is never a provider's own
+    // sign-in or setup problem, and it is reported as such.
+    const error = new Error(BACKEND_UNAVAILABLE, { cause })
+    error.offline = true
+    throw error
+  }
   const data = await response.json().catch(() => ({}))
   if (!response.ok) {
     const error = new Error(refusalMessage(data, 'The request could not be completed. Please retry.'))
@@ -24,20 +35,26 @@ const json = (method, body) => ({ method, headers: { 'Content-Type': 'applicatio
 // Stage 2G: the AI Providers view. Everything that installs, updates or signs in runs in
 // the backend from a fixed operation the user reviews and approves here; nothing is typed
 // as a command. Opening the view probes nothing.
-export default function ProvidersView({ refreshVersion = 0, onClose }) {
+export default function ProvidersView({ refreshVersion = 0, onClose, focus = null }) {
   const id = useId()
   const [view, setView] = useState(null)
   const [error, setError] = useState('')
+  const [loadError, setLoadError] = useState(null)  // The last failed read of the view, if any.
   const [busy, setBusy] = useState('')
-  const [version, setVersion] = useState(0)
-  const reload = useCallback(() => setVersion((value) => value + 1), [])
-
+  // One read at a time, backing off while the backend is unreachable (providersViewLoader). Only
+  // the Retry button is a manual read that skips the backoff; live events, polling fallback,
+  // operation polling and reloads after an action are automatic.
+  const [loader] = useState(() => createViewLoader({
+    fetchView: () => call('/providers/onboarding'),
+    onData: (data) => { setView(data); setLoadError(null) },
+    onError: setLoadError,
+  }))
+  const reload = useCallback(() => loader.request(), [loader])
   useEffect(() => {
-    let active = true
-    call('/providers/onboarding').then((data) => { if (active) { setView(data); setError('') } })
-      .catch((err) => { if (active) setError(err.message) })
-    return () => { active = false }
-  }, [refreshVersion, version])
+    loader.activate()
+    return () => loader.dispose()
+  }, [loader])
+  useEffect(() => { loader.request() }, [refreshVersion, loader])
 
   // While an operation runs, re-read it even when live updates are unavailable.
   const running = (view?.providers || []).some((entry) => entry.operations?.some((operation) => operation.status === 'running'))
@@ -74,31 +91,41 @@ export default function ProvidersView({ refreshVersion = 0, onClose }) {
       </div>
     </header>
     {error && <p className="message error" role="alert">{error}</p>}
-    {!view && !error && <p className="message" role="status">Loading providers...</p>}
-    {view && <>
+    {loadError && <div className="message error provider-unreachable" role="alert">
+      <p>{isConnectionFailure(loadError) ? BACKEND_UNAVAILABLE : `AI Providers could not be loaded: ${loadError.message}`}
+        {view ? ' The information below is from the last successful load and may be out of date; unsaved changes are kept.' : ''}</p>
+      <button type="button" className="close-button" onClick={() => loader.retry()}>Retry</button>
+    </div>}
+    {!view && !loadError && <p className="message" role="status">Loading providers...</p>}
+    {view && <div className={loadError ? 'providers-stale' : undefined}>
       <PermissionsEditor policy={view.policy} onSaved={reload} />
       <div className="provider-cards">
         {REAL_PROVIDERS.map((provider) => <ProviderCard key={provider} entry={entryFor(view, provider)}
-          update={view.updates?.[provider]} onChanged={reload} />)}
+          update={view.updates?.[provider]} onChanged={reload} focus={focus?.provider === provider ? focus : null} />)}
         <article className="provider-card provider-card-mock">
           <div className="provider-row-header"><h2>Mock</h2><span className="provider-state provider-ready">Ready</span></div>
           <p className="agent-type-note">Simulated work for development and testing. It needs no installation or sign-in, is never
             restricted by permissions and is never used in place of another provider.</p>
         </article>
       </div>
-    </>}
+    </div>}
   </section>
 }
 
-function ProviderCard({ entry, update, onChanged }) {
+function ProviderCard(props) {
+  return props.entry ? <ProviderCardBody {...props} /> : null
+}
+
+function ProviderCardBody({ entry, update, onChanged, focus = null }) {
   const id = useId()
+  const card = useRef(null)
+  const handled = useRef(null)
   const [plan, setPlan] = useState(null)
   const [reviewed, setReviewed] = useState(false)
   const [channel, setChannel] = useState('')
   const [busy, setBusy] = useState('')
   const [error, setError] = useState('')
   const [ended, setEnded] = useState(false)
-  if (!entry) return null
   const provider = entry.provider
   const label = providerLabel(provider)
   const badge = readinessBadge(entry)
@@ -143,11 +170,26 @@ function ProviderCard({ entry, update, onChanged }) {
   })
   const cancel = () => run('cancel', async () => { await call(`/provider-operations/${running.operation_id}/cancel`, { method: 'POST' }); onChanged() })
 
-  return <article className="provider-card" aria-labelledby={`${id}-name`}>
-    <div className="provider-row-header"><h2 id={`${id}-name`}>{label}</h2>
+  // "Review update" from a notice: bring this card into view and prepare the update review. It only
+  // builds the plan to read; nothing runs until the user approves that exact operation.
+  useEffect(() => {
+    if (!focus || handled.current === focus.nonce) return
+    handled.current = focus.nonce
+    card.current?.scrollIntoView?.({ block: 'start' })
+    card.current?.querySelector('h2')?.focus()
+    if (focus.action === 'update' && availableActions(entry).includes('update') && !plan && !running && !unverified) {
+      setTimeout(() => review('update'), 0)  // After this render; the review itself only reads.
+    }
+  })
+
+  return <article className="provider-card" aria-labelledby={`${id}-name`} ref={card}>
+    <div className="provider-row-header"><h2 id={`${id}-name`} tabIndex={-1}>{label}</h2>
       <span className={`provider-state provider-${badge.tone}`}>{badge.label}</span></div>
     {step && <p className={`provider-next provider-next-${step.kind}`}><strong>Next:</strong> {step.text}</p>}
-    {entry.status?.state?.reason && badge.tone !== 'ready' && <p className="provider-reason">{entry.status.state.reason}</p>}
+    {step?.also?.length > 0 && <ul className="provider-also" aria-label="Also needed">
+      {step.also.map((item) => <li key={item.kind}>{item.text}</li>)}</ul>}
+    {entry.status?.state?.reason && badge.tone !== 'ready' && entry.status.state.reason !== step?.text
+      && <p className="provider-reason">{entry.status.state.reason}</p>}
     {entry.active_work?.length > 0 && <p className="agent-type-note">Running now: {entry.active_work.map((work) => work.name).join(', ')}. Updates, sign-in
       and sign-out wait until they finish; nothing is stopped for you.</p>}
     {running && <div className={`provider-operation provider-${operationTone(running)}`} role="status">

@@ -9,7 +9,7 @@ import { AUTO_SUMMARY, providerChoices } from './allocationPresentation.mjs'
 import { initialAutonomousChoice, autonomyEligible, creationPayload } from './autonomousCreation.mjs'
 import { apiFetch } from './apiClient.mjs'
 import { PROVIDER_IDS, capabilityReason, providerLabel, selectable, stateLabel, stateOf, stateTone, statusFor } from './providerPresentation.mjs'
-import { defaultChoice, defaultText, permissionFor } from './onboardingPresentation.mjs'
+import { defaultChoice, defaultText, permissionFor, submissionProblem, unavailableProviders } from './onboardingPresentation.mjs'
 
 // Explicit local checks (installation, version, sign-in, billing route); never a model request.
 async function loadProviders() {
@@ -22,7 +22,8 @@ async function loadProviders() {
   }
 }
 
-// Stage 2G: the global provider permission and the defaults for new root agents.
+// Stage 2G: the global provider permission and the defaults for new root agents. `null` means it
+// could not be loaded, which permits no real provider (see permissionFor).
 async function loadPolicy() {
   try {
     const response = await apiFetch('http://127.0.0.1:8000/provider-policy')
@@ -42,6 +43,7 @@ export default function StartAgentForm({
   sectionId,
   onOpenProviders,
   visible = true,
+  refreshVersion = 0,
 }) {
   const id = useId()
   const [task, setTask] = useState('')
@@ -56,7 +58,7 @@ export default function StartAgentForm({
   const [error, setError] = useState('')
   const [statuses, setStatuses] = useState(null)
   const [statusError, setStatusError] = useState('')
-  const [policy, setPolicy] = useState(null)
+  const [policy, setPolicy] = useState(undefined)  // undefined: loading; null: unavailable.
   const [appliedDefault, setAppliedDefault] = useState(null)
   const touched = useRef(false)  // A provider the user picked is never replaced by a default.
   const defaultApplied = useRef(false)
@@ -88,17 +90,19 @@ export default function StartAgentForm({
     loadProviders().then((result) => { if (active) applyProviders(result) })
     return () => { active = false }
   }, [applyProviders])
-  // Re-read permissions (and readiness) when the form is shown again, e.g. after setup.
-  const wasVisible = useRef(visible)
-  useEffect(() => {
-    let active = true
-    if (visible) {
-      loadPolicy().then((result) => {
-        if (!active) return
-        setPolicy(result)
-        // The saved default applies once to a new root agent, as saved: an unusable
-        // default is selected and explained, never swapped for another provider or model.
-        if (child || !result || touched.current || defaultApplied.current) return
+  // Permissions are re-read whenever they may have changed: the form shown again (after setup),
+  // a live change event (another tab or the AI Providers view saved them), window focus, and just
+  // before a request. Only the newest response is applied, and a failed read after a successful
+  // one keeps nothing authorized: it becomes "unavailable", never the older allowed set.
+  const policyRequest = useRef(0)
+  const refreshPolicy = useCallback(() => {
+    const request = ++policyRequest.current
+    return loadPolicy().then((result) => {
+      if (request !== policyRequest.current) return undefined
+      setPolicy(result)
+      // The saved default applies once to a new root agent, as saved: an unusable
+      // default is selected and explained, never swapped for another provider or model.
+      if (!child && result && !touched.current && !defaultApplied.current) {
         defaultApplied.current = true
         const choice = defaultChoice(result)
         setAppliedDefault(choice)
@@ -106,12 +110,29 @@ export default function StartAgentForm({
           setAgentType(choice.provider)
           setModelChoice(initialChoice(choice.model, choice.effort))
         }
-      })
+      }
+      return result
+    })
+  }, [child])
+  const wasVisible = useRef(visible)
+  useEffect(() => {
+    if (visible) {
+      refreshPolicy()
       if (!wasVisible.current) refreshProviders()
     }
     wasVisible.current = visible
-    return () => { active = false }
-  }, [visible, refreshProviders, child])
+  }, [visible, refreshProviders, refreshPolicy, refreshVersion])
+  useEffect(() => {
+    if (!visible) return undefined
+    const onFocus = () => refreshPolicy()
+    const onVisibility = () => { if (document.visibilityState === 'visible') refreshPolicy() }
+    window.addEventListener('focus', onFocus)
+    document.addEventListener('visibilitychange', onVisibility)
+    return () => {
+      window.removeEventListener('focus', onFocus)
+      document.removeEventListener('visibilitychange', onVisibility)
+    }
+  }, [visible, refreshPolicy])
 
   async function handleStart(event) {
     event.preventDefault()
@@ -120,6 +141,12 @@ export default function StartAgentForm({
     onStartingChange?.(true)
     setError('')
     try {
+      const autoChosen = autonomous && autonomyEligible(agentType) && childAllocation === 'auto' ? autoProviders : []
+      if (real || autoChosen.length) {
+        // Fresh permissions first: a choice made under an older policy is not sent.
+        const problem = submissionProblem(await refreshPolicy(), agentType, autoChosen)
+        if (problem) throw new Error(problem)
+      }
       const path = child ? `/agents/${encodeURIComponent(parentId)}/children/start` : '/agents/start'
       const response = await apiFetch(`http://127.0.0.1:8000${path}`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -148,6 +175,9 @@ export default function StartAgentForm({
   }
 
   const autonomyReason = capabilityReason(status, 'autonomous')
+  const blocked = unavailableProviders(policy, statuses)
+  const reasonId = (provider) => `${id}-why-${provider}`
+  const revokedAuto = autoProviders.filter((provider) => !permissionFor(policy, provider).allowed)
   return (
     <section id={sectionId} className={`start-agent ${child ? 'start-agent-child' : 'start-agent-root'}`} aria-labelledby={`${id}-heading`}
       onKeyDown={(event) => {
@@ -179,19 +209,27 @@ export default function StartAgentForm({
                 <input type="radio" name={`${id}-type`} value={value} checked={agentType === value}
                   onChange={() => { touched.current = true; setAgentType(value); setModelChoice(initialChoice()) }}
                   disabled={unavailable || !permissionFor(policy, value).allowed}
-                  aria-describedby={`${id}-provider-state`} />
-                <span title={permissionFor(policy, value).reason || undefined}>{providerLabel(value)}{value !== 'mock' && <small className={`provider-dot provider-${permissionFor(policy, value).allowed ? stateTone(state) : 'blocked'}`}
-                  aria-label={permissionFor(policy, value).allowed ? stateLabel(state) : 'Not allowed'} title={permissionFor(policy, value).allowed ? stateLabel(state) : 'Not allowed'} />}</span>
+                  aria-describedby={[blocked.some((item) => item.provider === value) && reasonId(value),
+                    agentType === value && `${id}-provider-state`].filter(Boolean).join(' ') || undefined} />
+                <span>{providerLabel(value)}{value !== 'mock' && <small className={`provider-dot provider-${permissionFor(policy, value).allowed ? stateTone(state) : 'blocked'}`}
+                  aria-hidden="true" title={permissionFor(policy, value).allowed ? stateLabel(state) : 'Not allowed'} />}</span>
               </label>
             })}
           </div>
           <p id={`${id}-provider-state`} className="agent-type-note" role="status">
-            {real && !permission.allowed ? permission.reason
-              : real ? `${providerLabel(agentType)}: ${stateLabel(stateOf(status))}.${!usable && status?.state?.reason ? ` ${status.state.reason}` : ''}${!usable && status?.state?.guidance ? ` ${status.state.guidance}` : ''}`
-                : 'Mock only simulates work and uses no provider.'}
+            {real && permission.state === 'forbidden' ? `${providerLabel(agentType)} is no longer in your allowed providers, so it cannot start. Choose another provider or allow it in AI Providers.`
+              : real && !permission.allowed ? permission.reason
+                : real ? `${providerLabel(agentType)}: ${stateLabel(stateOf(status))}.${!usable && status?.state?.reason ? ` ${status.state.reason}` : ''}${!usable && status?.state?.guidance ? ` ${status.state.guidance}` : ''}`
+                  : 'Mock only simulates work and uses no provider.'}
           </p>
           {appliedDefault && agentType === appliedDefault.provider && <p className={`agent-type-note${appliedDefault.problem ? ' provider-reason' : ''}`}>{defaultText(appliedDefault)}</p>}
-          {real && !usable && onOpenProviders && <button type="button" className="close-button provider-setup-link" onClick={onOpenProviders}>
+          {blocked.length > 0 && <ul className="provider-unavailable" aria-label="Providers that cannot start now">
+            {blocked.map((item) => <li key={item.provider} id={reasonId(item.provider)}>{item.reason}</li>)}
+          </ul>}
+          {policy === null && <button type="button" className="close-button provider-setup-link" onClick={() => refreshPolicy()} disabled={unavailable}>
+            Retry loading permissions</button>}
+          {onOpenProviders && (blocked.some((item) => item.kind !== 'loading' && item.kind !== 'unavailable') || (real && !usable)) && <button type="button"
+            className="close-button provider-setup-link" onClick={onOpenProviders}>
             Set up in AI Providers<Icon name="arrow" size={14} /></button>}
           {statusError && <p className="agent-type-note">{statusError}</p>}
         </fieldset>
@@ -238,11 +276,15 @@ export default function StartAgentForm({
               : "Children use the provider the plan requests, or this agent's; an unavailable one is never replaced."}</p>
             {childAllocation === 'auto' && <div className="allocation-providers" role="group" aria-label="Providers Auto may use">
               {providerChoices(statuses).map((choice) => <label key={choice.id} className="attestation-check">
-                <input type="checkbox" checked={autoProviders.includes(choice.id)} disabled={unavailable || !permissionFor(policy, choice.id).allowed}
+                {/* A provider that lost its permission can still be cleared, never newly chosen. */}
+                <input type="checkbox" checked={autoProviders.includes(choice.id)}
+                  disabled={unavailable || (!permissionFor(policy, choice.id).allowed && !autoProviders.includes(choice.id))}
                   onChange={(event) => setAutoProviders(event.target.checked ? [...autoProviders, choice.id]
                     : autoProviders.filter((item) => item !== choice.id))} />
                 <span>{choice.label}{!permissionFor(policy, choice.id).allowed ? ' (not allowed)' : choice.ready ? '' : ` (${choice.state.replace('_', ' ')})`}</span></label>)}
             </div>}
+            {childAllocation === 'auto' && revokedAuto.length > 0 && <p className="agent-type-note provider-reason" role="alert">
+              {submissionProblem(policy, 'mock', revokedAuto)}</p>}
           </fieldset>}
         </div>}
         <ProviderPanel statuses={statuses} onChanged={refreshProviders} disabled={unavailable} />
@@ -251,7 +293,7 @@ export default function StartAgentForm({
           <div className="start-agent-actions">
             {!child && <button className="close-button" type="button" onClick={onCancel} disabled={unavailable}>Cancel</button>}
             <button className="start-button" type="submit" disabled={unavailable || !task.trim() || (!child && !project) || !usable || !modelReady
-              || (autonomous && autonomyEligible(agentType) && childAllocation === 'auto' && autoProviders.length === 0)}>
+              || (autonomous && autonomyEligible(agentType) && childAllocation === 'auto' && (autoProviders.length === 0 || revokedAuto.length > 0))}>
               {starting ? 'Starting...' : child ? 'Start child agent' : 'Start agent'}<Icon name="arrow" size={15} />
             </button>
           </div>

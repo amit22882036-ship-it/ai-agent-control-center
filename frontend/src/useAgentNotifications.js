@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { createAgentNotifications } from './agentNotifications'
-import { HEARTBEAT_INTERVAL_MS, RECENT_POLL_MS, syncSystemNotifications } from './systemNotificationSync'
+import { HEARTBEAT_INTERVAL_MS, RECENT_POLL_MS, nextSyncDelay, syncSystemNotifications } from './systemNotificationSync'
 import { desktopNotificationPrerequisite, notificationStatus } from './notificationGuidance'
 
 const preferenceKey = 'ai-agent-control-center.notifications'
@@ -29,8 +29,12 @@ export default function useAgentNotifications(onSelect) {
   useEffect(() => {
     const controller = new AbortController()
     let syncing = false
+    let failures = 0
+    let notBefore = 0
     async function sync() {
-      if (syncing) return
+      // After a failed sync (backend unreachable) the next attempts wait a little longer each
+      // time, capped so the lease resumes quickly once the backend is back.
+      if (syncing || Date.now() < notBefore) return
       syncing = true
       try {
         await syncSystemNotifications({
@@ -40,8 +44,12 @@ export default function useAgentNotifications(onSelect) {
             && Date.now() - lastPoll.current < RECENT_POLL_MS,
           signal: controller.signal,
         })
+        failures = 0
+        notBefore = 0
         if (!controller.signal.aborted) setSyncError('')
       } catch {
+        failures += 1
+        notBefore = Date.now() + nextSyncDelay(failures) - HEARTBEAT_INTERVAL_MS
         if (!controller.signal.aborted) {
           setSyncError('System notification settings could not be synced. Retrying automatically.')
         }

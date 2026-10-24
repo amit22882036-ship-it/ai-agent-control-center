@@ -789,6 +789,14 @@ class ClaudeAdapter(Adapter):
             raise ProviderRefused('claude', 'usage_unavailable', 'Claude Code did not return a usage report.')
         return report
 
+    @staticmethod
+    def update_guidance(executable):
+        """How to update the installation that was actually found: `claude update` belongs to the
+        native installer; an npm installation is updated through npm (Update in AI Providers)."""
+        if executable.suffix.lower() == '.exe':
+            return 'Update Claude Code with `claude update`, or choose Update in AI Providers.'
+        return 'Update Claude Code with Update in AI Providers (npm), or `npm install -g @anthropic-ai/claude-code`.'
+
     def probe(self):
         executable = self.locate()
         if executable is None:
@@ -806,7 +814,7 @@ class ClaudeAdapter(Adapter):
         if usage.returncode != 0 or missing:
             return Readiness('claude', UNSUPPORTED_VERSION, 'This Claude Code version lacks required options: '
                              + (', '.join(missing) or 'help unavailable') + '.',
-                             'Update Claude Code with `claude update`.', self.docs_url, **base)
+                             self.update_guidance(executable), self.docs_url, **base)
         status = run_probe(self._line(executable, ['auth', 'status', '--json']), env=env)
         if status.returncode is None:
             return Readiness('claude', UNAVAILABLE, 'The Claude Code sign-in check did not answer in time.',
