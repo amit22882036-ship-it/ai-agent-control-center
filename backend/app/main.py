@@ -228,15 +228,12 @@ def _start_agent_response(request: StartAgentRequest, parent_id: str | None = No
         if request.auto_allocation_providers is not None:
             manager.allocation.normalize_policy(True, request.auto_allocation_providers)
         if parent_id is None:
+            # The Auto authorization is stored on the new root Task before its first prompt is built.
             agent_id = start_agent(request.task, request.agent_type, request.sandbox,
                                    **({'project_id': request.project_id} if request.project_id is not None else {}),
-                                   **capabilities, **model)
-            if request.auto_allocation_providers is not None:
-                task_ids = manager._task_store().agent_task_ids(agent_id)
-                if task_ids:
-                    # The new root Task has no policy of its own yet: an explicit creation precondition.
-                    manager.set_auto_allocation_policy(task_ids[0], enabled=True,
-                                                       allowed=request.auto_allocation_providers, expected_revision=None)
+                                   **capabilities, **model,
+                                   **({'auto_allocation_providers': request.auto_allocation_providers}
+                                      if request.auto_allocation_providers is not None else {}))
         else:
             agent_id = start_agent(request.task, request.agent_type, request.sandbox, parent_id=parent_id, **model)
     except LookupError as exc:

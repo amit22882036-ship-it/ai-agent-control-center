@@ -34,10 +34,8 @@ components with an interface you can state now), each is substantial enough to o
 review and integration cost, and parallel progress or separate responsibility is useful. Stay
 independent when the work is small, edits the same files, is a sequential chain, its interface is not
 yet clear, or limits cannot admit more work. Task length alone is not a reason either way.
-If delegating, emit an intermediate planning proposal and a FINAL promotion using the schemas below,
-then yield to the backend. Do not execute the promoted Child responsibility yourself or wait using
-provider collaboration tools. Planning alone does not launch anything. Independent work finishes
-normally without promotion or Child creation.
+If delegating, end your turn with one delegation decision as described below, then yield to the
+backend. Independent work finishes normally without any control message or Child creation.
 '''
     else:
         policy += '''Do only your assigned responsibility. Do not infer recursive delegation authority from
@@ -47,13 +45,54 @@ promotion is not enabled, do not invent permission to promote work. Ordinary com
     return policy + '\n'
 
 
-# Replaces planning's optional lead for eligible roots; still nonfatal if absent.
-DECISION_LEAD = '''Orchestration decision: no decision is recorded for this managed root Task's current
-assignment. After your initial assessment of the request and repository, record exactly one decision
-in this same turn and then continue: "independent" with a concise rationale when you will complete the
-work yourself, or "propose" when separate Child responsibilities offer meaningful benefit. It records
-your judgment and launches nothing. Never make an extra model call or stop only to record it.
-Emit'''
+def observe_message(events, identifier, text):
+    """One completed main-conversation assistant message of a managed execution (Codex and
+    stream-json share this). Control objects are only whole messages; nothing is accepted here,
+    only validated and remembered for the post-exit finalizer. Refusals are classified."""
+    from . import orchestration, planning, promotion, replanning
+    from .delegation_protocol import ControlRejected, embedded_control, is_envelope
+    problem = events.standalone_control and embedded_control(text)
+    if problem:
+        if events.error is None:  # The first failure decides the outcome and its classification.
+            events.rejection = ControlRejected('format', problem)
+        events.error = events.error or problem  # Fail closed; nothing in it is accepted.
+    if events.promotion_message is not None:
+        raise ControlRejected('format', 'Promotion must be the final assistant message')
+    try:
+        if replanning.is_envelope(text):
+            replanning.validate(text)
+            events.promotion_message = identifier
+        if promotion.is_envelope(text):
+            promotion.validate(text)
+            events.promotion_message = identifier
+        if orchestration.is_envelope(text):
+            orchestration.validate(text)
+            events.promotion_message = identifier
+        if events.planning_enabled and planning.is_envelope(text):
+            planning.validate(text)
+            if len(events.plans) >= planning.MAX_DECISIONS:
+                raise ValueError('Too many planning decisions')
+            events.plans.append((identifier, text))
+        else:
+            events.saw_request |= is_envelope(text)
+    except ControlRejected:
+        raise
+    except (ValueError, RecursionError) as exc:
+        raise ControlRejected('format', str(exc)) from exc
+
+
+def final_message(events):
+    """Shared post-exit checks of the final message; raises a classified refusal when it fails."""
+    from . import planning
+    from .delegation_protocol import ControlRejected, is_envelope
+    if events.planning_enabled and planning.is_envelope(events.message):
+        events.error = 'Plan-only final response is not proof of Task completion; explicit continuation required'
+        events.rejection = ControlRejected('missing_step', events.error)
+        raise events.rejection
+    if events.saw_request and not is_envelope(events.message):
+        events.rejection = ControlRejected('format', 'Delegation must be the final completed agent message')
+        raise events.rejection
+    return events.message
 
 
 def can_promote(agent):
@@ -65,8 +104,8 @@ def can_promote(agent):
         'child_materialization_enabled', 'hybrid_delegation_enabled')))
 
 
-def example(task_id, revision):
-    """One minimal planning-to-promotion pair that validates against the current schemas."""
+def legacy_example(task_id, revision):
+    """The legacy planning.v1 + promotion.v1 pair (still accepted, no longer in the default prompt)."""
     plan = dict(protocol='control-center.planning.v1', decision_key='split-cli', base_revision=revision,
                 decision='propose', rationale='CLI and parser are separable files with a stable parse_row interface.',
                 items=[dict(proposal_id='cli', deliverable='JSON command-line interface in cli.py with tests',
@@ -76,10 +115,15 @@ def example(task_id, revision):
                    decision_key='promote-cli', items=[dict(proposal_id='cli',
                        scope=dict(namespace='component', key='csv/cli', from_intent_id=None),
                        resources=[], depends_on_task_ids=[], reuse_task_id=None)], continuation=None)
-    return ('\nMinimal valid delegation example (shape only; use your own keys and content). '
-            'Intermediate planning message:\n' + json.dumps(plan, separators=(',', ':'))
-            + '\nThen, as the FINAL message of the same turn:\n' + json.dumps(promote, separators=(',', ':'))
-            + '\nThe promotion revision is the plan revision accepted from that message (base_revision + 1). '
+    return ('\nMinimal valid delegation example (shape only; use your own keys and content). It is TWO separate '
+            'assistant messages, never one.\nMessage 1, the plan: a message containing only this JSON object and no '
+            'other text. End the message there and make your next tool call (for example, inspecting a file) before '
+            'writing anything else, so that it is recorded as its own message:\n' + json.dumps(plan, separators=(',', ':'))
+            + '\nMessage 2, the promotion: the FINAL message of the same turn, after your last tool call, containing '
+            'only this JSON object:\n' + json.dumps(promote, separators=(',', ':'))
+            + '\nThe promotion revision is the plan revision accepted from message 1 (base_revision + 1); a plan is '
+            'accepted only when it was its own message. A message that combines either object with prose, Markdown '
+            'or the other object is not a control request: the execution stops and nothing in it is accepted. '
             'Give every item an explicit scope; a null scope is held as ambiguous.\n')
 
 
@@ -90,13 +134,15 @@ def _assignment(db, task_id):
 
 def decision(db, task_id):
     """Read-only decision evidence for the Task's latest assignment, from durable records only."""
-    from . import planning, promotion
+    from . import orchestration, planning, promotion
     plan = planning.current(db, task_id)
     assignment = _assignment(db, task_id)
     agent = assignment and db.execute('SELECT * FROM agents WHERE agent_id=?', (assignment['agent_id'],)).fetchone()
     result = dict(state='not_authorized', revision=None, decision_key=None, rationale=None, accepted_at=None,
                   assignment_id=assignment['assignment_id'] if assignment else None, superseded=None,
-                  promotion_rejected=False,
+                  promotion_rejected=False, source=None,
+                  # The latest refused control message of this assignment (kind and backend reason only).
+                  last_rejection=orchestration.latest_rejection(db, task_id, assignment['assignment_id']) if assignment else None,
                   promotions=[{k: r[k] for k in ('proposal_id', 'revision', 'disposition', 'admission_disposition',
                                                   'reason', 'child_task_id')}
                               for r in promotion.inspect(db, task_id, limit=16)])
@@ -122,15 +168,14 @@ def decision(db, task_id):
         result['state'] = 'not_recorded'
         return result
     content = plan['content']
-    result.update(revision=plan['revision'], decision_key=content['decision_key'],
+    single = db.execute('SELECT decision_key FROM orchestration_decisions WHERE task_id=? AND plan_revision=?',
+                        (task_id, plan['revision'])).fetchone()
+    # A revision derived from one delegation decision reports that decision's own key.
+    result.update(source='orchestration' if single else 'planning')
+    result.update(revision=plan['revision'], decision_key=single[0] if single else content['decision_key'],
                   rationale=content['rationale'], accepted_at=plan['accepted_at'],
                   state='promoted' if promoted else 'proposed' if content['decision'] == 'propose' else 'independent')
     return result
-
-
-def decision_requested(db, task_id):
-    task = db.execute('SELECT parent_task_id FROM tasks WHERE task_id=?', (task_id,)).fetchone()
-    return bool(task and task['parent_task_id'] is None and decision(db, task_id)['state'] == 'not_recorded')
 
 
 def collaboration_event(line):

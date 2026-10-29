@@ -98,8 +98,10 @@ class RuntimePolicyTests(unittest.TestCase):
         key, process = self.launch()
         prompt = process.stdin.getvalue()
         self.assertIn(policy.instruction(True), prompt)
-        self.assertIn('control-center.planning.v1', prompt)
-        self.assertIn('control-center.promotion.v1', prompt)
+        # One default delegation contract; the legacy two-message protocols are not advertised.
+        self.assertIn('control-center.orchestration.v1', prompt)
+        self.assertNotIn('control-center.planning.v1', prompt)
+        self.assertNotIn('control-center.promotion.v1', prompt)
         self.assertIn('Fix the CSV parser and verify its behavior.', prompt)
         self.assertTrue(manager._structured(process).events.native_collaboration_prohibited)
         self.read(key, process, 'Fixed and verified independently.')

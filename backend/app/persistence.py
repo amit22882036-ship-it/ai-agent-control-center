@@ -12,7 +12,7 @@ from .agent_names import default_display_name, validate_display_color
 from .output_history import OUTPUT_PAGE_SIZE, OUTPUT_MAX_LIMIT
 from .project_domain import DEFAULT_ROOT, canonical_path, contains, project_name
 from . import delegation_orchestration, delegation_rounds, delegation_safety
-from . import planning, promotion, replanning, agent_removal, executions, execution_attestation, responsibility, providers, model_catalog, allocation, provider_policy, provider_onboarding
+from . import planning, promotion, orchestration, replanning, agent_removal, executions, execution_attestation, responsibility, providers, model_catalog, allocation, provider_policy, provider_onboarding
 
 
 class ControllerConflict(RuntimeError):
@@ -27,7 +27,7 @@ class AgentStore:
         self._lock = RLock()
         with self._connection() as db:
             version = db.execute('PRAGMA user_version').fetchone()[0]
-            if version not in range(38):
+            if version not in range(39):
                 raise RuntimeError(f'Unsupported control-center database schema version: {version}')
             if version < 27:
                 # Table rebuilds (v11, v12, v27) need enforcement off on this
@@ -350,6 +350,16 @@ class AgentStore:
                     if db.execute('PRAGMA foreign_key_check').fetchone():
                         raise sqlite3.IntegrityError('Invalid provider onboarding migration references')
                     db.execute('PRAGMA user_version = 37')
+                    version = 37
+                if version == 37:
+                    if not db.in_transaction:
+                        db.execute('BEGIN IMMEDIATE')
+                    orchestration.migrate(db)
+                    if db.execute('PRAGMA foreign_key_check').fetchone():
+                        raise sqlite3.IntegrityError('Invalid orchestration decision migration references')
+                    db.execute('PRAGMA user_version = 38')
+                db.execute('SELECT task_id,decision_key,plan_revision,promotion_decision_key,content,receipt FROM orchestration_decisions LIMIT 0')
+                db.execute('SELECT rejection_id,agent_id,task_id,kind,reason FROM control_rejections LIMIT 0')
                 db.execute('SELECT allowed_providers,default_provider,revision FROM provider_global_policy LIMIT 0')
                 db.execute('SELECT task_id,providers,revision FROM task_provider_restrictions LIMIT 0')
                 db.execute('SELECT operation_id,provider,action,status FROM provider_operations LIMIT 0')
@@ -1042,6 +1052,33 @@ class AgentStore:
             for identifier, text in plans:
                 planning.accept(db, origin, text, session_id=session_id, message_id=identifier)
             return promotion.accept(db, origin, message, session_id=session_id, message_id=message_id)
+
+    def accept_orchestration_message(self, origin, message, *, session_id, message_id, plans=()):
+        if len(plans) > planning.MAX_DECISIONS:
+            raise ValueError('Too many planning decisions')
+        with self._connection() as db:
+            db.execute('BEGIN IMMEDIATE')
+            # Intermediate plans of the same execution commit first, so the decision's derived
+            # revision follows them deterministically; everything commits or rolls back together.
+            for identifier, text in plans:
+                planning.accept(db, origin, text, session_id=session_id, message_id=identifier)
+            return orchestration.accept(db, origin, message, session_id=session_id, message_id=message_id)
+
+    def orchestration_history(self, task_id):
+        with self._connection() as db:
+            dependencies.task(db, task_id)
+            return orchestration.history(db, task_id)
+
+    def record_control_rejection(self, *, agent_id, task_id, assignment_id, generation, kind, reason):
+        with self._connection() as db:
+            db.execute('BEGIN IMMEDIATE')
+            orchestration.record_rejection(db, agent_id=agent_id, task_id=task_id, assignment_id=assignment_id,
+                                           generation=generation, kind=kind, reason=reason)
+
+    def control_rejections(self, task_id):
+        with self._connection() as db:
+            return [dict(r) for r in db.execute(
+                'SELECT * FROM control_rejections WHERE task_id=? ORDER BY rejection_id', (task_id,))]
 
     def list_promotions(self, task_id):
         with self._connection() as db:

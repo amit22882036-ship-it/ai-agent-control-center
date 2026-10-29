@@ -8,9 +8,9 @@ from dataclasses import dataclass, field
 from hashlib import sha256
 from uuid import UUID
 
-from .delegation_protocol import decode, is_envelope
+from .delegation_protocol import ControlRejected, decode
 from . import planning
-from .managed_orchestration import VIOLATION
+from .managed_orchestration import VIOLATION, final_message, observe_message
 
 MAX_EVENT = 1048576
 MAX_ITEMS = 4096
@@ -30,12 +30,17 @@ class Execution:
     processed: bool = False
     policy_stop_requested: bool = False
 
+    def __post_init__(self):
+        # Every managed execution accepts protocol objects only as whole assistant messages.
+        self.events.standalone_control = True
+
 
 @dataclass
 class CodexEvents:
     native_collaboration_prohibited: bool = False
     native_collaboration_seen: bool = False
     planning_enabled: bool = False
+    standalone_control: bool = False  # Managed executions: protocol objects only as whole messages.
     plans: list = field(default_factory=list)
     expected_session: str | None = None
     session_id: str | None = None
@@ -49,12 +54,15 @@ class CodexEvents:
     items: dict = field(default_factory=dict)
     completion: str | None = None
     condition: str | None = None  # Stage 2F classification of a provider-reported limit
+    rejection: ControlRejected | None = None  # Why a structured control message was refused
 
     def feed(self, line):
         """Return readable output only. Control state is consumed after EOF."""
         try:
             return self._feed(line)
         except (ValueError, TypeError, KeyError, RecursionError) as exc:
+            if isinstance(exc, ControlRejected) and self.error is None:
+                self.rejection = exc
             self.error = self.error or f'Invalid Codex event stream: {exc}'
             return [line.rstrip('\r\n')]
 
@@ -136,22 +144,7 @@ class CodexEvents:
             if not isinstance(text, str):
                 raise ValueError('invalid agent message')
             self.message, self.message_id = text, identifier
-            from . import promotion, replanning
-            if self.promotion_message is not None:
-                raise ValueError('Promotion must be the final assistant message')
-            if replanning.is_envelope(text):
-                replanning.validate(text)
-                self.promotion_message = identifier
-            if promotion.is_envelope(text):
-                promotion.validate(text)
-                self.promotion_message = identifier
-            if self.planning_enabled and planning.is_envelope(text):
-                planning.validate(text)
-                if len(self.plans) >= planning.MAX_DECISIONS:
-                    raise ValueError('Too many planning decisions')
-                self.plans.append((identifier, text))
-            else:
-                self.saw_request |= is_envelope(text)
+            observe_message(self, identifier, text)
             return ['codex', *text.splitlines()]
         # Display provider tool/reasoning results, but never parse their content.
         text = item.get('aggregated_output', item.get('text'))
@@ -162,9 +155,4 @@ class CodexEvents:
             raise ValueError(self.error)
         if returncode != 0 or not self.session_id or not self.completed or self.message is None:
             raise ValueError('Codex execution did not complete a successful message/turn')
-        if self.planning_enabled and planning.is_envelope(self.message):
-            self.error = 'Plan-only final response is not proof of Task completion; explicit continuation required'
-            raise ValueError(self.error)
-        if self.saw_request and not is_envelope(self.message):
-            raise ValueError('Delegation must be the final completed agent message')
-        return self.message
+        return final_message(self)

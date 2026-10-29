@@ -178,11 +178,25 @@ def activity(store, agent_id):
         def add(kind, identifier, label, at):
             events.append({'id': kind + ':' + str(identifier), 'kind': kind, 'label': label, 'at': at})
         # Only the validated decision enum is projected, never the provider's rationale prose.
+        derived = {r[0]: r[1] for r in db.execute('''SELECT plan_revision,json_array_length(content,'$.delegate')
+            FROM orchestration_decisions WHERE task_id=? ORDER BY rowid DESC LIMIT 30''', (task_id,))}
         for r in db.execute('''SELECT revision,accepted_at,json_extract(content,'$.decision') FROM planning_revisions
             WHERE task_id=? ORDER BY revision DESC LIMIT 30''', (task_id,)):
-            add('plan', r[0], f'Plan revision {r[0]} accepted: {r[2]}', r[1])
-        for r in db.execute('SELECT decision_key,created_at FROM promotion_decisions WHERE task_id=? ORDER BY rowid DESC LIMIT 30', (task_id,)):
+            if r[0] in derived:
+                add('plan', r[0], f'Delegation decision accepted: {derived[r[0]]} responsibilit'
+                    + ('y' if derived[r[0]] == 1 else 'ies') + f' promoted (plan revision {r[0]})', r[1])
+            else:
+                add('plan', r[0], f'Plan revision {r[0]} accepted: {r[2]}', r[1])
+        for r in db.execute('''SELECT p.decision_key,p.created_at FROM promotion_decisions p WHERE p.task_id=?
+            AND NOT EXISTS (SELECT 1 FROM orchestration_decisions o WHERE o.task_id=p.task_id
+            AND o.promotion_decision_key=p.decision_key) ORDER BY p.rowid DESC LIMIT 30''', (task_id,)):
             add('promotion', r[0], 'Work promotion accepted', r[1])
+        for r in db.execute('''SELECT rejection_id,kind,reason,created_at FROM control_rejections WHERE task_id=?
+            ORDER BY rejection_id DESC LIMIT 30''', (task_id,)):
+            # Backend validation reasons only; the refused message itself is never projected.
+            label = ('Structured execution failed (internal error)' if r[1] == 'internal'
+                     else f'Control message rejected ({r[1].replace("_", " ")}): {r[2][:200]}')
+            add('rejection', r[0], label, r[3])
         for r in db.execute('SELECT decision_id,created_at FROM replan_decisions WHERE task_id=? ORDER BY rowid DESC LIMIT 30', (task_id,)):
             add('replan', r[0], 'Replanning decision accepted', r[1])
         for r in db.execute('''SELECT x.transition_id,x.action,x.phase FROM replan_transitions x

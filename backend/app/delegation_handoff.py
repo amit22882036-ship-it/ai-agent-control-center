@@ -55,7 +55,7 @@ def accept(db, origin, message, *, session_id, message_id):
             or not assignment or assignment['ended_at'] is not None
             or assignment['agent_id'] != origin.agent_id or assignment['task_id'] != origin.parent_task_id
             or task['project_id'] != origin.project_id):
-        raise ValueError('Stale or mismatched delegation execution ownership')
+        raise delegation_protocol.ControlRejected('authority', 'Stale or mismatched delegation execution ownership')
     work_control.require_ancestors(db, origin.parent_task_id)
     # A committed receipt can be reread after a lost acknowledgement. It cannot
     # revive canceled work, launch a process, or replace another generation.

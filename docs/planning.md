@@ -10,11 +10,11 @@ The executing Agent receives bounded optional planning instructions through the 
 
 The Codex adapter accepts a planning envelope only as a complete `item.completed` / `agent_message` text. It buffers up to 16 decisions and commits them together only after both streams close, a successful process exit and validated `turn.completed`. A later final assistant response must independently indicate ordinary work or an already-authorized Stage 2H control action. Planning messages never enter the Delegation handoff path. Stderr, tool/reasoning output, code fences and incomplete streams cannot author plans. Existing raw/readable output retention is unchanged.
 
-**Provider limitation:** the [official non-interactive documentation](https://learn.chatgpt.com/docs/non-interactive-mode) documents JSONL events and completed assistant messages, but does not promise multiple assistant messages per invocation. This integration records a plan only when the provider actually emits a separate intermediate assistant message followed by a valid final response. It does not assume such messages always exist or force a planning-only turn. An ordinary single-message completion works without a plan. A plan-only final response is rejected as unverified execution, using the existing stopped/pending failure path; it does not complete the Task, hand off to orchestration, or automatically resume. No plan from that invocation is accepted. The recorded Stage 2I.1 real Codex E2E captured an independent decision followed by ordinary completion. It did not verify propose-to-execution promotion or guarantee an intermediate event on every run.
+**Provider limitation (legacy planning messages):** the [official non-interactive documentation](https://learn.chatgpt.com/docs/non-interactive-mode) documents JSONL events and completed assistant messages, but does not promise multiple assistant messages per invocation. This integration records a plan only when the provider actually emits a separate intermediate assistant message followed by a valid final response. It does not assume such messages always exist or force a planning-only turn. An ordinary single-message completion works without a plan. A plan-only final response is rejected as unverified execution, using the existing stopped/pending failure path; it does not complete the Task, hand off to orchestration, or automatically resume. No plan from that invocation is accepted. The recorded Stage 2I.1 real Codex E2E captured an independent decision followed by ordinary completion. It did not verify propose-to-execution promotion or guarantee an intermediate event on every run. The single delegation decision does not depend on intermediate messages: it is the final message every supported provider emits.
 
 ## Orchestration decisions
 
-An eligible root has planning, delegation protocol, Child materialization and Hybrid authority, runs as Codex and has no Parent. When no decision is recorded for its current assignment, its prompt asks for exactly one planning decision after it has assessed the request and repository. The decision is either `independent` with a concise rationale or `propose`. It is requested inside the existing turn as an intermediate assistant message. No separate planning call or continuation is made, and no Child is forced. A missing decision is not a failure. Children and planning-only Agents keep the optional wording. The guidance includes balanced delegation criteria and one minimal planning-to-promotion example that validates against the current schemas, with an explicit scope and `resources: []`. Autonomous Mode authorizes managed orchestration only within configured limits. Admission, scope, resource and safety checks remain authoritative.
+An executing Agent with planning, delegation protocol, Child materialization and Hybrid authority on a managed-capable provider (Codex or Claude Code) decides for itself whether to delegate. It either completes the work and finishes normally, with no control message, or ends its turn with one **delegation decision** (below). No mid-turn planning message, tool-call boundary or extra model call is requested, and no Child is forced. A completion without a decision is reported as `not_recorded`, never as an explicit choice. The prompt carries balanced delegation criteria and one minimal decision example that validates against the real schema. Children and planning-only Agents without all four capabilities keep the optional planning wording. Autonomous Mode authorizes managed orchestration only within configured limits. Admission, scope, resource and safety checks remain authoritative.
 
 `GET /tasks/{task_id}/orchestration` includes a read-only `decision`, derived from `planning_revisions` and `promotion_decisions`/`promotion_items` for the Task's latest assignment:
 
@@ -26,9 +26,50 @@ An eligible root has planning, delegation protocol, Child materialization and Hy
 | `not_recorded` | The assignment is authorized but has no decision. A plan from an earlier assignment appears under `superseded`, not as current. |
 | `not_authorized` | The latest assignment lacks promotion authority, or the Task has no assignment. |
 
-The response also carries `revision`, `decision_key`, `rationale`, `accepted_at`, `assignment_id` and up to 16 per-item `promotions` with their dispositions. A malformed promotion rolls back with its plan and leaves nothing to report. Agent activity labels show only the validated decision value (`Plan revision 1 accepted: independent`), never the rationale text.
+The response also carries `revision`, `decision_key`, `rationale`, `accepted_at`, `assignment_id`, `source` (`orchestration` when the current revision was derived from one delegation decision, whose own `decision_key` is reported; `planning` for a legacy plan), `last_rejection` (the latest refused control message of this assignment: `kind`, backend `reason`, time) and up to 16 per-item `promotions` with their dispositions. A malformed or refused decision rolls back with its plan and leaves nothing to report except its diagnostic. Agent activity labels show only validated values (`Plan revision 1 accepted: independent`, `Delegation decision accepted: 2 responsibilities promoted (plan revision 1)`, `Control message rejected (missing step): …` with the backend reason), never rationale text or the refused message.
 
-## Contract
+## Delegation decision (`control-center.orchestration.v1`, preferred)
+
+The default autonomous protocol is one standalone **final** assistant JSON message:
+
+```json
+{
+  "protocol": "control-center.orchestration.v1",
+  "decision_key": "split-cli",
+  "rationale": "The CLI is a separable file with a stable parse_row interface.",
+  "delegate": [{
+    "proposal_id": "cli",
+    "deliverable": "JSON command-line interface in cli.py with tests",
+    "responsibility": "Edit only cli.py and test_cli.py; call parse_row unchanged.",
+    "scope": {"namespace": "component", "key": "csv/cli"}
+  }]
+}
+```
+
+Required: `protocol`, `decision_key` (planning key rules), `rationale` (planning text rules) and `delegate` (1–16 responsibilities). Optional: `continuation` (the unchanged Hybrid v2 `{instruction, intent_ids}`; omitted means `null`, waiting for results). Each responsibility requires `proposal_id`, `deliverable`, `responsibility` and `scope` (`namespace`, `key`, optional `from_intent_id`; a null scope is rejected here). Optional fields use the existing contracts and defaults: `depends_on` (`[]`, other proposal IDs), `parallel` (default `true` without dependencies, otherwise `false`), `resources` (`[]`), `depends_on_task_ids` (`[]`), `reuse_task_id` (`null`), and either `provider`/`model` or, where the user authorized Auto, `allocation`. Unknown fields, duplicate JSON fields, wrong types and an empty `delegate` reject the whole message: an Agent that does not delegate finishes normally, so there is no empty "decision" with a second meaning. The message carries **no** Task ID, revision, base revision or generation; supplying one is rejected.
+
+**Meaning.** Each listed responsibility is explicitly proposed **and** promoted by this decision. Planning and promotion remain separate records: the backend derives a descriptive `planning.v1` revision (decision `propose`; listed items added or replaced, the current revision's unlisted unpromoted proposals retained unchanged and still unpromoted; already promoted proposals, whose frozen snapshots stay in promotion history, are carried only as prerequisites that an included proposal depends on, so promotion history imposes no lifetime limit and each revision stays within 16 proposals) and a `promotion.v1` decision selecting exactly the listed items. A stored proposal is never executable by itself, and listing a proposal ID is the only way this message promotes it. Admission, materialization and Child execution then follow the existing paths below unchanged, including partial admission (`ready`, `blocked`, `conflict`, …) of individual items of a valid decision.
+
+**Identity, revisions and atomicity.** The Task, Project, Agent, assignment, generation, session and capabilities come from the trusted execution origin. Inside one `BEGIN IMMEDIATE` transaction the backend (1) validates the whole envelope, (2) checks authority, (3) looks up the decision by `(task_id, decision_key)` **before** deriving any revision, (4) derives `base_revision` from the current accepted revision, (5) accepts the derived plan and promotion through the existing `planning.accept` and `promotion.accept` with backend-derived internal keys, and (6) records the decision. Planning messages emitted earlier in the same successful execution commit first, so the decision's revision follows them deterministically. Any failure rolls everything back: no plan, promotion item, Delegation or Child remains.
+
+**Replay.** Schema **v38** adds `orchestration_decisions`, keyed by `(task_id, decision_key)` with unique provider message identity per execution generation. It stores the canonical normalized decision (sorted-key JSON with defaults applied; no hashes), the derived plan revision and promotion key, origin provenance and the receipt. Repeating an identical decision, even from another provider message, returns the original receipt after current-generation authority is checked, without another revision, promotion or launch. The same key with different content fails deterministically as an `admission` refusal. Concurrent identical submissions serialize on the transaction: one creates the work, the other receives its receipt. A crash after commit leaves the committed decision and handoff; restart never re-reads output or relaunches anything.
+
+**Legacy compatibility.** `planning.v1` (including proposals that are never promoted and explicit `independent` decisions), `promotion.v1`, delegation v1/v2/v3, replanning and acknowledgement messages are still accepted with their existing semantics. Only the default prompt changed: it no longer offers the two-message planning-then-promotion example or asks for an intermediate message.
+
+## Structured failure diagnostics
+
+When a managed execution's control message is refused, the execution stops as before (the Task is never completed and nothing is retried or relaunched), and the backend persists the reason in the Agent output and in `control_rejections` (schema v38) with one of these kinds, taken from the validation or orchestration step that refused it rather than from provider text:
+
+| Kind | Meaning (examples) |
+| --- | --- |
+| `format` | Shape, schema or composition: invalid fields or JSON, duplicate keys, protocol objects combined with prose, a message after a final control message |
+| `missing_step` | A required earlier step is absent: a promotion without an accepted plan revision (or referencing another revision), a plan-only final response |
+| `authority` | Stale generation, session or assignment, a stopped or removed Agent, missing capabilities, Task or ancestor control gates |
+| `admission` | Orchestration rules: conflicting replay, immutable promoted responsibility, unknown referenced Tasks, plan size |
+
+Unexpected internal failures (for example a database error after commit) are recorded as `internal` with a generic message; their details stay in the backend log. Provider failures and interrupted executions are not classified as control refusals. The output line has the form `Structured control rejected (missing_step): <reason>`.
+
+## Planning contract (descriptive; legacy control message)
 
 The strict provider-neutral protocol is `control-center.planning.v1`:
 
@@ -84,7 +125,7 @@ The recorded Stage 2I.1 Windows full backend run executed 787 tests and ended wi
 
 Promotion is a separate explicit decision, not an automatic consequence of storing a plan. It requires a current persistent execution of a provider that supports managed orchestration (Codex or Claude Code since Stage 2F) with **all four** existing flags: `planning_enabled`, `delegation_protocol_enabled`, `child_materialization_enabled`, and `hybrid_delegation_enabled`. Recursive Children also require the existing independently granted recursive capability. Root permission defaults remain unchanged. New automatically materialized Children inherit planning only when all five capabilities, including recursive delegation, are authorized. At the final Worker activation boundary the launch capabilities are checked against fresh durable Parent authority; revocation or changed ownership prevents launch. The sandbox remains exactly that of the Parent. The provider is the Parent's unless the promotion item requests one (Stage 2F, see [providers](providers.md#mixed-hierarchies)); a requested provider is never substituted, and a Child whose provider cannot coordinate Children receives no recursive authority. Existing depth/ancestor/assignment/generation gates remain enforced, and no workspace or resource authority is added by capability inheritance. Mock cannot inherit planning. Replacements are not automatically opted in. No additional model, provider, dashboard control, or HTTP mutation endpoint is introduced.
 
-An authorized Agent may emit this complete **final** assistant JSON message:
+The preferred way to promote is the single [delegation decision](#delegation-decision-control-centerorchestrationv1-preferred). The legacy path, still accepted, is this complete **final** assistant JSON message referencing an already accepted plan revision:
 
 ```json
 {

@@ -17,10 +17,10 @@ from hashlib import sha256
 import json
 from uuid import UUID
 
-from .delegation_protocol import decode, is_envelope
+from .delegation_protocol import ControlRejected, decode
 from . import planning
 from . import providers
-from .managed_orchestration import VIOLATION
+from .managed_orchestration import VIOLATION, final_message, observe_message
 
 MAX_EVENT = 1048576
 MAX_MESSAGES = 4096
@@ -42,6 +42,7 @@ class StreamEvents:
     native_collaboration_prohibited: bool = False
     native_collaboration_seen: bool = False
     planning_enabled: bool = False
+    standalone_control: bool = False  # Managed executions: protocol objects only as whole messages.
     plans: list = field(default_factory=list)
     expected_session: str | None = None
     session_id: str | None = None
@@ -56,6 +57,7 @@ class StreamEvents:
     tool_activity: bool = False
     condition: str | None = None
     detail: str | None = None
+    rejection: ControlRejected | None = None  # Why a structured control message was refused
     models: set = field(default_factory=set)
     seen: set = field(default_factory=set)
     count: int = 0
@@ -77,6 +79,8 @@ class StreamEvents:
                 raise ValueError('event must be an object with a type')
             return self._event(event, line)
         except (ValueError, TypeError, KeyError, RecursionError) as exc:
+            if isinstance(exc, ControlRejected) and self.error is None:
+                self.rejection = exc
             self.error = self.error or f'Invalid {providers.LABELS[self.provider]} event stream: {exc}'
             return [line.rstrip('\r\n')]
 
@@ -103,22 +107,7 @@ class StreamEvents:
             raise ValueError('too many assistant messages')
         self.seen.add(identifier)
         self.message, self.message_id = text, identifier
-        from . import promotion, replanning
-        if self.promotion_message is not None:
-            raise ValueError('Promotion must be the final assistant message')
-        if replanning.is_envelope(text):
-            replanning.validate(text)
-            self.promotion_message = identifier
-        if promotion.is_envelope(text):
-            promotion.validate(text)
-            self.promotion_message = identifier
-        if self.planning_enabled and planning.is_envelope(text):
-            planning.validate(text)
-            if len(self.plans) >= planning.MAX_DECISIONS:
-                raise ValueError('Too many planning decisions')
-            self.plans.append((identifier, text))
-        else:
-            self.saw_request |= is_envelope(text)
+        observe_message(self, identifier, text)
         return [self.label, *text.splitlines()]
 
     def _collaboration(self):
@@ -132,12 +121,7 @@ class StreamEvents:
         name = providers.LABELS[self.provider]
         if returncode != 0 or not self.session_id or not self.completed or self.message is None:
             raise ValueError(f'{name} execution did not complete a successful message/turn')
-        if self.planning_enabled and planning.is_envelope(self.message):
-            self.error = 'Plan-only final response is not proof of Task completion; explicit continuation required'
-            raise ValueError(self.error)
-        if self.saw_request and not is_envelope(self.message):
-            raise ValueError('Delegation must be the final completed agent message')
-        return self.message
+        return final_message(self)
 
     def outcome(self, returncode):
         """Ordinary (non-managed) execution: success, the final message and a classified failure."""

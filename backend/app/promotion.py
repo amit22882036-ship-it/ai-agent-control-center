@@ -140,11 +140,13 @@ def _origin(db, origin, session_id):
 
 
 def accept(db, origin, message, *, session_id, message_id):
-    value = validate(message)
+    with delegation_protocol.rejected_as('format'):
+        value = validate(message)
     planning.text(message_id, 128)
-    task, agent, assignment = _origin(db, origin, session_id)
-    if value['task_id'] != task['task_id']:
-        raise ValueError('Promotion Task does not match trusted execution origin')
+    with delegation_protocol.rejected_as('authority'):
+        task, agent, assignment = _origin(db, origin, session_id)
+        if value['task_id'] != task['task_id']:
+            raise ValueError('Promotion Task does not match trusted execution origin')
     previous = db.execute('SELECT * FROM promotion_decisions WHERE task_id=? AND decision_key=?',
                           (task['task_id'], value['decision_key'])).fetchone()
     if previous:
@@ -154,13 +156,20 @@ def accept(db, origin, message, *, session_id, message_id):
     from . import agent_removal
     # Exact replays above are read-only receipts; anything new after removal
     # admission is refused inside this same transaction.
-    agent_removal.require_operational(db, origin.agent_id)
-    if assignment['ended_at'] is not None or agent['status'] != 'running':
-        raise ValueError('Promotion requires a running current assignment')
-    work_control.require_active(task, db=db)
+    with delegation_protocol.rejected_as('authority'):
+        agent_removal.require_operational(db, origin.agent_id)
+        if assignment['ended_at'] is not None or agent['status'] != 'running':
+            raise ValueError('Promotion requires a running current assignment')
+        work_control.require_active(task, db=db)
     latest = planning.current(db, task['task_id'])
-    if not latest or latest['revision'] != value['revision']:
-        raise ValueError('Promotion must reference the current accepted plan revision')
+    if not latest:
+        raise delegation_protocol.ControlRejected('missing_step', (
+            'Promotion must reference the current accepted plan revision, but no planning revision has been '
+            'accepted for this Task. Nothing was promoted.'))
+    if latest['revision'] != value['revision']:
+        raise delegation_protocol.ControlRejected('missing_step', (
+            f'Promotion must reference the current accepted plan revision ({latest["revision"]}), not '
+            f'{value["revision"]}. Nothing was promoted.'))
     proposals = {p['proposal_id']: p for p in latest['content']['items']}
     graph = {r['proposal_id']: json.loads(r['proposal'])['depends_on'] for r in db.execute(
         'SELECT proposal_id,proposal FROM promotion_items WHERE task_id=?', (task['task_id'],))}
@@ -516,8 +525,10 @@ def history(db, task_id):
 def instruction(task_id):
     return f'''\nOptional explicit promotion ({PROTOCOL}) for Task {task_id}.
 Planning alone never executes work. Only when useful and authorized for this execution, select accepted
-proposal IDs by emitting a FINAL standalone JSON object with exactly protocol, task_id, revision,
-decision_key (stable ASCII key), items (1-16), continuation.
+proposal IDs by emitting, as the separate FINAL assistant message of this turn, a standalone JSON object
+(nothing else in that message) with exactly protocol, task_id, revision, decision_key (stable ASCII key),
+items (1-16), continuation. revision must be a plan revision already accepted from an earlier, separate
+planning message: never send the plan and the promotion in the same message.
 Each item has exactly proposal_id, scope, resources, depends_on_task_ids, reuse_task_id, and optionally
 provider (one of mock, codex, claude, gemini) and model (an identifier or null) to request the Child's
 provider; without provider the Child uses yours. A requested provider that is unavailable is reported as

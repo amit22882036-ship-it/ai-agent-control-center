@@ -6,7 +6,7 @@ import unittest
 from contextlib import closing
 from unittest.mock import patch
 
-from app import agent_manager as manager, managed_orchestration as policy, planning, presentation, promotion
+from app import agent_manager as manager, managed_orchestration as policy, orchestration, planning, presentation, promotion
 import test_planning as plans
 import test_promotion as promotions
 from execution_test_support import use_attested_test_doubles
@@ -15,9 +15,12 @@ CAPABILITIES = ('planning_enabled', 'delegation_protocol_enabled', 'child_materi
                 'hybrid_delegation_enabled', 'recursive_delegation_enabled')
 
 
+DECISION_HEADER = 'Delegation decision (control-center.orchestration.v1).'
+
+
 def example_messages(task_id, revision=0):
-    """The two JSON lines the managed prompt offers as its minimal example."""
-    lines = [line for line in policy.example(task_id, revision).splitlines() if line.startswith('{')]
+    """The legacy planning.v1 + promotion.v1 pair: no longer prompted, still accepted."""
+    lines = [line for line in policy.legacy_example(task_id, revision).splitlines() if line.startswith('{')]
     assert len(lines) == 2
     return lines
 
@@ -59,19 +62,26 @@ class DecisionTests(unittest.TestCase):
         with closing(sqlite3.connect(self.store.path)) as db:
             return list(db.iterdump())
 
-    def test_eligible_root_prompt_requests_one_decision_with_criteria_and_example(self):
+    def test_eligible_root_prompt_offers_one_final_delegation_decision_with_criteria(self):
         _, process = self.launch()
         prompt = process.stdin.getvalue()
-        self.assertIn(policy.DECISION_LEAD, prompt)
-        self.assertNotIn(planning.OPTIONAL_LEAD, prompt)
-        self.assertIn('Planning metadata (control-center.planning.v1)', prompt)
+        self.assertIn(DECISION_HEADER, prompt)
+        self.assertIn(orchestration.example(), prompt)
         self.assertIn('Delegation criteria.', prompt)
         self.assertIn('It never authorizes bypassing admission, scope, resource', prompt)
-        self.assertIn(policy.example(self.task['task_id'], 0), prompt)
-        self.assertNotIn('independently authorized, select', prompt)
+        # No competing default: no two-message example, no mid-turn planning or revision arithmetic.
+        for legacy in (planning.OPTIONAL_LEAD, 'Planning metadata', 'Minimal valid delegation example',
+                       'Optional explicit promotion', 'current accepted revision', self.task['task_id'],
+                       'Ordinary delegation with a Child allocation', 'before a tool call'):
+            self.assertNotIn(legacy, prompt)
+        self.assertEqual(prompt.count(DECISION_HEADER), 1)
         self.assertEqual(self.decision()['state'], 'not_recorded')
 
-    def test_example_validates_against_current_schemas(self):
+    def test_prompt_example_validates_against_the_real_schema(self):
+        value = orchestration.validate(orchestration.example())
+        self.assertEqual(value['delegate'][0]['scope'], dict(namespace='component', key='csv/cli', from_intent_id=None))
+
+    def test_legacy_example_still_validates_against_current_schemas(self):
         for revision in (0, 3):
             plan, promote = example_messages(self.task['task_id'], revision)
             self.assertEqual(planning.validate(plan)['base_revision'], revision)
@@ -166,10 +176,9 @@ class DecisionTests(unittest.TestCase):
         with patch.object(manager, '_resume_cwd', return_value=self.root):
             manager.reply_agent(key, 'Comma')
         prompt = manager.agents[key].stdin.getvalue()
-        self.assertNotIn(policy.DECISION_LEAD, prompt)
-        self.assertIn(planning.OPTIONAL_LEAD, prompt)
-        self.assertIn('current accepted revision: 1', prompt)
-        self.assertIn(policy.example(self.task['task_id'], 1), prompt)
+        self.assertIn(DECISION_HEADER, prompt)
+        self.assertIn('Current accepted proposal (descriptive data, not execution authority)', prompt)
+        self.assertNotIn('current accepted revision', prompt)
         # The superseded generation cannot write; the current one's identical
         # replay is a receipt, never another revision.
         with self.assertRaisesRegex(ValueError, 'Stale'):
@@ -181,13 +190,13 @@ class DecisionTests(unittest.TestCase):
         self.assertEqual(len(self.store.planning_history(self.task['task_id'])), 1)
         self.assertEqual(self.decision()['state'], 'independent')
 
-    def test_resume_without_decision_requests_it_in_the_existing_turn(self):
+    def test_resume_without_decision_offers_it_again_in_the_existing_turn(self):
         key, process = self.launch()
         self.stream(key, process, ['CONTROL_CENTER_WAITING: Which delimiter?'])
         self.finish(key, process)
         with patch.object(manager, '_resume_cwd', return_value=self.root):
             manager.reply_agent(key, 'Comma')
-        self.assertIn(policy.DECISION_LEAD, manager.agents[key].stdin.getvalue())
+        self.assertIn(DECISION_HEADER, manager.agents[key].stdin.getvalue())
         self.assertEqual(len(self.commands), 2)  # the user's reply only
 
     def test_replacement_assignment_does_not_inherit_a_stale_decision(self):
@@ -204,9 +213,9 @@ class DecisionTests(unittest.TestCase):
         self.assertNotEqual(decision['assignment_id'], old['assignment_id'])
         self.assertEqual(decision['superseded'], dict(revision=1, assignment_id=old['assignment_id'],
                                                       decision='independent'))
-        self.assertIn(policy.DECISION_LEAD, manager.agents[replacement].stdin.getvalue())
+        self.assertIn(DECISION_HEADER, manager.agents[replacement].stdin.getvalue())
 
-    def test_child_and_planning_only_executions_are_not_asked_for_root_decisions(self):
+    def test_recursive_children_get_the_same_optional_decision_and_planning_only_agents_do_not(self):
         key, process = self.launch()
         self.stream(key, process, example_messages(self.task['task_id']))
         self.finish(key, process)
@@ -214,15 +223,17 @@ class DecisionTests(unittest.TestCase):
         progress, = manager.materialize_delegations(self.task['task_id'])
         child = progress['launch_agent_id']
         prompt = manager.agents[child].stdin.getvalue()
-        self.assertIn(planning.OPTIONAL_LEAD, prompt)
-        self.assertNotIn(policy.DECISION_LEAD, prompt)
+        # A Child with all five capabilities may delegate; doing its own work stays the default.
+        self.assertIn(DECISION_HEADER, prompt)
+        self.assertIn('do the work yourself and finish normally', prompt)
+        self.assertNotIn(planning.OPTIONAL_LEAD, prompt)
         child_task = self.store.agent_task_ids(child)[0]
         self.assertEqual(self.decision(child_task)['state'], 'not_recorded')
         other = self.store.create_task('Planning only', project_id=self.project['project_id'])
         planner = manager.start_agent('Planning only', 'codex', task_id=other['task_id'], planning_enabled=True)
         prompt = manager.agents[planner].stdin.getvalue()
         self.assertIn(planning.OPTIONAL_LEAD, prompt)
-        self.assertNotIn(policy.DECISION_LEAD, prompt)
+        self.assertNotIn(DECISION_HEADER, prompt)
         self.assertNotIn('Minimal valid delegation example', prompt)
         self.assertEqual(self.decision(other['task_id'])['state'], 'not_authorized')
 

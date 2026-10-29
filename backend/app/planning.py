@@ -128,16 +128,11 @@ def current(db, task_id):
 
 def accept(db, origin, message, *, session_id, message_id):
     from . import agent_removal
-    value = validate(message)
+    with delegation_protocol.rejected_as('format'):
+        value = validate(message)
     text(message_id, 128)
-    task = dependencies.task(db, origin.parent_task_id)
-    agent = db.execute('SELECT * FROM agents WHERE agent_id=?', (origin.agent_id,)).fetchone()
-    assignment = db.execute('SELECT * FROM task_assignments WHERE assignment_id=?', (origin.assignment_id,)).fetchone()
-    if (not agent or not agent['planning_enabled'] or agent['execution_generation'] != origin.generation
-            or not session_id or agent['session_id'] != session_id or not assignment
-            or assignment['agent_id'] != origin.agent_id or assignment['task_id'] != task['task_id']
-            or task['project_id'] != origin.project_id):
-        raise ValueError('Stale or mismatched planning execution authority')
+    with delegation_protocol.rejected_as('authority'):
+        task, agent, assignment = _authority(db, origin, session_id)
     encoded = json.dumps(value, sort_keys=True, ensure_ascii=True, separators=(',', ':'))
     previous = db.execute('SELECT * FROM planning_revisions WHERE task_id=? AND decision_key=?',
                           (task['task_id'], value['decision_key'])).fetchone()
@@ -148,13 +143,30 @@ def accept(db, origin, message, *, session_id, message_id):
         return {**dict(previous), 'content': value}
     # Exact replays above are read-only receipts; anything new after removal
     # admission is refused inside this same transaction.
-    agent_removal.require_operational(db, origin.agent_id)
-    if assignment['ended_at'] is not None or agent['status'] != 'running':
-        raise ValueError('Planning requires a running current assignment')
-    work_control.require_active(task, db=db)
+    with delegation_protocol.rejected_as('authority'):
+        agent_removal.require_operational(db, origin.agent_id)
+        if assignment['ended_at'] is not None or agent['status'] != 'running':
+            raise ValueError('Planning requires a running current assignment')
+        work_control.require_active(task, db=db)
     latest = current(db, task['task_id'])
     if value['base_revision'] != (latest['revision'] if latest else 0):
         raise ValueError('Stale planning base revision')
+    return _insert(db, origin, task, value, encoded, session_id=session_id, message_id=message_id)
+
+
+def _authority(db, origin, session_id):
+    task = dependencies.task(db, origin.parent_task_id)
+    agent = db.execute('SELECT * FROM agents WHERE agent_id=?', (origin.agent_id,)).fetchone()
+    assignment = db.execute('SELECT * FROM task_assignments WHERE assignment_id=?', (origin.assignment_id,)).fetchone()
+    if (not agent or not agent['planning_enabled'] or agent['execution_generation'] != origin.generation
+            or not session_id or agent['session_id'] != session_id or not assignment
+            or assignment['agent_id'] != origin.agent_id or assignment['task_id'] != task['task_id']
+            or task['project_id'] != origin.project_id):
+        raise ValueError('Stale or mismatched planning execution authority')
+    return task, agent, assignment
+
+
+def _insert(db, origin, task, value, encoded, *, session_id, message_id):
     # References are conservative: same Project and same Task tree only.
     root = work_control.ancestry(db, task['task_id'])[-1]['task_id']
     for ref in value['references']:
@@ -184,8 +196,11 @@ deliverable, responsibility (each nonblank <=2000 characters), depends_on (propo
 references is [] or up to 16 objects containing only task_id for known existing Tasks in this Task tree.
 Keys use 1-64 ASCII letters, digits, underscore, dot or hyphen, starting with a letter or digit.
 This is a descriptive proposal only: it grants no execution, delegation or ownership permission.
-Do not invent existing Task IDs. Do not wrap the JSON in fences. Do not emit planning as your final
-response: continue the actual work and finish with an ordinary response or an independently authorized
+Do not invent existing Task IDs. Do not wrap the JSON in fences. The planning message contains only that
+JSON object: no prose and no other JSON object. Emit it right before a tool call so that it is recorded as
+its own assistant message; a plan written in the same message as other text or as a promotion is not
+accepted and stops the execution. Text that merely quotes or explains JSON is not a control request.
+Do not emit planning as your final response: continue the actual work and finish with an ordinary response or an independently authorized
 control action. If you cannot emit an intermediate assistant message, skip planning entirely.
 At most 16 decisions per invocation, 64 KiB each. Revisions replace the proposed item set only;
 preserve proposal IDs for retained items. Increment base_revision for each additional decision.

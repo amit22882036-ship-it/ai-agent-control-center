@@ -302,7 +302,7 @@ The full backend suite takes about 30 minutes on Windows. It uses temporary data
 | --- | --- |
 | [Configuration and troubleshooting](docs/configuration.md) | Environment variables, state locations, delegation limits and common problems |
 | [Dashboard](docs/dashboard.md) | Autonomous creation, the managed execution policy, the hierarchy explorer and verification |
-| [Planning and promotion](docs/planning.md) | Orchestration decisions, proposals and promotion to Child Tasks |
+| [Planning and promotion](docs/planning.md) | The single delegation decision, proposals, promotion to Child Tasks and structured control diagnostics |
 | [Providers](docs/providers.md) | Provider adapters, readiness, billing and usage policy, the model catalog, per-agent model and effort, Auto allocation, AI Providers setup and updates, provider permissions and mixed hierarchies |
 | [Delegations](docs/delegations.md) | Request protocol, Child materialization, result delivery, recursion and limits |
 | [Task lifecycle](docs/task-lifecycle.md) | Task identity, assignments, controls, dependencies and recovery |
