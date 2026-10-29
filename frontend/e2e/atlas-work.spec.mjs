@@ -73,8 +73,8 @@ test('selecting a task opens the read-only inspector and keeps the task in the a
   const inspector = page.getByRole('complementary', { name: 'Task details' })
   await expect(inspector.getByRole('heading', { level: 2 })).toHaveText('Quoted fields')
   await expect(inspector).toContainText('Should quoted fields keep their line breaks?')
-  await expect(inspector).toContainText('Replying arrives in Atlas in the next milestone')
-  await expect(inspector.getByRole('button', { name: 'Open Classic view' }).first()).toBeVisible()
+  await expect(inspector.getByRole('button', { name: 'Send reply' })).toBeVisible()
+  await expect(inspector.getByRole('button', { name: 'Open in Classic' })).toBeVisible()
   await row(page, 'HTML summary report').click()
   await expect(inspector.getByRole('heading', { level: 2 })).toHaveText('Report builder')
   await inspector.getByRole('tab', { name: 'Activity' }).click()
@@ -286,7 +286,7 @@ test('no serious accessibility violations on Work with the inspector open, in bo
   for (const theme of ['light', 'dark']) {
     await page.addInitScript((value) => localStorage.setItem('control-center.theme', value), theme)
     await openWork(page, { tasks: showcase() }, '?task=quoted')
-    for (const tab of ['Now', 'Activity', 'Output', 'Details']) {
+    for (const tab of ['Now', 'Activity', 'Output', 'Settings']) {
       await page.getByRole('tab', { name: tab }).click()
       await page.waitForTimeout(150)
       await page.addScriptTag({ path: axePath })
@@ -333,15 +333,15 @@ test('section counts say when they cover only the loaded tasks', async ({ page }
 test('opening Classic from a task selects its current agent there, and never an ended or removed one', async ({ page }) => {
   await openWork(page, { tasks: showcase() }, '?task=quoted')
   const inspector = page.getByRole('complementary', { name: 'Task details' })
-  await expect(inspector).toContainText('It opens with this agent selected.')
-  await inspector.getByRole('button', { name: 'Open Classic view' }).last().click()
+  await expect(inspector.getByRole('button', { name: 'Open in Classic' })).toHaveAttribute('title', 'Classic view opens with this agent selected.')
+  await inspector.getByRole('button', { name: 'Open in Classic' }).click()
   await expect(page.getByRole('heading', { level: 1, name: 'Agent Workspace' })).toBeVisible()
   await expect(page.locator('#details-heading')).toHaveText('Quoted fields')
   expect(await page.evaluate(() => sessionStorage.getItem('control-center.atlas.classic-agent'))).toBeNull() // read once
   await page.unroute('**/*')
   await openWork(page, { tasks: showcase() }, '?task=migrate') // its only agent was removed
-  await expect(inspector).toContainText('It opens without a selection because this task has no current agent.')
-  await inspector.getByRole('button', { name: 'Open Classic view' }).last().click()
+  await expect(inspector.getByRole('button', { name: 'Open in Classic' })).toHaveAttribute('title', /without a selection because this task has no current agent/)
+  await inspector.getByRole('button', { name: 'Open in Classic' }).click()
   await expect(page.getByRole('heading', { level: 1, name: 'Agent Workspace' })).toBeVisible()
   await expect(page.locator('.agent-details')).toHaveCount(0)
 })

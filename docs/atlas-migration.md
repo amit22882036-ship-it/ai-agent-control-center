@@ -17,7 +17,8 @@ the backend reports.
 | M1 | Design tokens, local fonts, primitives, application shell, routing, Atlas/classic switch, component gallery | Done |
 | M2 | Canonical Task/Agent model; read-only task projection (B1, separately approved) | Done |
 | M3 | Work list and read-only inspector | Done |
-| M4–M11 | Agent actions, New Task and Projects, Map, Task pages, Connections and Settings, notifications, accessibility and performance, default switch | Not started |
+| M4 | Agent actions and management in the inspector | Done |
+| M5–M11 | New Task and Projects, Map, Task pages, Connections and Settings, notifications, accessibility and performance, default switch | Not started |
 
 Legacy removal is a separate, explicitly authorized final step. The native folder picker is a
 separate milestone after the core migration.
@@ -116,6 +117,45 @@ independently verified.
 - **Rendering:** measured in Microsoft Edge with 1,000 tasks fully expanded (about 22,800 DOM
   nodes): the list appears in under a second including page load, a keyboard step takes about
   65 ms and selecting a task about 170 ms, so the list is not virtualized.
+
+## Agent actions (M4)
+
+The inspector acts on the selected task's **current** agent only (`model/agentTarget.mjs`): a
+replaced, ended or removed agent is history, and a task without a current agent offers no agent
+action. Each control appears under the same condition as in the classic inspector
+(`model/agentCapabilities.mjs`) and reads the agent's own read model (`GET /agents/{id}`); the
+backend still decides and its refusals are shown in its own words. Every request goes through
+`api/agentClient.mjs`, the only Atlas module that changes state, with the shared `apiFetch`
+client and the classic endpoints and payloads. One action runs at a time per inspector, a second
+click sends nothing, and each finished action re-reads the agent and the task list. A request is
+not sent if, according to the latest task list Atlas has read, the task's agent changed after the
+controls were drawn. That check uses local state, not a fresh server read; the backend's own
+eligibility and identity checks remain the authority and refuse stale requests. A reply or
+correction written for an agent that was replaced meanwhile is refused once with an explanation and
+kept. For a task's last agent (history), Atlas keeps the recovery the backend supports: settling
+its unresolved runs and retrying its blocked removal.
+
+| Classic capability | Atlas (M4) |
+| --- | --- |
+| Reply, with a one-time model or effort, explicit attempt and new-session confirmation | Now: question card |
+| Decide for me; decide similar; always decide; turning those off | Now: question card; Settings: Questions |
+| Redirect, with the same one-time options | Now: Redirect |
+| Stop; Stop branch (agent lineage), partial results by name | Footer, each with a confirmation that it does not pause or cancel the task |
+| Provider wait: facts, explicit retry, unverified default attempt, Resume; Claude usage refresh | Now: provider card |
+| Change provider, model and access while waiting | Now: Switch tool or model |
+| Agent defaults (model and effort), latest execution facts, defaults history | Settings: Model and effort |
+| Auto allocation decision, held children, Auto policy editor (providers, models, preferences, profiles) | Settings: Helpers |
+| Provider restrictions of the task subtree | Settings: Provider permissions |
+| Rename, colour label, name history (also for an agent that is history, labelled as such) | Settings: Name and colour |
+| Removal: impact review, single or branch, reason, confirmation bound to the reviewed impact, stale impact, blocked removal and retry | Settings: Remove agent (dialog); Now: removal progress |
+| Responsibility transfer to a new owner, completed child work guidance | Now: Task responsibility |
+| Process ownership: unresolved runs, diagnostics refresh, observations, human attestation | Now: Process ownership |
+| Output history with earlier pages; technical details and provider changes | Output; Settings: Technical details |
+
+Not in M4, as planned: starting a child agent ("Add a helper", M5), the hierarchy explorer (Map,
+M6), task Pause and Cancel with their impact preview (Task page, M7; Classic has no such control
+either), AI Providers setup (M8) and notifications (M9). Classic's agent list colour filter is not
+yet in Atlas.
 
 ## Tests
 

@@ -1,0 +1,109 @@
+/* Atlas M4: agent controls inside the inspector (Now and Settings tabs, footer). Following the V2
+   reference: everyday actions in cards, advanced controls behind disclosures, dangerous actions
+   separated. State rules use three class-level selectors so classic element rules never win. */
+.atlas .a-agent-now { display: grid; gap: 12px; }
+.atlas .a-act-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 10px; }
+.atlas .a-sp { flex: 1; }
+
+/* Checkbox and radio statements */
+.atlas .a-check { display: flex; align-items: flex-start; gap: 9px; margin: 8px 0; font-size: 13.5px; line-height: 1.45; color: var(--a-text); cursor: pointer; }
+.atlas .a-check input { flex: none; width: 16px; height: 16px; margin: 2px 0 0; accent-color: var(--a-accent); }
+.atlas .a-check small { display: block; color: var(--a-text-3); font-size: 12.5px; }
+.atlas .a-check.a-check--warn { padding: 8px 10px; border-radius: 9px; background: var(--a-ask-soft); border: 1px solid var(--a-ask-line); }
+
+/* Disclosure */
+.atlas .a-disclosure { margin-top: 10px; }
+.atlas .a-disclosure > summary { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; list-style: none; font-weight: 600; font-size: 13.5px;
+  color: var(--a-text-2); border-radius: 6px; padding: 2px 0; }
+.atlas .a-disclosure > summary::-webkit-details-marker { display: none; }
+.atlas .a-disclosure > summary .a-icon { transition: transform .15s var(--a-ease); }
+.atlas .a-disclosure[open] > summary .a-icon { transform: rotate(90deg); }
+.atlas .a-disclosure > summary:hover { color: var(--a-text); }
+.atlas .a-disclosure-body { padding: 8px 0 2px 19px; }
+.atlas .a-disclosure.a-disclosure--card { border: 1px solid var(--a-line); border-radius: 12px; padding: 10px 12px; background: var(--a-surface); }
+.atlas .a-disclosure.a-disclosure--card > .a-disclosure-body { padding-left: 0; }
+.atlas .a-disclosure.a-disclosure--quiet > summary { font-weight: 500; font-size: 12.5px; }
+
+/* Results */
+.atlas .a-result { display: flex; align-items: flex-start; gap: 8px; margin-top: 10px; padding: 9px 11px; border-radius: 10px; font-size: 13px; line-height: 1.45; }
+.atlas .a-result.a-result--ok { background: var(--a-work-soft); color: var(--a-text); }
+.atlas .a-result.a-result--warn { background: var(--a-ask-soft); border: 1px solid var(--a-ask-line); }
+.atlas .a-result.a-result--error { background: var(--a-fail-soft); border: 1px solid color-mix(in srgb, var(--a-fail) 30%, var(--a-line)); color: var(--a-text); }
+.atlas .a-result .a-icon { flex: none; margin-top: 1px; }
+.atlas .a-result ul { margin: 4px 0 0; padding-left: 18px; }
+.atlas .a-field-hint.a-hint--warn { color: var(--a-ask); }
+.atlas .a-field-hint.a-hint--alert { color: var(--a-fail); }
+
+/* Cards in Now */
+.atlas .a-qcard.a-qcard--form .a-field { margin-top: 10px; }
+.atlas .a-qcard.a-qcard--form .a-textarea { background: var(--a-surface); }
+.atlas .a-wait-card, .atlas .a-attention { border-radius: 12px; padding: 14px; border: 1px solid var(--a-line); background: var(--a-surface-2); }
+.atlas .a-wait-card { background: var(--a-ask-soft); border-color: var(--a-ask-line); }
+.atlas .a-wait-card h3, .atlas .a-attention h3 { font-size: 14px; font-weight: 700; margin-bottom: 8px; text-transform: none; letter-spacing: 0; color: var(--a-text); }
+.atlas .a-wait-card p, .atlas .a-attention p { margin-top: 6px; line-height: 1.5; font-size: 13.5px; }
+.atlas .a-attention.a-attention--alert { border-color: color-mix(in srgb, var(--a-fail) 35%, var(--a-line)); }
+.atlas .a-instr { margin-top: 8px; }
+.atlas .a-instr-body { padding: 4px 0 0 25px; }
+.atlas .a-modelchoice { display: grid; gap: 10px; margin-top: 8px; }
+.atlas .a-catalog { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; font-size: 12px; color: var(--a-text-3); }
+.atlas .a-catalog .a-catalog-stale { color: var(--a-ask); }
+.atlas .a-catalog .a-catalog-access { padding: 1px 7px; border-radius: 999px; border: 1px solid var(--a-line); }
+.atlas .a-policy-choice { margin-top: 8px; }
+.atlas .a-policy-choice p { margin-top: 4px; }
+
+/* Settings */
+.atlas .a-setting-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; align-items: center; padding: 10px 12px;
+  border: 1px solid var(--a-line); border-radius: 12px; background: var(--a-surface); margin-top: 8px; }
+.atlas .a-setting-row b { display: block; font-weight: 600; font-size: 13.5px; }
+.atlas .a-setting-row small { display: block; font-size: 12.5px; color: var(--a-text-3); margin-top: 2px; line-height: 1.45; }
+.atlas .a-danger-zone .a-setting-row { border-color: color-mix(in srgb, var(--a-fail) 30%, var(--a-line)); }
+.atlas .a-note-box { padding: 10px 12px; border-radius: 12px; border: 1px solid var(--a-line); background: var(--a-surface-2); margin-bottom: 8px; }
+.atlas .a-identity { display: flex; align-items: center; gap: 12px; }
+.atlas .a-identity-name { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.atlas .a-identity-name b { overflow-wrap: anywhere; }
+.atlas .a-rename { flex: 1; min-width: 0; }
+.atlas .a-swatches-pick { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; border: 0; padding: 0; }
+.atlas .a-swatches-pick legend { font-size: 12.5px; color: var(--a-text-3); margin-bottom: 6px; }
+.atlas .a-swatch-pick { position: relative; cursor: pointer; }
+.atlas .a-swatch-pick input { position: absolute; opacity: 0; width: 100%; height: 100%; margin: 0; cursor: pointer; }
+.atlas .a-swatch-pick .a-swatch-dot { display: block; width: 24px; height: 24px; border-radius: 50%; border: 2px solid var(--a-surface); box-shadow: 0 0 0 1px var(--a-line-2); }
+.atlas .a-swatches-pick .a-swatch-pick input:checked + .a-swatch-dot { box-shadow: 0 0 0 2px var(--a-text); }
+.atlas .a-swatches-pick .a-swatch-pick input:focus-visible + .a-swatch-dot { outline: 2px solid var(--a-accent); outline-offset: 2px; }
+.atlas .a-swatch-pick[data-color="neutral"] .a-swatch-dot { background: var(--a-agent-neutral); }
+.atlas .a-swatch-pick[data-color="violet"] .a-swatch-dot { background: var(--a-agent-violet); }
+.atlas .a-swatch-pick[data-color="blue"] .a-swatch-dot { background: var(--a-agent-blue); }
+.atlas .a-swatch-pick[data-color="cyan"] .a-swatch-dot { background: var(--a-agent-cyan); }
+.atlas .a-swatch-pick[data-color="green"] .a-swatch-dot { background: var(--a-agent-green); }
+.atlas .a-swatch-pick[data-color="yellow"] .a-swatch-dot { background: var(--a-agent-yellow); }
+.atlas .a-swatch-pick[data-color="orange"] .a-swatch-dot { background: var(--a-agent-orange); }
+.atlas .a-swatch-pick[data-color="red"] .a-swatch-dot { background: var(--a-agent-red); }
+.atlas .a-swatch-pick[data-color="pink"] .a-swatch-dot { background: var(--a-agent-pink); }
+.atlas .a-plain-list { list-style: none; padding: 0; margin: 6px 0 0; display: grid; gap: 4px; font-size: 13px; }
+.atlas .a-kv-row { display: contents; }
+
+/* Auto policy and permissions */
+.atlas .a-policy-editor { display: grid; gap: 6px; margin-top: 8px; }
+.atlas .a-policy-providers, .atlas .a-policy-models { border: 0; padding: 0; margin: 6px 0; }
+.atlas .a-policy-providers legend, .atlas .a-policy-models legend { font-weight: 600; font-size: 13px; margin-bottom: 2px; }
+.atlas .a-policy-adder { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)) auto; gap: 8px; align-items: end; margin-top: 8px; }
+.atlas .a-policy-level h4 { font-size: 13px; font-weight: 600; margin-top: 10px; }
+.atlas .a-spec-list { padding: 0; margin: 6px 0 0; list-style: none; display: grid; gap: 4px; }
+.atlas .a-spec-list li { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 9px; background: var(--a-sunken); font-size: 13px; }
+.atlas .a-spec-list li > span:first-child { flex: 1; min-width: 0; }
+.atlas .a-spec-actions { display: inline-flex; gap: 2px; }
+
+/* Removal and process ownership */
+.atlas .a-removal-modes { border: 0; padding: 0; margin: 0 0 6px; }
+.atlas .a-removal-modes legend { font-weight: 600; font-size: 13px; margin-bottom: 4px; }
+.atlas .a-removal-preview { margin-top: 12px; padding: 12px; border-radius: 12px; border: 1px solid var(--a-line); background: var(--a-surface-2); }
+.atlas .a-run-card { margin-top: 10px; padding: 12px; border-radius: 12px; border: 1px solid var(--a-line); background: var(--a-surface); }
+.atlas .a-run-card header { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.atlas .a-run-card h4 { font-size: 13.5px; font-weight: 600; }
+.atlas .a-attest-warning { padding: 10px 12px; border-radius: 10px; background: var(--a-fail-soft); font-size: 13px; line-height: 1.5; }
+.atlas .a-attest-statement { margin: 8px 0; padding: 8px 12px; border-left: 3px solid var(--a-line-2); font-size: 13px; color: var(--a-text-2); }
+
+/* Footer */
+.atlas .a-inspector-foot .a-btn--danger { white-space: nowrap; }
+@media (max-width: 1180px) {
+  .atlas .a-policy-adder { grid-template-columns: 1fr 1fr; }
+}

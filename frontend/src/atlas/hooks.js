@@ -100,7 +100,9 @@ export function useTaskFeed(version) {
   // The connection reports once as soon as it starts (version 1), so version 0 needs no read.
   useEffect(() => { if (version > 0) feed.current?.request() }, [version])
   const loadMore = useCallback(() => feed.current?.loadMore(), [])
-  return { ...state, loadMore }
+  // After an action: read again now rather than waiting for the connection to report it.
+  const refresh = useCallback(() => feed.current?.request(true), [])
+  return { ...state, loadMore, refresh }
 }
 
 // A read-only JSON resource that follows the shared connection. A response for an earlier URL or
@@ -130,4 +132,44 @@ export function useLiveResource(url, version) {
     return () => { clearTimeout(timer); controller.abort() }
   }, [url, version])
   return state.url === url ? state : { url, data: null, error: null, loading: Boolean(url) }
+}
+
+// One agent's own read model (the same as the classic inspector reads). Actions use it as the
+// authority for what the agent is doing now; `version` re-reads it after a change.
+export function useAgentDetail(agentId, version) {
+  return useLiveResource(agentId ? `${API_BASE}/agents/${encodeURIComponent(agentId)}?include_output=false` : null, version)
+}
+
+// Runs agent actions one at a time for one inspector. A second action while one is running is
+// ignored (no duplicate or conflicting request), and every finished action asks for fresh
+// authoritative state instead of assuming what changed. An action returns
+// { ok, message, tone?, changed? }; `changed: false` skips the refresh (a request refused before
+// anything was sent).
+export function useActionRunner(onChanged) {
+  const [state, setState] = useState({ busy: null, result: null })
+  const busy = useRef(null)
+  // Set on every effect setup, not only at creation: StrictMode (and a remount of the same
+  // instance) runs cleanup then setup again, and the component must keep receiving results.
+  const mounted = useRef(false)
+  useEffect(() => {
+    mounted.current = true
+    return () => { mounted.current = false }
+  }, [])
+  const run = useCallback(async (key, action) => {
+    if (busy.current) return null
+    busy.current = key
+    setState({ busy: key, result: null })
+    let outcome
+    try {
+      outcome = await action()
+    } catch (error) {
+      outcome = { ok: false, message: error?.message || 'The action could not be completed.' }
+    }
+    busy.current = null
+    if (mounted.current) setState({ busy: null, result: outcome ? { key, ...outcome } : null })
+    if (outcome && outcome.changed !== false) onChanged?.()
+    return outcome
+  }, [onChanged])
+  const dismiss = useCallback(() => setState((current) => ({ ...current, result: null })), [])
+  return { busy: state.busy, result: state.result, run, dismiss }
 }

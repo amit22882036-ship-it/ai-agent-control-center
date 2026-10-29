@@ -216,7 +216,7 @@ export function nowView(store, derived, id) {
   let second = status.detail || ''
   let tone = status.tone
   switch (status.key) {
-    case 'needs_input': line = 'Asked you a question'; second = 'Reply from Classic view'; break
+    case 'needs_input': line = 'Asked you a question'; second = 'Waiting for your reply'; break
     case 'waiting_helpers':
       // Only helpers still working count; a delivered result is waiting for the lead, not the other way round.
       if (!status.detail && task.delegations.materialized) line = `Waiting for ${task.delegations.materialized} helper${task.delegations.materialized === 1 ? '' : 's'}`
@@ -230,8 +230,8 @@ export function nowView(store, derived, id) {
       break
     }
     case 'blocked': second = task.blockers.length ? humanize(task.blockers[0]) + (task.blockers.length + task.blockersMore > 1 ? ` and ${task.blockers.length + task.blockersMore - 1} more` : '') : second; break
-    case 'needs_owner': line = status.label; second = second || 'Its agent was removed; choose a new owner in Classic view'; break
-    case 'recovery': second = 'Resolve it in Classic view'; break
+    case 'needs_owner': line = status.label; second = second || 'Its agent was removed; choose a new owner'; break
+    case 'recovery': second = 'Review it in the task’s details'; break
     case 'integrated': second = 'Not independently verified'; break
     case 'completed':
       line = result ? result.label : 'Completed'

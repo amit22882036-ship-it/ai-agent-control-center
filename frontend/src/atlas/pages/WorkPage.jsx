@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Button, EmptyState, Notice, Skeleton } from '../components/primitives'
 import { Segmented } from '../components/controls'
 import { MenuButton } from '../components/overlays'
@@ -22,6 +22,10 @@ export default function WorkPage({ live, route, navigate }) {
   const feed = useTaskFeed(live.version)
   const store = feed.store || emptyStore()
   const derived = useMemo(() => deriveWorkspace(store), [store])
+  // Actions check the latest store when they run, not the one drawn when a form opened.
+  const storeRef = useRef(store)
+  useEffect(() => { storeRef.current = store }, [store])
+  const getStore = useCallback(() => storeRef.current, [])
   // The registered projects (GET /projects) are the authoritative list; they are re-read with the
   // shared connection's updates, so a project registered meanwhile appears without a reload.
   const projectsResource = useLiveResource(`${API_BASE}/projects`, live.version)
@@ -145,6 +149,7 @@ export default function WorkPage({ live, route, navigate }) {
     {selectedId && ready && <TaskInspector key={selectedId} store={store} derived={derived} taskId={selectedId} selection={selection}
       projectName={projectName} version={live.version} now={now} width={width}
       onResize={(value) => { setWidth(value); saveInspectorWidth(value) }}
-      onClose={() => { setFocusId(selectedId); go({ task: undefined }) }} onSelect={select} onLoadMore={feed.loadMore} />}
+      onClose={() => { setFocusId(selectedId); go({ task: undefined }) }} onSelect={select} onLoadMore={feed.loadMore}
+      getStore={getStore} onRefresh={feed.refresh} />}
   </div>
 }

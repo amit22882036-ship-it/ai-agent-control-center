@@ -82,15 +82,25 @@ test('every local font has its license and every referenced font file exists', (
   assert.ok(existsSync(join(fontsDir, 'README.md')))
 })
 
-test('Atlas uses the shared event connection once and sends no state-changing request in M1', () => {
+test('Atlas uses the shared event connection once and changes state only through its action client', () => {
   const code = files(atlasDir, /\.(jsx?|mjs)$/).map((file) => [file, readFileSync(file, 'utf8')])
   const connections = code.filter(([, text]) => text.includes('connectAgentEvents('))
   assert.equal(connections.length, 1, 'exactly one module opens the event connection')
   assert.equal((connections[0][1].match(/connectAgentEvents\(/g) || []).length, 1)
   for (const [file, text] of code) {
     assert.doesNotMatch(text, /new EventSource\(/, `${file} must reuse connectAgentEvents`)
-    assert.doesNotMatch(text, /method:\s*['"`](POST|PUT|PATCH|DELETE)/i, `${file} sends a state-changing request`)
+    // Since M4, agent actions exist; every one goes through api/agentClient.mjs and apiFetch (CSRF).
+    if (!file.endsWith(join('api', 'agentClient.mjs'))) {
+      assert.doesNotMatch(text, /(POST|PUT|PATCH|DELETE)['"`]/, `${file} sends a state-changing request outside the action client`)
+    }
     // A plain fragment link ("#section") would leave Atlas; routes are built with formatHash().
     assert.doesNotMatch(text, /href="#/, `${file} uses a fragment link`)
   }
+})
+
+test('the action client is the only state-changing module and always uses the CSRF-aware apiFetch', () => {
+  const client = readFileSync(join(atlasDir, 'api', 'agentClient.mjs'), 'utf8')
+  assert.match(client, /import \{ API_BASE, apiFetch \} from '\.\.\/\.\.\/apiClient\.mjs'/)
+  assert.doesNotMatch(client, /fetch\(/, 'no bare fetch in the action client')
+  assert.match(client, /fetcher = apiFetch/)
 })

@@ -47,6 +47,14 @@ export function agentDetail(node, extra = {}) {
   }
 }
 
+// An account-scoped model catalog (GET /providers/{p}/models) listing the scenarios' models.
+export function catalog(provider) {
+  const names = { claude: ['Sonnet 4.6', 'Opus 4.8', 'Haiku 4.5'], codex: ['GPT-5.5'], gemini: ['auto'] }[provider] || []
+  return { provider, entitlement_verified: true, refresh: { fresh: true, last_success_at: '2026-10-29T11:00:00Z' },
+    models: names.map((name) => ({ model_id: name, display_name: name, selectable: true, status: 'available', status_label: 'Available',
+      explanation: 'Listed for this account.', supported_efforts: provider === 'gemini' ? [] : ['low', 'medium', 'high'] })) }
+}
+
 // Read-only detail responses for the inspector, shaped like the backend's (synthetic content).
 function detail(pathname, search, tasks, projects, agents) {
   const nodes = [...tasks.tasks, ...tasks.ancestors]
@@ -85,6 +93,9 @@ function detail(pathname, search, tasks, projects, agents) {
     return { agent_id: agentId, items: [{ seq: 1, text: 'Reading the test suite' }, { seq: 2, text: 'Two tests fail on quoted newlines' }], has_older: false, has_newer: false }
   }
   if (pathname === '/projects') return projects === null ? null : { projects }
+  if (pathname === '/executions/unresolved') return { executions: [] }
+  match = /^\/providers\/([a-z]+)\/models$/.exec(pathname)
+  if (match) return catalog(match[1])
   match = /^\/agents\/([^/]+)$/.exec(pathname)
   if (match) {
     const agentId = decodeURIComponent(match[1])
@@ -136,6 +147,10 @@ export async function openApp(page, { backend = 'online', path = '/', tasks = co
       // The classic interface synchronises its notification preference on load (an existing behaviour).
       if (request.method() === 'GET' && url.pathname === '/security/csrf-token') return route.fulfill({ status: 200, contentType: 'application/json', body: '{"csrf_token":"fixture"}' })
       if (request.method() === 'POST' && url.pathname.startsWith('/notifications/')) return route.fulfill({ status: 200, contentType: 'application/json', body: '{}' })
+      // An action the test did not script succeeds plainly; tests that check refusals script them.
+      if (request.method() !== 'GET' && /^\/(agents|tasks|agent-removals|executions|providers)\//.test(url.pathname)) {
+        return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true, status: 'running' }) })
+      }
       return route.fulfill({ status: 404, contentType: 'application/json', body: '{"detail":"not in fixture"}' })
     }
     log.external.push(request.url())

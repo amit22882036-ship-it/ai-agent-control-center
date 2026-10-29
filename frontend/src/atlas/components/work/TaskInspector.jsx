@@ -12,8 +12,11 @@ import { helpersView, plannedView, resultView } from '../../model/taskStatus.mjs
 import { agentLabel, nowView, timeView, whoView } from '../../model/workList.mjs'
 import { exitAtlas } from '../../uiMode.mjs'
 import { classicHandoffAgent } from '../../model/agentTarget.mjs'
+import { AgentFooterActions, AgentNowPanels, AgentSettingsPanels, AgentStopResult } from '../agent/AgentPanels'
+import { useAgentScope } from '../agent/useAgentScope'
+import { OutputHistory } from '../agent/OutputHistory'
 
-const TABS = [{ id: 'now', label: 'Now' }, { id: 'activity', label: 'Activity' }, { id: 'output', label: 'Output' }, { id: 'details', label: 'Details' }]
+const TABS = [{ id: 'now', label: 'Now' }, { id: 'activity', label: 'Activity' }, { id: 'output', label: 'Output' }, { id: 'settings', label: 'Settings' }]
 const AGENT_STATUS = { running: 'Working', waiting: 'Waiting', finished: 'Finished', stopped: 'Stopped' }
 const ENDED_REASON = {
   completed: 'finished its work', stopped: 'was stopped', reassigned: 'was replaced', paused: 'was paused', blocked: 'was blocked',
@@ -37,12 +40,12 @@ function ClassicHint({ handoff, children }) {
     onClick={() => exitAtlas(undefined, { agentId: handoff })}>Open Classic view</button></p>
 }
 
-function StateNotes({ store, derived, id, activity, handoff }) {
+function StateNotes({ store, derived, id, activity, handoff, controls }) {
   const status = derived.status[id]
   const { current, last } = derived.agents[id]
   const agent = current || last
   const notes = []
-  if (status.key === 'needs_input') {
+  if (status.key === 'needs_input' && !controls?.reply) {
     const question = activity?.context?.task_id === id ? activity.context.waiting_question : null
     notes.push(<div key="q" className="a-qcard">
       <div className="a-qh"><Icon name="hand" size={15} stroke={2} />Asked you</div>
@@ -50,14 +53,14 @@ function StateNotes({ store, derived, id, activity, handoff }) {
       <ClassicHint handoff={handoff}>Replying arrives in Atlas in the next milestone.</ClassicHint>
     </div>)
   }
-  if (status.key === 'provider_wait') notes.push(<Notice key="p" tone="warn" title={status.label}>
+  if (status.key === 'provider_wait' && !controls?.providerWait) notes.push(<Notice key="p" tone="warn" title={status.label}>
     The provider reported this limit; nothing resumes by itself. A reported reset time is not a guarantee.</Notice>)
   if (status.key === 'blocked') notes.push(<Notice key="b" tone="info" title={status.label}>
     {store.tasks[id].blockers.length ? `Reported reasons: ${store.tasks[id].blockers.map((code) => code.replace(/_/g, ' ')).join(', ')}.` : 'No specific reason was reported.'}</Notice>)
   if (status.key === 'needs_owner') notes.push(<Notice key="o" tone="warn" title={status.label}>
     {status.detail || 'Its agent was removed. The task, its history and its work are kept until you choose a new owner.'}</Notice>)
   if (status.key === 'recovery') notes.push(<Notice key="r" tone="error" title={status.label}>
-    The Control Center stopped short of guessing what happened. Inspect and resolve it in Classic view.</Notice>)
+    The Control Center stopped short of guessing what happened. Review the details below before anything continues.</Notice>)
   if (status.key === 'paused') notes.push(<Notice key="pa" tone="info" title="Paused">Nothing runs until it is resumed.</Notice>)
   if (agent?.removed) notes.push(<Notice key="rm" tone="info" title="This agent was removed">
     Its assignment, output and history are kept. It is shown as history, not as working.</Notice>)
@@ -92,7 +95,7 @@ function Family({ store, derived, id, onSelect }) {
   </div>
 }
 
-function NowTab({ store, derived, id, projectName, onSelect, task, activity, now, handoff }) {
+function NowTab({ store, derived, id, projectName, onSelect, task, activity, now, handoff, agent }) {
   const data = store.tasks[id]
   const parent = data.parentId ? store.tasks[data.parentId] : null
   const children = derived.forest.children[id] || []
@@ -102,7 +105,8 @@ function NowTab({ store, derived, id, projectName, onSelect, task, activity, now
   const into = derived.integration[id]
   const description = task?.data?.task_id === id ? task.data.description : null
   return <>
-    <StateNotes store={store} derived={derived} id={id} activity={activity} handoff={handoff} />
+    <AgentNowPanels agent={agent} store={store} taskId={id} now={now} />
+    <StateNotes store={store} derived={derived} id={id} activity={activity} handoff={handoff} controls={agent.scope?.caps} />
     <section className="a-blk" aria-labelledby={`resp-${id}`}>
       <h3 id={`resp-${id}`}>Responsible for</h3>
       <div className="a-resp">
@@ -193,22 +197,6 @@ function ActivityTab({ store, derived, id, activity, assignments }) {
   </>
 }
 
-function OutputTab({ derived, id, version, handoff }) {
-  const agent = derived.agents[id].current || derived.agents[id].last
-  const output = useLiveResource(agent && !agent.unknown ? `${API_BASE}/agents/${encode(agent.id)}/output?limit=200` : null, version)
-  if (!agent) return <EmptyState icon="layers" title="No output yet">No agent has worked on this task.</EmptyState>
-  const items = output.data?.agent_id === agent.id ? output.data.items || [] : []
-  return <section className="a-blk" aria-label="Output">
-    {!derived.agents[id].current && <p className="a-fine a-insp-lead">From its last agent, which is no longer working on this task.</p>}
-    {output.loading && !output.data ? <Skeleton lines={4} label="Loading output" />
-      : output.error ? <p className="a-fine">{output.error === 404 ? 'Output isn’t available for this agent.' : 'Output is unavailable right now.'}</p>
-        : items.length === 0 ? <p className="a-fine">No output recorded.</p>
-          : <div className="a-out" tabIndex={0} aria-label="Most recent output lines">{items.map((item) =>
-            <div key={item.seq}><span className="a-out-k a-num">{item.seq}</span><span className="a-bidi" dir="auto">{item.text}</span></div>)}</div>}
-    {output.data?.has_older && <ClassicHint handoff={handoff}>Showing the latest 200 lines. Earlier output is in</ClassicHint>}
-  </section>
-}
-
 function DetailsTab({ store, derived, id, projectName }) {
   const task = store.tasks[id]
   const who = whoView(derived, id)
@@ -234,9 +222,11 @@ function DetailsTab({ store, derived, id, projectName }) {
 }
 
 // Read-only details for the selected Task and its current or last Agent. Actions arrive in M4;
-// until then the footer points to Classic view, where they all work.
-export default function TaskInspector({ store, derived, taskId, selection, projectName, version, now, width, onResize, onClose, onSelect, onLoadMore }) {
+// the footer keeps a way to Classic view for what Atlas does not offer yet.
+export default function TaskInspector({ store, derived, taskId, selection, projectName, version, now, width, onResize, onClose, onSelect, onLoadMore,
+  getStore, onRefresh }) {
   const [tab, setTab] = useState('now')
+  const agentScope = useAgentScope({ store, taskId, version, getStore, onRefresh })
   const present = selection === 'present'
   const who = present ? whoView(derived, taskId) : null
   const agent = who?.agent && !who.agent.unknown ? who.agent : null
@@ -275,14 +265,18 @@ export default function TaskInspector({ store, derived, taskId, selection, proje
   const idBase = `insp-${taskId}`
   return <Inspector label="Task details" width={width} onResize={onResize} onClose={onClose} header={header}
     tabs={<Tabs label="Task details" tabs={TABS} value={tab} onChange={setTab} idBase={idBase} />}
-    footer={<><span className="a-fine a-insp-foot-text">{handoff ? 'Replies, stopping and other actions are in Classic view for now. It opens with this agent selected.'
-      : 'Actions are in Classic view for now. It opens without a selection because this task has no current agent.'}</span>
-      <Button size="sm" icon="swap" onClick={() => exitAtlas(undefined, { agentId: handoff })}>Open Classic view</Button></>}>
+    footer={<><AgentFooterActions agent={agentScope} /><span className="a-sp" />
+      <Button size="sm" variant="ghost" icon="swap" onClick={() => exitAtlas(undefined, { agentId: handoff })}
+        title={handoff ? 'Classic view opens with this agent selected.' : 'Classic view opens without a selection because this task has no current agent.'}>
+        Open in Classic</Button></>}>
     <div {...tabPanelProps(idBase, tab)} className="a-insp-panel">
-      {tab === 'now' && <NowTab store={store} derived={derived} id={taskId} projectName={projectName} onSelect={onSelect} task={task} activity={activity.data} now={now} handoff={handoff} />}
+      <AgentStopResult agent={agentScope} />
+      {tab === 'now' && <NowTab store={store} derived={derived} id={taskId} projectName={projectName} onSelect={onSelect} task={task} activity={activity.data} now={now} handoff={handoff} agent={agentScope} />}
       {tab === 'activity' && <ActivityTab store={store} derived={derived} id={taskId} activity={activity} assignments={assignments} />}
-      {tab === 'output' && <OutputTab derived={derived} id={taskId} version={version} handoff={handoff} />}
-      {tab === 'details' && <DetailsTab store={store} derived={derived} id={taskId} projectName={projectName} />}
+      {tab === 'output' && (agentScope.agentId ? <OutputHistory key={agentScope.agentId} agentId={agentScope.agentId} version={version}
+        historical={agentScope.target.kind !== 'current'} /> : <EmptyState icon="layers" title="No output yet">No agent has worked on this task.</EmptyState>)}
+      {tab === 'settings' && <><DetailsTab store={store} derived={derived} id={taskId} projectName={projectName} />
+        <AgentSettingsPanels agent={agentScope} taskId={taskId} /></>}
     </div>
   </Inspector>
 }
