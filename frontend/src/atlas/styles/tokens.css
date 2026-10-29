@@ -1,0 +1,72 @@
+/* Atlas design tokens. Everything is scoped to the .atlas root, so the classic interface keeps its
+   own tokens. The appearance attribute is shared with the classic interface (data-theme on <html>).
+   The classic names at the end (--surface, --accent ...) map leaked classic element rules to Atlas
+   colours while Atlas is on screen. */
+@font-face { font-family: 'Atlas Hanken Grotesk'; font-style: normal; font-weight: 400 700; font-display: swap;
+  src: url('../fonts/hanken-grotesk-latin.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+@font-face { font-family: 'Atlas Hanken Grotesk'; font-style: normal; font-weight: 400 700; font-display: swap;
+  src: url('../fonts/hanken-grotesk-latin-ext.woff2') format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C4, U+2113, U+2C60-2C7F, U+A720-A7FF; }
+@font-face { font-family: 'Atlas Heebo'; font-style: normal; font-weight: 400 700; font-display: swap;
+  src: url('../fonts/heebo-hebrew.woff2') format('woff2');
+  unicode-range: U+0307-0308, U+0590-05FF, U+200C-2010, U+20AA, U+25CC, U+FB1D-FB4F; }
+@font-face { font-family: 'Atlas JetBrains Mono'; font-style: normal; font-weight: 400 500; font-display: swap;
+  src: url('../fonts/jetbrains-mono-latin.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+@font-face { font-family: 'Atlas JetBrains Mono'; font-style: normal; font-weight: 400 500; font-display: swap;
+  src: url('../fonts/jetbrains-mono-latin-ext.woff2') format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C4, U+2113, U+2C60-2C7F, U+A720-A7FF; }
+
+.atlas {
+  color-scheme: light;
+  --a-font: 'Atlas Hanken Grotesk', 'Atlas Heebo', 'Segoe UI', system-ui, sans-serif;
+  --a-mono: 'Atlas JetBrains Mono', ui-monospace, Consolas, monospace;
+  --a-ease: cubic-bezier(.2, .75, .2, 1);
+  --a-r: 10px; --a-r-sm: 7px; --a-r-lg: 14px; --a-r-xl: 16px;
+  --a-bg: #F3F2EE; --a-rail: #FAF9F6; --a-surface: #FFFFFF; --a-surface-2: #FBFAF8; --a-sunken: #EFEDE8;
+  --a-hover: #F5F3EF; --a-hover-2: #EBE8E2;
+  --a-line: #E3E0D9; --a-line-2: #D1CDC4; --a-line-3: #EEEBE5;
+  --a-text: #18191C; --a-text-2: #4D5058; --a-text-3: #63666E; --a-text-4: #A2A4AB;
+  --a-ink: #18191C; --a-on-ink: #FFFFFF;
+  --a-accent: #3858D6; --a-accent-soft: rgba(56, 88, 214, .08); --a-accent-line: rgba(56, 88, 214, .38);
+  --a-thread: #CBB494; --a-thread-soft: #E6DACB;
+  --a-work: #127A50; --a-work-soft: rgba(18, 122, 80, .12);
+  --a-ask: #8F5B00; --a-ask-fill: #F0B232; --a-ask-soft: #FEF4DA; --a-ask-line: #EED18A;
+  --a-block: #A84C25; --a-fail: #C23232; --a-fail-soft: #FCEDEB;
+  --a-map: #F7F6F2; --a-dot: rgba(140, 112, 72, .16);
+  --a-shadow-1: 0 1px 2px rgba(24, 25, 28, .05), 0 2px 8px rgba(24, 25, 28, .04);
+  --a-shadow-2: 0 12px 32px rgba(24, 25, 28, .12), 0 2px 8px rgba(24, 25, 28, .06);
+  --a-shadow-3: 0 28px 72px rgba(24, 25, 28, .2), 0 6px 18px rgba(24, 25, 28, .08);
+  --a-agent-neutral: #BCC0C7; --a-agent-violet: #B9A7F2; --a-agent-blue: #97B4F3; --a-agent-cyan: #86D2DC;
+  --a-agent-green: #91D3A6; --a-agent-yellow: #EBD17E; --a-agent-orange: #F2B07E; --a-agent-red: #EF9A9A; --a-agent-pink: #EFA3CC;
+  --canvas: var(--a-bg); --surface: var(--a-surface); --raised: var(--a-hover-2); --text: var(--a-text);
+  --muted: var(--a-text-3); --line: var(--a-line); --accent: var(--a-accent); --motion: 150ms;
+}
+:root[data-theme="dark"] .atlas {
+  color-scheme: dark;
+  --a-bg: #0E0F12; --a-rail: #121317; --a-surface: #16171B; --a-surface-2: #191A1F; --a-sunken: #111216;
+  --a-hover: #1B1C21; --a-hover-2: #24252B;
+  --a-line: #25272D; --a-line-2: #34373F; --a-line-3: #1E1F24;
+  --a-text: #ECEDF0; --a-text-2: #ACAFB7; --a-text-3: #8A8E97; --a-text-4: #565A63;
+  --a-ink: #ECEDF0; --a-on-ink: #121316;
+  --a-accent: #90A7FF; --a-accent-soft: rgba(144, 167, 255, .10); --a-accent-line: rgba(144, 167, 255, .45);
+  --a-thread: #5E5241; --a-thread-soft: #3A3329;
+  --a-work: #48D08C; --a-work-soft: rgba(72, 208, 140, .14);
+  --a-ask: #F4BF52; --a-ask-fill: #F4BF52; --a-ask-soft: rgba(244, 191, 82, .08); --a-ask-line: rgba(244, 191, 82, .32);
+  --a-block: #F0925F; --a-fail: #FF726C; --a-fail-soft: rgba(255, 114, 108, .10);
+  --a-map: #111216; --a-dot: rgba(214, 190, 156, .08);
+  --a-shadow-1: 0 1px 2px rgba(0, 0, 0, .35);
+  --a-shadow-2: 0 14px 36px rgba(0, 0, 0, .5), 0 2px 8px rgba(0, 0, 0, .3);
+  --a-shadow-3: 0 30px 80px rgba(0, 0, 0, .6), 0 6px 18px rgba(0, 0, 0, .4);
+}
+/* Before the appearance preference is applied (the classic code sets data-theme on mount). */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) .atlas {
+    color-scheme: dark;
+    --a-bg: #0E0F12; --a-rail: #121317; --a-surface: #16171B; --a-surface-2: #191A1F; --a-sunken: #111216;
+    --a-hover: #1B1C21; --a-hover-2: #24252B; --a-line: #25272D; --a-line-2: #34373F; --a-line-3: #1E1F24;
+    --a-text: #ECEDF0; --a-text-2: #ACAFB7; --a-text-3: #8A8E97; --a-text-4: #565A63; --a-ink: #ECEDF0; --a-on-ink: #121316;
+    --a-accent: #90A7FF; --a-accent-soft: rgba(144, 167, 255, .10); --a-accent-line: rgba(144, 167, 255, .45);
+  }
+}

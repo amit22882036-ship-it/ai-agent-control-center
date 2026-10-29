@@ -3,6 +3,7 @@ import Popover from './Popover'
 import ThemeControl from './ThemeControl'
 import { workspaceSummary } from './agentPresentation.mjs'
 import { noticeText } from './onboardingPresentation.mjs'
+import { enterAtlas } from './atlas/uiMode.mjs'
 export default function WorkspaceBar({ agents, search, onSearch, notifications, showStart, onStart, newAgentButtonRef, startingAgent,
   view = 'workspace', onView, providerNotices = { notices: [] }, onReviewUpdate }) {
   const notificationsBlocked = notifications.permission === 'denied'
@@ -17,6 +18,8 @@ export default function WorkspaceBar({ agents, search, onSearch, notifications, 
         onClick={() => onView?.('workspace')}>Agents</button>
       <button type="button" className={`close-button${view === 'providers' ? ' active' : ''}`} aria-current={view === 'providers' ? 'page' : undefined}
         onClick={() => onView?.('providers')}>AI Providers</button>
+      {/* Opt-in only: the classic interface stays the default. */}
+      <button type="button" className="close-button" title="Open the new Atlas interface (preview)" onClick={() => enterAtlas()}>Atlas preview</button>
     </nav>
     <div className="bar-actions">
       <ThemeControl />

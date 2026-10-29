@@ -1,0 +1,1466 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Atlas V2 design reference (prototype, not the application)</title>
+<!-- Approved Stage 2J design reference. A static prototype with fictional data: it is not the working
+     application and talks to no backend. Only this prototype loads fonts from Google Fonts. -->
+<!-- Isolated design prototype. Fictional data. No backend, no providers, no network calls except web fonts. -->
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700&family=Heebo:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{
+  --font:"Hanken Grotesk","Heebo","Segoe UI",system-ui,sans-serif;--mono:"JetBrains Mono",ui-monospace,Consolas,monospace;
+  --r:10px;--r-sm:7px;--ease:cubic-bezier(.2,.75,.2,1);--insp-w:404px;--olw:300px;
+}
+:root[data-theme=light]{
+  color-scheme:light;
+  --bg:#F3F2EE;--rail:#FAF9F6;--surface:#FFFFFF;--surface-2:#FBFAF8;--sunken:#EFEDE8;--hover:#F5F3EF;--hover-2:#EBE8E2;
+  --line:#E3E0D9;--line-2:#D1CDC4;--line-3:#EEEBE5;
+  --text:#18191C;--text-2:#4D5058;--text-3:#6F727B;--text-4:#A2A4AB;
+  --ink:#18191C;--on-ink:#FFFFFF;
+  --accent:#3858D6;--accent-soft:rgba(56,88,214,.08);--accent-line:rgba(56,88,214,.38);
+  --thread:#CBB494;--thread-soft:#E6DACB;
+  --work:#15895A;--work-soft:rgba(21,137,90,.12);
+  --ask:#9A6200;--ask-fill:#F0B232;--ask-soft:#FEF4DA;--ask-line:#EED18A;
+  --block:#B0522A;--fail:#C73434;--fail-soft:#FCEDEB;--done:#5C5F67;--gone:#9A9CA3;
+  --map:#F7F6F2;--dot:rgba(140,112,72,.16);
+  --shadow-1:0 1px 2px rgba(24,25,28,.05),0 2px 8px rgba(24,25,28,.04);
+  --shadow-2:0 12px 32px rgba(24,25,28,.12),0 2px 8px rgba(24,25,28,.06);
+  --shadow-3:0 28px 72px rgba(24,25,28,.2),0 6px 18px rgba(24,25,28,.08);
+}
+:root[data-theme=dark]{
+  color-scheme:dark;
+  --bg:#0E0F12;--rail:#121317;--surface:#16171B;--surface-2:#191A1F;--sunken:#111216;--hover:#1B1C21;--hover-2:#24252B;
+  --line:#25272D;--line-2:#34373F;--line-3:#1E1F24;
+  --text:#ECEDF0;--text-2:#ACAFB7;--text-3:#82868F;--text-4:#565A63;
+  --ink:#ECEDF0;--on-ink:#121316;
+  --accent:#90A7FF;--accent-soft:rgba(144,167,255,.10);--accent-line:rgba(144,167,255,.45);
+  --thread:#5E5241;--thread-soft:#3A3329;
+  --work:#48D08C;--work-soft:rgba(72,208,140,.14);
+  --ask:#F4BF52;--ask-fill:#F4BF52;--ask-soft:rgba(244,191,82,.08);--ask-line:rgba(244,191,82,.32);
+  --block:#F0925F;--fail:#FF726C;--fail-soft:rgba(255,114,108,.10);--done:#A5A9B2;--gone:#6C707A;
+  --map:#111216;--dot:rgba(214,190,156,.08);
+  --shadow-1:0 1px 2px rgba(0,0,0,.35);--shadow-2:0 14px 36px rgba(0,0,0,.5),0 2px 8px rgba(0,0,0,.3);--shadow-3:0 30px 80px rgba(0,0,0,.6),0 6px 18px rgba(0,0,0,.4);
+}
+*{box-sizing:border-box}html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--text);font:14px/1.45 var(--font);-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
+button,input,select,textarea{font:inherit;color:inherit}button{cursor:pointer;background:none;border:0;padding:0;text-align:inherit}
+h1,h2,h3,h4,p{margin:0}:focus{outline:none}:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:6px}
+.mono{font-family:var(--mono);font-size:.9em;letter-spacing:-.01em}.num{font-variant-numeric:tabular-nums}
+.bidi{unicode-bidi:plaintext}.iso{unicode-bidi:isolate}.ell{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+.ic{display:block;flex:none}.sp{flex:1}
+
+/* ---------- shell ---------- */
+.app{display:grid;grid-template-rows:56px minmax(0,1fr);grid-template-columns:minmax(0,1fr);height:100vh}
+.topbar{display:flex;align-items:center;gap:4px;padding:0 14px 0 16px;background:var(--rail);border-bottom:1px solid var(--line);min-width:0;position:relative;z-index:30}
+.brand{display:flex;align-items:center;gap:10px;font-weight:700;font-size:15px;letter-spacing:-.01em;margin-right:18px;white-space:nowrap}
+.brand .proto{font-weight:600;font-size:11px;color:var(--text-3);border:1px dashed var(--line-2);border-radius:999px;padding:2px 8px}
+.nav{display:flex;align-self:stretch}
+.nav button{position:relative;padding:0 12px;color:var(--text-2);font-weight:600;white-space:nowrap}
+.nav button:hover{color:var(--text)}
+.nav button[aria-current=page]{color:var(--text)}
+.nav button[aria-current=page]::after{content:"";position:absolute;left:12px;right:12px;bottom:-1px;height:2px;border-radius:2px;background:var(--text)}
+.nav .badge{display:inline-grid;place-items:center;min-width:18px;height:18px;padding:0 5px;margin-left:6px;border-radius:9px;background:var(--ask-fill);color:#2a1b00;font-size:11px;font-weight:700}
+.search{display:flex;align-items:center;gap:9px;width:270px;height:34px;padding:0 8px 0 11px;border-radius:9px;background:var(--surface);border:1px solid var(--line);color:var(--text-3)}
+.search:hover{border-color:var(--line-2)}
+.search .lbl{flex:1;white-space:nowrap;overflow:hidden}
+.kbd{font:500 10.5px/1 var(--mono);padding:3px 5px 2px;border-radius:4px;border:1px solid var(--line-2);border-bottom-width:2px;color:var(--text-3);background:var(--sunken)}
+.needs{display:flex;align-items:center;gap:8px;height:34px;padding:0 12px 0 9px;margin-left:6px;border-radius:9px;background:var(--ask-soft);border:1px solid var(--ask-line);color:var(--ask);font-weight:600;white-space:nowrap}
+.needs:hover{filter:brightness(1.03)}
+.ib{width:34px;height:34px;border-radius:9px;display:grid;place-items:center;color:var(--text-2);flex:none}
+.ib:hover{background:var(--hover-2);color:var(--text)}
+.ib.sm{width:28px;height:28px;border-radius:7px}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:7px;height:34px;padding:0 14px;border-radius:9px;border:1px solid var(--line-2);background:var(--surface);font-weight:600;white-space:nowrap;transition:background .12s,border-color .12s}
+.btn:hover{background:var(--hover-2)}
+.btn.primary{background:var(--ink);color:var(--on-ink);border-color:var(--ink)}
+.btn.primary:hover{opacity:.9;background:var(--ink)}
+.btn.ghost{border-color:transparent;background:transparent;color:var(--text-2)}
+.btn.ghost:hover{background:var(--hover-2);color:var(--text)}
+.btn.ask{background:var(--ask-fill);border-color:var(--ask-fill);color:#2a1b00}
+.btn.danger{color:var(--fail)}
+.btn.sm{height:28px;padding:0 10px;font-size:13px;border-radius:7px}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.btn .kbd{background:transparent;border-color:color-mix(in srgb,currentColor 30%,transparent);color:inherit;opacity:.7}
+
+/* ---------- avatars, beads, status vocabulary ---------- */
+.av{--s:30px;position:relative;flex:none;width:var(--s);height:var(--s);border-radius:50%;display:grid;place-items:center;background:var(--c);color:#17181B;font-weight:700;font-size:calc(var(--s)*.36);letter-spacing:.01em}
+.av .tb{position:absolute;right:calc(var(--s)*-.12);bottom:calc(var(--s)*-.1);min-width:calc(var(--s)*.46);height:calc(var(--s)*.46);padding:0 2px;border-radius:calc(var(--s)*.14);display:grid;place-items:center;background:var(--surface);border:1px solid var(--line-2);font:700 calc(var(--s)*.2)/1 var(--font);color:var(--text-2);font-style:normal}
+.av.gone{filter:grayscale(1);opacity:.5}
+.bead{flex:none;width:16px;height:16px;display:grid;place-items:center}
+.t-work{color:var(--work)}.t-ask{color:var(--ask)}.t-idle{color:var(--text-2)}.t-block{color:var(--block)}.t-fail{color:var(--fail)}.t-done{color:var(--text-2)}.t-gone{color:var(--text-3)}.t-review{color:var(--work)}
+.pulse{transform-origin:8px 8px;animation:pulse 2.4s var(--ease) infinite}
+@keyframes pulse{0%{transform:scale(.55);opacity:.75}70%{transform:scale(1.08);opacity:0}100%{opacity:0}}
+.chip{display:inline-flex;align-items:center;gap:5px;height:22px;padding:0 8px;border-radius:11px;font-size:12px;font-weight:600;background:var(--sunken);color:var(--text-2);white-space:nowrap}
+.chip.work{background:var(--work-soft);color:var(--work)}.chip.ask{background:var(--ask-soft);color:var(--ask);box-shadow:inset 0 0 0 1px var(--ask-line)}.chip.fail{background:var(--fail-soft);color:var(--fail)}
+
+/* ---------- work header ---------- */
+.work{display:flex;min-height:0;position:relative}
+.wmain{flex:1;min-width:0;display:flex;flex-direction:column;min-height:0}
+.whead{display:flex;align-items:center;gap:10px;height:56px;padding:0 18px;border-bottom:1px solid var(--line);background:var(--surface-2);flex:none;min-width:0}
+.scope{display:flex;align-items:center;gap:8px;height:34px;padding:0 10px 0 9px;border-radius:9px;font-weight:700;font-size:15px;white-space:nowrap}
+.scope:hover{background:var(--hover-2)}
+.seg{display:flex;gap:2px;padding:3px;border-radius:10px;background:var(--sunken);border:1px solid var(--line);flex:none}
+.seg button{height:28px;padding:0 11px;border-radius:7px;color:var(--text-2);font-weight:600;display:flex;align-items:center;gap:6px;white-space:nowrap}
+.seg button:hover{color:var(--text)}
+.seg button[aria-pressed=true]{background:var(--surface);color:var(--text);box-shadow:var(--shadow-1)}
+.seg .n{color:var(--text-3);font-weight:500}.seg .n.ask{color:var(--ask);font-weight:700}
+.find{display:flex;align-items:center;gap:8px;height:34px;width:220px;padding:0 10px;border-radius:9px;border:1px solid var(--line);background:var(--surface);color:var(--text-3)}
+.find input{flex:1;min-width:0;border:0;background:transparent;outline:none;color:var(--text)}
+.lens{display:flex;gap:2px;padding:3px;border-radius:11px;background:var(--sunken);border:1px solid var(--line)}
+.lens button{height:30px;padding:0 13px;border-radius:8px;display:flex;align-items:center;gap:7px;font-weight:700;color:var(--text-2)}
+.lens button[aria-pressed=true]{background:var(--ink);color:var(--on-ink)}
+.focusbar{display:inline-flex;align-items:center;gap:8px;height:30px;padding:0 6px 0 11px;border-radius:999px;background:color-mix(in srgb,var(--accent) 9%,var(--surface));border:1px solid var(--accent-line);color:var(--accent);font-weight:600;font-size:13px;white-space:nowrap;max-width:420px;min-width:0}
+/* ---------- the body: outline over a map that is always there ---------- */
+.wbody{flex:1;min-height:0;position:relative;overflow:hidden}
+.outline{position:absolute;left:0;top:0;bottom:0;z-index:3;width:100%;background:var(--surface);overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain}
+.outline.wide{background:var(--bg);padding-bottom:24px}
+.lens-map .outline{width:var(--olw);border-right:1px solid var(--line);box-shadow:4px 0 24px rgba(0,0,0,.05)}
+.lens-map.ol-hidden .outline{width:0;border:0;visibility:hidden}
+.lens-list .mappane *{animation-play-state:paused}
+.mappane{position:absolute;inset:0;background:var(--map);background-image:radial-gradient(var(--dot) 1.1px,transparent 1.3px);background-size:22px 22px;overflow:hidden;cursor:grab;touch-action:none}
+.mappane.drag{cursor:grabbing}
+.mappane::before,.mappane::after{content:"";position:absolute;top:0;bottom:0;width:56px;z-index:1;pointer-events:none}
+.mappane::before{left:0;background:linear-gradient(90deg,var(--map),transparent)}
+.mappane::after{right:0;background:linear-gradient(270deg,var(--map),transparent)}
+/* ---------- outline (one component, two densities) ---------- */
+.ol-sec{display:flex;align-items:center;gap:8px;height:34px;padding:0 18px;margin-top:6px;font-size:11.5px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--text-3);position:sticky;top:0;background:var(--surface);z-index:1}
+.ol-sec .n{letter-spacing:0;color:var(--text-4)}
+.ol-sec.sec-needs{color:var(--ask)}
+.wide .ol-sec{background:var(--bg);padding:0 22px;height:40px;margin-top:2px}
+.wide .ol-cols{padding:0 33px 0 25px;border-bottom:0;height:26px;margin-top:6px}
+.tcard{margin:0 14px 10px;border-radius:14px;background:var(--surface);border:1px solid var(--line);box-shadow:var(--shadow-1);overflow:hidden;padding:3px 0}
+.compact .tcard{margin:0;border:0;border-radius:0;box-shadow:none;background:transparent;padding:0 0 4px}
+.ol-cols{display:grid;grid-template-columns:minmax(0,2.1fr) 210px minmax(0,1.7fr) 72px;column-gap:18px;padding:0 18px;height:30px;align-items:center;font-size:11.5px;color:var(--text-3);font-weight:600;border-bottom:1px solid var(--line-3)}
+.compact .ol-cols{display:none}
+.row{display:grid;grid-template-columns:minmax(0,2.1fr) 210px minmax(0,1.7fr) 72px;column-gap:18px;align-items:center;min-height:46px;padding:0 18px 0 10px;cursor:pointer;position:relative}
+.row:hover,.row.hl{background:var(--hover)}
+.row[aria-selected=true]{background:var(--accent-soft)}
+.row[aria-selected=true]::before{content:"";position:absolute;left:0;top:6px;bottom:6px;width:3px;border-radius:0 3px 3px 0;background:var(--accent)}
+.row.root{min-height:54px}
+.row.root+.row:not(.root){}
+.row.dim{opacity:.4}
+.c-main{display:flex;align-items:center;min-width:0;align-self:stretch}
+.g{flex:none;width:22px;align-self:stretch;position:relative}
+.g.v::before,.g.tee::before{content:"";position:absolute;left:10px;top:0;bottom:0;border-left:1.5px solid var(--thread)}
+.g.el::after,.g.tee::after{content:"";position:absolute;left:10px;top:0;height:50%;width:9px;border-left:1.5px solid var(--thread);border-bottom:1.5px solid var(--thread);border-bottom-left-radius:8px}
+.fold{flex:none;width:22px;height:22px;border-radius:6px;display:grid;place-items:center;color:var(--text-3);margin-right:2px}
+.fold:hover{background:var(--hover-2);color:var(--text)}
+.fold-pad{flex:none;width:24px}
+.c-main .bead{margin-right:9px}
+.r-title{min-width:0;flex:1;font-weight:600;line-height:1.3;text-align:left;padding:6px 0}
+.root .r-title{font-size:14.5px}
+.r-title .t{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.r-title .sub{display:block;font-size:12px;font-weight:500;color:var(--text-3);margin-top:1px}
+.r-title.removed .t{text-decoration:line-through;text-decoration-color:var(--text-4);color:var(--text-3)}
+.c-who{display:flex;align-items:center;gap:9px;min-width:0;font-size:13px;color:var(--text-2)}
+.c-who .w{min-width:0}
+.c-who .w b{display:block;font-weight:600;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.c-who .w small{display:block;font-size:11.5px;color:var(--text-3)}
+.c-now{font-size:13px;min-width:0;line-height:1.35}
+.c-now .l{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;transition:opacity .3s}
+.c-now .l.fade{opacity:0}
+.c-now .l2{display:block;font-size:12px;color:var(--text-3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.c-time{font-size:12.5px;color:var(--text-3);text-align:right;white-space:nowrap}
+.row .quick{position:absolute;right:12px;top:50%;transform:translateY(-50%);display:none;gap:4px;padding-left:10px;background:linear-gradient(90deg,transparent,var(--hover) 12px)}
+.row:hover .quick{display:flex}
+.row[aria-selected=true] .quick{background:linear-gradient(90deg,transparent,color-mix(in srgb,var(--accent) 6%,var(--surface)) 12px)}
+.compact .row{grid-template-columns:minmax(0,1fr);min-height:36px;padding:0 10px 0 6px}
+.compact .row.root{min-height:42px}
+.compact .c-who,.compact .c-now,.compact .c-time,.compact .quick,.compact .r-title .sub{display:none!important}
+.compact .r-title{font-size:13.5px;font-weight:500;padding:4px 0}
+.compact .root .r-title{font-size:13.5px;font-weight:700}
+.compact .ol-sec{padding:0 14px;height:30px;font-size:11px}
+.compact .attn-dot{display:inline-flex}
+.attn-dot{display:none;flex:none;margin-left:6px;width:8px;height:8px;border-radius:50%;background:var(--ask-fill)}
+.ol-empty{padding:28px 20px;color:var(--text-3)}
+.crumbs{display:flex;align-items:center;gap:6px;flex-wrap:wrap;padding:10px 14px 10px 18px;font-size:12.5px;color:var(--text-3)}
+.crumbs .focusbar{height:24px;padding:0 9px;font-size:12px}
+.crumbs button{color:var(--text-2);font-weight:600}.crumbs button:hover{color:var(--text)}
+/* ---------- map ---------- */
+.minner{position:absolute;left:0;top:0;transform-origin:0 0;will-change:transform}
+.edges{position:absolute;left:0;top:0;overflow:visible;pointer-events:none}
+.edges path{fill:none;stroke:var(--thread);stroke-width:1.6}
+.edges path.e-work{stroke:var(--work);stroke-opacity:.55;stroke-dasharray:6 6;animation:flow 1.1s linear infinite}
+.edges path.e-ask{stroke:var(--ask-fill);stroke-width:2}
+.edges path.e-gone{stroke-dasharray:2 5;stroke:var(--text-4)}
+.edges path.e-fail{stroke:var(--fail);stroke-opacity:.6}
+.edges path.dim{opacity:.18}
+@keyframes flow{to{stroke-dashoffset:-12}}
+.gn{position:absolute;width:168px;display:flex;flex-direction:column;align-items:center;text-align:center;gap:6px;padding:6px 6px 8px;border-radius:14px;transform-origin:50% 29px;transition:background .15s}
+.gn:hover,.gn.hl{background:color-mix(in srgb,var(--surface) 70%,transparent)}
+.gav{position:relative;display:grid;place-items:center;border-radius:50%}
+.gav .ring{position:absolute;inset:-6px;border-radius:50%;border:2px solid var(--work);opacity:.55;animation:ring 2.4s ease-in-out infinite}
+@keyframes ring{50%{opacity:.12;transform:scale(1.07)}}
+.gav .ring.ask{border-color:var(--ask-fill);opacity:.9;animation:none}
+.gav .ring.idle{border:1.5px dashed var(--text-4);animation:none;opacity:1}
+.gav .ring.sel{border:2.5px solid var(--accent);opacity:1;animation:none;inset:-7px}
+.gav .badge{position:absolute;right:-9px;top:-9px;width:24px;height:24px;border-radius:50%;display:grid;place-items:center;box-shadow:0 0 0 3px var(--map)}
+.gav .badge.ask{background:var(--ask-fill);color:#2a1b00}.gav .badge.fail{background:var(--fail);color:#fff}.gav .badge.block{background:var(--block);color:#fff}.gav .badge.paused{background:var(--ask-fill);color:#2a1b00}.gav .badge.done{background:var(--surface);color:var(--text-2);border:1px solid var(--line-2)}
+.gn .gt{font-weight:600;font-size:13px;line-height:1.3;max-width:156px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.gn.root .gt{font-size:14px;font-weight:700}
+.gn .gt.removed{text-decoration:line-through;text-decoration-color:var(--text-4);color:var(--text-3)}
+.gn .gs{font-size:12px;font-weight:600;margin-top:-2px}
+.gn .gproj{position:absolute;top:-26px;left:50%;transform:translateX(-50%);font-size:11.5px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--text-3);white-space:nowrap}
+.gn .gfold{display:inline-flex;align-items:center;gap:3px;height:20px;padding:0 7px;border-radius:10px;background:var(--surface);border:1px solid var(--line-2);font-size:11.5px;font-weight:700;color:var(--text-2);margin-top:2px}
+.gn[aria-pressed=true] .gt{color:var(--accent)}
+.gn.dim{opacity:.22}
+.minner.far .gn .gs{display:none}
+.minner.far .gn:not(.root) .gt{-webkit-line-clamp:1}
+.mtool{position:absolute;top:14px;z-index:2;display:flex;align-items:center;gap:8px}
+.mcard{display:flex;align-items:center;gap:8px;height:36px;padding:0 6px 0 12px;border-radius:10px;background:var(--surface);border:1px solid var(--line);box-shadow:var(--shadow-1);font-weight:600;white-space:nowrap;max-width:440px}
+.mctl{position:absolute;bottom:16px;z-index:2;display:flex;gap:2px;padding:3px;border-radius:11px;background:var(--surface);border:1px solid var(--line);box-shadow:var(--shadow-2)}
+.mctl .pct{min-width:48px;display:grid;place-items:center;font-size:12px;font-weight:600;color:var(--text-2)}
+.mini{position:absolute;right:16px;bottom:16px;z-index:2;width:196px;height:118px;border-radius:12px;background:var(--surface);border:1px solid var(--line);box-shadow:var(--shadow-2);overflow:hidden;cursor:pointer}
+.mini svg{display:block}
+.gav .badge.done.rv{background:var(--work);color:#fff;border:0}
+.gr{position:absolute;width:208px;height:52px;display:flex;align-items:center;gap:10px;padding:0 10px 0 9px;border-radius:12px;background:var(--surface);border:1px solid var(--line);box-shadow:var(--shadow-1);text-align:left;transition:border-color .15s,box-shadow .15s}
+.gr:hover,.gr.hl{border-color:var(--line-2)}
+.gr[aria-pressed=true]{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+.gr.gr-ask{border-color:var(--ask-line);background:color-mix(in srgb,var(--ask-fill) 8%,var(--surface))}
+.gr .grt{min-width:0;flex:1;display:flex;flex-direction:column;gap:1px}
+.gr .t{font-weight:600;font-size:12.5px;line-height:1.3;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.gr .t.removed{text-decoration:line-through;text-decoration-color:var(--text-4);color:var(--text-3)}
+.gr .s{font-size:11.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.gr .gav .ring{inset:-4px;border-width:1.5px}
+.gr .gav .badge{width:17px;height:17px;right:-6px;top:-6px;box-shadow:0 0 0 2px var(--surface)}
+.gr.dim{opacity:.22}
+.minner.far .gr .s{display:none}
+.mbtn{display:flex;align-items:center;gap:7px;height:36px;padding:0 12px 0 10px;border-radius:10px;background:var(--surface);border:1px solid var(--line);box-shadow:var(--shadow-1);font-weight:600;color:var(--text-2);white-space:nowrap}
+.mbtn:hover,.mbtn[aria-pressed=true]{color:var(--text)}
+.mtool .focusbar{height:36px;border-radius:10px;box-shadow:var(--shadow-1)}
+.ghosts{position:fixed;inset:0;z-index:80;pointer-events:none}
+.ghosts .av{position:fixed;transform-origin:50% 50%;box-shadow:0 8px 22px rgba(0,0,0,.2)}
+/* ---------- inspector ---------- */
+.insp{flex:none;width:var(--insp-w);border-left:1px solid var(--line);background:var(--surface);display:flex;flex-direction:column;min-height:0;position:relative;z-index:5}
+.insp.enter{animation:inspIn .26s var(--ease)}
+@keyframes inspIn{from{opacity:0;transform:translateX(16px)}}
+.resize{position:absolute;left:-4px;top:0;bottom:0;width:8px;cursor:col-resize;z-index:6}
+.resize::after{content:"";position:absolute;left:3px;top:0;bottom:0;width:2px;background:var(--accent);opacity:0;transition:opacity .15s}
+.resize:hover::after,.resize.on::after{opacity:.6}
+.ih{padding:16px 16px 14px 18px;border-bottom:1px solid var(--line)}
+.ih-row{display:flex;align-items:flex-start;gap:12px}
+.ih h2{font-size:17px;font-weight:700;letter-spacing:-.01em;line-height:1.3}
+.ih .role{font-size:12.5px;color:var(--text-3);margin-top:3px}
+.ih .state{display:flex;align-items:center;gap:7px;margin-top:10px;font-size:13px;font-weight:600}
+.ih .state .muted{color:var(--text-3);font-weight:500}
+.tabs{display:flex;gap:2px;padding:0 12px;border-bottom:1px solid var(--line);flex:none}
+.tab{height:40px;padding:0 9px;font-weight:600;color:var(--text-2);border-bottom:2px solid transparent;margin-bottom:-1px}
+.tab:hover{color:var(--text)}
+.tab[aria-selected=true]{color:var(--text);border-bottom-color:var(--text)}
+.ibody{flex:1;min-height:0;overflow:auto;padding:16px 18px 24px}
+.ifoot{flex:none;display:flex;gap:6px;align-items:center;padding:12px 16px;border-top:1px solid var(--line);background:var(--surface-2)}
+.blk{margin-bottom:20px}
+.blk h3{font-size:11.5px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--text-3);margin-bottom:9px;display:flex;align-items:center;justify-content:space-between}
+.blk h3 .link{text-transform:none;letter-spacing:0;font-weight:600;color:var(--text-2);display:inline-flex;align-items:center;gap:4px}
+.blk h3 .link:hover{color:var(--text)}
+.qcard{border-radius:12px;padding:14px;background:var(--ask-soft);border:1px solid var(--ask-line)}
+.qcard .qh{display:flex;align-items:center;gap:8px;font-size:12.5px;font-weight:700;color:var(--ask);margin-bottom:7px}
+.qcard .qt{font-size:15px;line-height:1.5}
+.qcard textarea{width:100%;min-height:74px;margin-top:11px;border-radius:9px;border:1px solid var(--ask-line);background:var(--surface);padding:10px 12px;resize:vertical;line-height:1.45}
+.qcard .acts{display:flex;gap:6px;align-items:center;margin-top:9px;flex-wrap:wrap}
+.note{border-radius:12px;padding:12px 14px;border:1px solid var(--line);background:var(--surface-2);font-size:13.5px;line-height:1.5}
+.note.fail{background:var(--fail-soft);border-color:color-mix(in srgb,var(--fail) 30%,var(--line))}
+.note.block{border-color:color-mix(in srgb,var(--block) 35%,var(--line))}
+.resp{display:block;width:100%;text-align:left;border-radius:12px;padding:12px 14px;border:1px solid var(--line);background:var(--surface)}
+.resp:hover{border-color:var(--line-2)}
+.resp .rt{font-weight:600;line-height:1.35}
+.resp .rm{font-size:12.5px;color:var(--text-3);margin-top:3px;display:flex;align-items:center;gap:6px}
+.live{border-radius:12px;background:var(--sunken);border:1px solid var(--line);padding:10px 12px;font:12px/1.65 var(--mono);color:var(--text-2)}
+.live div{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.live .k{color:var(--text-4);display:inline-block;width:44px}
+.live .cur{color:var(--text)}
+.fam{border-radius:12px;border:1px solid var(--line);background:var(--map);background-image:radial-gradient(var(--dot) 1px,transparent 1.2px);background-size:16px 16px;padding:6px}
+.fam svg{display:block;width:100%}
+.fam .fnode{cursor:pointer}
+.kids{display:grid;gap:2px}
+.kid{display:grid;grid-template-columns:16px minmax(0,1fr) auto;gap:10px;align-items:center;padding:7px 8px;border-radius:9px;text-align:left;width:100%}
+.kid:hover{background:var(--hover)}
+.kid .kt{font-weight:600;font-size:13.5px}
+.kid.team{grid-template-columns:16px 24px minmax(0,1fr) auto}
+.kid .kt.removed{text-decoration:line-through;color:var(--text-3)}
+.tl{display:grid}
+.tl-i{display:grid;grid-template-columns:20px minmax(0,1fr) auto;gap:10px;padding:0 0 14px;position:relative}
+.tl-i::before{content:"";position:absolute;left:9px;top:20px;bottom:0;border-left:1.5px solid var(--thread-soft)}
+.tl-i:last-child::before{display:none}
+.tl-d{width:19px;height:19px;border-radius:50%;display:grid;place-items:center;background:var(--surface);border:1.5px solid var(--thread);color:var(--text-2)}
+.tl-t{font-size:13.5px;line-height:1.45}.tl-t small{display:block;color:var(--text-3);font-size:12.5px}
+.tl-time{font-size:12px;color:var(--text-3);font-variant-numeric:tabular-nums}
+.out{border-radius:12px;background:var(--sunken);border:1px solid var(--line);font:12px/1.7 var(--mono);padding:8px 0;color:var(--text-2)}
+.out div{display:grid;grid-template-columns:54px minmax(0,1fr);gap:8px;padding:0 12px;white-space:pre-wrap;word-break:break-word}
+.out .k{color:var(--text-4)}.out .ok{color:var(--work)}.out .ctl{color:var(--accent)}
+.set{border:1px solid var(--line);border-radius:12px;overflow:hidden}
+.set-r{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px;align-items:center;padding:12px 14px;background:var(--surface)}
+.set-r+.set-r{border-top:1px solid var(--line-3)}
+.set-r b{display:block;font-weight:600}.set-r small{display:block;font-size:12.5px;color:var(--text-3);margin-top:1px}
+.sw{width:34px;height:20px;border-radius:10px;background:var(--line-2);position:relative;flex:none}
+.sw::after{content:"";position:absolute;left:2px;top:2px;width:16px;height:16px;border-radius:50%;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.25);transition:transform .18s var(--ease)}
+.sw[aria-checked=true]{background:var(--ink)}.sw[aria-checked=true]::after{transform:translateX(14px);background:var(--on-ink)}
+.kv{display:grid;grid-template-columns:110px minmax(0,1fr);gap:7px 12px;font-size:13px}.kv dt{color:var(--text-3)}.kv dd{margin:0;min-width:0;word-break:break-all}
+/* ---------- pages ---------- */
+.page{overflow:auto;height:100%}
+.pwrap{max-width:1180px;margin:0 auto;padding:26px 32px 72px}
+.pcrumb{display:flex;align-items:center;gap:7px;font-size:13px;color:var(--text-3);margin-bottom:12px;flex-wrap:wrap}
+.pcrumb button{color:var(--text-2);font-weight:600;display:inline-flex;align-items:center;gap:4px}.pcrumb button:hover{color:var(--text)}
+.ptitle{font-size:28px;font-weight:700;letter-spacing:-.02em;line-height:1.2}
+.psub{color:var(--text-2);margin-top:6px;font-size:15px}
+.pmeta{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:10px;color:var(--text-3);font-size:13.5px}
+.banner{display:flex;align-items:center;gap:12px;margin:20px 0 24px;padding:14px 18px;border-radius:14px;font-size:15px;font-weight:500}
+.banner.ask{background:var(--ask-soft);border:1px solid var(--ask-line)}
+.banner.ok{background:var(--work-soft);border:1px solid color-mix(in srgb,var(--work) 30%,transparent)}
+.cols{display:grid;grid-template-columns:minmax(0,1.6fr) minmax(320px,1fr);gap:24px;align-items:start}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:16px;box-shadow:var(--shadow-1)}
+.card-h{display:flex;align-items:center;gap:10px;padding:14px 18px 6px}
+.card-h h2{font-size:15px;font-weight:700}
+.card-b{padding:8px 18px 18px}
+.prose{font-size:15.5px;line-height:1.65}
+.steps .st{display:grid;grid-template-columns:22px minmax(0,1fr) auto;gap:12px;padding:10px 0;position:relative}
+.steps .st:not(:last-child)::before{content:"";position:absolute;left:10px;top:34px;bottom:-4px;border-left:1.5px solid var(--thread-soft)}
+.steps .sd{width:22px;height:22px;border-radius:50%;display:grid;place-items:center;background:var(--sunken);color:var(--text-2)}
+.steps b{font-weight:600}.steps small{display:block;color:var(--text-2);font-size:13.5px;margin-top:1px}
+.steps .tm{font-size:12.5px;color:var(--text-3);font-variant-numeric:tabular-nums}
+.say{border-left:3px solid var(--line-2);padding:4px 0 4px 16px;font-size:15.5px;line-height:1.6}
+.ck{display:grid;grid-template-columns:22px minmax(0,1fr);gap:10px;padding:9px 0;font-size:14.5px}
+.ck+.ck{border-top:1px dashed var(--line)}
+.ck small{display:block;color:var(--text-3);font-size:13px}
+.mini-lens{display:flex;gap:2px;padding:2px;border-radius:8px;background:var(--sunken);border:1px solid var(--line);margin-left:auto}
+.mini-lens button{height:24px;padding:0 9px;border-radius:6px;font-size:12px;font-weight:700;color:var(--text-2)}
+.mini-lens button[aria-pressed=true]{background:var(--surface);color:var(--text);box-shadow:var(--shadow-1)}
+/* new task */
+.compose{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(340px,1fr);gap:24px;align-items:start}
+.write{padding:6px 0 0}
+.write textarea{width:100%;min-height:250px;border:1px solid var(--line);border-radius:16px;background:var(--surface);padding:18px 20px;font-size:17px;line-height:1.6;resize:vertical;box-shadow:var(--shadow-1)}
+.write textarea:focus{border-color:var(--line-2);box-shadow:0 0 0 4px var(--accent-soft)}
+.starts{display:flex;gap:6px;flex-wrap:wrap;margin-top:12px}
+.starts button{height:30px;padding:0 12px;border-radius:999px;border:1px dashed var(--line-2);color:var(--text-2);font-weight:600;font-size:13px}
+.starts button:hover{border-style:solid;color:var(--text)}
+.field{margin-top:22px}
+.field>label,.flabel{display:block;font-size:12px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--text-3);margin-bottom:8px}
+.tools{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+.tool{display:flex;flex-direction:column;gap:6px;padding:12px;border-radius:12px;border:1.5px solid var(--line);background:var(--surface);text-align:left;min-height:96px}
+.tool[aria-checked=true]{border-color:var(--ink);box-shadow:0 0 0 3px var(--accent-soft)}
+.tool[aria-disabled=true]{opacity:.5;cursor:not-allowed}
+.tool b{font-weight:700}.tool small{font-size:12px;color:var(--text-3);line-height:1.35}
+.side{position:sticky;top:20px}
+.opt{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px;align-items:center;padding:13px 0}
+.opt+.opt{border-top:1px solid var(--line-3)}
+.opt b{display:block;font-weight:600}.opt small{display:block;color:var(--text-3);font-size:12.5px;margin-top:1px}
+.segc{display:inline-flex;gap:2px;padding:2px;border-radius:9px;background:var(--sunken);border:1px solid var(--line)}
+.segc button{height:28px;padding:0 10px;border-radius:7px;font-weight:600;font-size:12.5px;color:var(--text-2);white-space:nowrap}
+.segc button[aria-pressed=true]{background:var(--surface);color:var(--text);box-shadow:var(--shadow-1)}
+.preview{margin-top:16px;border-radius:14px;border:1px solid var(--line);background:var(--map);background-image:radial-gradient(var(--dot) 1px,transparent 1.2px);background-size:18px 18px;padding:14px}
+.summary{font-size:14px;color:var(--text-2);line-height:1.55;margin-top:12px}.summary b{color:var(--text)}
+.select{display:inline-flex;align-items:center;gap:8px;height:32px;padding:0 10px;border-radius:8px;border:1px solid var(--line-2);background:var(--surface);font-weight:600}
+/* connections */
+.prov{display:grid;grid-template-columns:52px minmax(0,1fr) auto;gap:18px;align-items:start;padding:20px 22px}
+.prov+.prov{border-top:1px solid var(--line-3)}
+.plogo{width:52px;height:52px;border-radius:15px;display:grid;place-items:center;font-weight:700;font-size:17px;color:#17181B}
+.prov h3{font-size:17px;font-weight:700;display:flex;align-items:center;gap:10px}
+.prov .lead{font-size:15px;line-height:1.55;margin-top:6px;color:var(--text)}
+.facts{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+.fact{display:inline-flex;align-items:center;gap:6px;height:26px;padding:0 10px;border-radius:8px;background:var(--sunken);font-size:12.5px;color:var(--text-2)}
+.fact.ok svg{color:var(--work)}.fact.warn svg{color:var(--ask)}
+.pacts{display:flex;flex-direction:column;gap:6px;align-items:stretch;min-width:170px}
+.confirmb{margin-top:12px;padding:12px 14px;border-radius:12px;background:var(--ask-soft);border:1px solid var(--ask-line);font-size:13.5px;display:grid;gap:10px}
+.confirmb label{display:flex;gap:9px;align-items:flex-start}
+.review{margin-top:12px;padding:14px;border-radius:12px;border:1px solid var(--line-2);background:var(--surface-2)}
+.cmd{display:flex;align-items:center;gap:10px;margin-top:10px;padding:9px 12px;border-radius:9px;background:var(--sunken);border:1px solid var(--line);font:13px/1.4 var(--mono)}
+/* settings */
+.sgrid{display:grid;grid-template-columns:200px minmax(0,1fr);gap:28px;align-items:start}
+.sidx{position:sticky;top:24px;display:grid;gap:2px}
+.sidx button{height:34px;padding:0 12px;border-radius:8px;text-align:left;font-weight:600;color:var(--text-2)}
+.sidx button[aria-current=true],.sidx button:hover{background:var(--hover-2);color:var(--text)}
+.ssec{margin-bottom:18px}
+.themes{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+.theme{border:1.5px solid var(--line);border-radius:14px;padding:10px;text-align:left;background:var(--surface)}
+.theme[aria-checked=true]{border-color:var(--ink);box-shadow:0 0 0 3px var(--accent-soft)}
+.theme .pv{height:86px;border-radius:9px;overflow:hidden;border:1px solid var(--line);display:grid;grid-template-columns:34% 1fr}
+.theme .lbl{display:flex;align-items:center;gap:7px;margin-top:9px;font-weight:600}
+.pv-l{background:#fff}.pv-l .a{background:#F3F2EE}.pv-d{background:#16171B}.pv-d .a{background:#0E0F12}
+.pv .a{display:grid;align-content:start;gap:5px;padding:8px}.pv .a i{height:6px;border-radius:3px;background:rgba(127,127,127,.35)}
+.pv .b{position:relative}.pv .b i{position:absolute;width:14px;height:14px;border-radius:50%}
+.projrow{display:grid;grid-template-columns:34px minmax(0,1fr) auto;gap:12px;align-items:center;padding:12px 0}
+.projrow+.projrow{border-top:1px solid var(--line-3)}
+.pi{width:34px;height:34px;border-radius:10px;display:grid;place-items:center;background:var(--sunken);color:var(--text-2)}
+.inputrow{display:flex;gap:8px;margin-top:12px}
+.inputrow input{flex:1;height:34px;border-radius:9px;border:1px solid var(--line-2);background:var(--surface);padding:0 12px;font:13px var(--mono)}
+.keys{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px 24px;font-size:13.5px}
+.keys div{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:5px 0;border-bottom:1px dashed var(--line-3)}
+/* projects */
+.pgrid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;margin-top:22px}
+.pcard{padding:18px 18px 16px;display:flex;flex-direction:column;gap:10px;text-align:left}
+.pcard h3{font-size:17px;font-weight:700;display:flex;align-items:center;gap:10px}
+.pcard .stats{display:flex;gap:14px;font-size:13px;color:var(--text-2)}
+.pcard .stats b{font-size:18px;display:block;color:var(--text)}
+.pthumb{height:128px;border-radius:12px;background:var(--map);background-image:radial-gradient(var(--dot) 1px,transparent 1.2px);background-size:14px 14px;border:1px solid var(--line-3);display:grid;place-items:center;padding:12px;overflow:hidden}
+.pthumb path{fill:none;stroke:var(--thread);stroke-width:1.4}
+.toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);z-index:90;display:flex;align-items:center;gap:10px;padding:10px 16px;border-radius:12px;background:var(--ink);color:var(--on-ink);box-shadow:var(--shadow-3);font-size:13.5px;max-width:min(640px,92vw)}
+.pop{position:absolute;z-index:60;background:var(--surface);border:1px solid var(--line-2);border-radius:12px;box-shadow:var(--shadow-3);padding:6px;min-width:240px;animation:popIn .14s var(--ease)}
+@keyframes popIn{from{opacity:0;transform:translateY(-4px)}}
+.pop button{display:flex;align-items:center;gap:9px;width:100%;height:34px;padding:0 10px;border-radius:8px;font-weight:500}
+.pop button:hover{background:var(--hover-2)}
+.pop .ph{padding:8px 10px 4px;font-size:11.5px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--text-3)}
+/* responsive */
+/* ---------- refinement round 1: New Task lead/children, project picker, Connections ---------- */
+.grp{padding:4px 0 6px}.grp+.grp{border-top:1px solid var(--line);margin-top:8px;padding-top:12px}
+.grp-h{display:flex;align-items:baseline;gap:8px;margin-bottom:4px}
+.grp-t{font-size:12px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--text-2)}
+.grp-s{font-size:12.5px;color:var(--text-3)}
+.leadrow{display:flex;align-items:center;gap:12px;padding:10px 12px;margin:6px 0 2px;border-radius:12px;background:var(--sunken);border:1px solid var(--line-3)}
+.leadtxt b{display:block;font-weight:700}.leadtxt small{display:block;color:var(--text-2);font-size:13px}
+.sel{position:relative;display:inline-flex;align-items:center}
+.sel select{appearance:none;-webkit-appearance:none;height:34px;padding:0 32px 0 11px;border-radius:9px;border:1px solid var(--line-2);background:var(--surface);font-weight:600;cursor:pointer;max-width:210px}
+.sel select:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.sel .ic{position:absolute;right:10px;pointer-events:none;color:var(--text-3)}
+.segc button{min-height:30px}.segc button:focus-visible{outline-offset:0}
+.segc.wide{display:flex;width:100%}.segc.wide button{flex:1;height:34px}
+.dim-val{font-size:13px;font-weight:600;color:var(--text-2);white-space:nowrap}
+.optcol{display:grid;gap:9px;padding:8px 0 4px}.optcol>b{font-weight:600}
+.expl{font-size:13px;line-height:1.5;color:var(--text-2)}.expl.sub{font-size:12.5px;color:var(--text-3)}
+.pchips{display:flex;flex-wrap:wrap;gap:6px}
+.pchip{display:inline-flex;align-items:center;gap:7px;height:34px;padding:0 11px 0 6px;border-radius:999px;border:1.5px solid var(--line-2);background:var(--surface);font-weight:600;font-size:13px}
+.pchip.on{border-color:var(--ink);background:color-mix(in srgb,var(--ink) 5%,var(--surface))}
+.pchip[aria-disabled=true]{opacity:.5;cursor:not-allowed;border-style:dashed}
+.why{font-size:12.5px;color:var(--text-3);line-height:1.45}
+.note-i{display:flex;gap:9px;align-items:flex-start;font-size:12.5px;line-height:1.5;color:var(--text-2);padding:9px 11px;border-radius:10px;background:var(--sunken)}
+.note-i .ic{margin-top:2px;color:var(--text-3)}
+.lnk{color:var(--accent);font-weight:600;text-decoration:underline;text-decoration-thickness:1px;text-underline-offset:2px}
+.summary p+p{margin-top:5px}
+.simtag{display:inline-flex;align-items:center;height:20px;padding:0 7px;border-radius:6px;border:1px dashed var(--line-2);font-size:11px;font-weight:700;letter-spacing:.03em;color:var(--text-3);white-space:nowrap}
+/* project picker */
+.pjfield{position:relative}
+.pjwrap{position:relative;border-radius:14px}
+.pj{display:flex;align-items:center;gap:12px;width:100%;min-height:60px;padding:10px 14px 10px 10px;border-radius:14px;border:1px solid var(--line-2);background:var(--surface);box-shadow:var(--shadow-1);text-align:left;transition:border-color .15s,box-shadow .15s}
+.pj:hover{border-color:var(--text-4)}
+.pji{flex:none;width:30px;height:30px;border-radius:9px;display:grid;place-items:center;background:var(--sunken);color:var(--text-2)}
+.pji.lg{width:40px;height:40px;border-radius:11px}
+.pjt{min-width:0;flex:1}.pjt b{display:block;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pjt small{display:block;font-size:12px;color:var(--text-3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pjmeta{font-size:12px;color:var(--text-3);white-space:nowrap}
+.pjchg{display:inline-flex;align-items:center;gap:4px;font-weight:600;color:var(--text-2);padding-left:10px;border-left:1px solid var(--line);white-space:nowrap}
+.pjdrop{position:absolute;inset:0;border-radius:14px;display:none;align-items:center;justify-content:center;gap:9px;font-weight:700;color:var(--accent);background:color-mix(in srgb,var(--accent) 8%,var(--surface));border:2px dashed var(--accent);pointer-events:none}
+.pjwrap.over .pjdrop{display:flex}
+.pjhint{font-size:12.5px;color:var(--text-3);margin-top:8px;line-height:1.55}.pjhint .ic{display:inline-block;vertical-align:-2px;margin-right:2px}
+.simrow{display:flex;align-items:center;gap:7px;flex-wrap:wrap;font-size:12px;color:var(--text-3);margin-top:6px}
+.pjpop{position:absolute;left:0;right:0;top:calc(100% + 6px);z-index:40;background:var(--surface);border:1px solid var(--line-2);border-radius:14px;box-shadow:var(--shadow-3);padding:6px;animation:popIn .14s var(--ease)}
+.pjsearch{display:flex;align-items:center;gap:8px;height:38px;padding:0 10px;margin:2px 2px 6px;border-radius:9px;background:var(--sunken);color:var(--text-3)}
+.pjsearch input{flex:1;border:0;background:transparent;outline:none;color:var(--text)}
+.pjh{padding:6px 10px 4px;font-size:11.5px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--text-3)}
+.pjo{display:flex;align-items:center;gap:10px;width:100%;min-height:48px;padding:6px 10px;border-radius:10px;text-align:left}
+.pjo:hover,.pjo:focus-visible{background:var(--hover-2)}
+.pjo[aria-pressed=true]{background:var(--accent-soft)}
+.pjsep{height:1px;background:var(--line);margin:6px 4px}
+.pjres{margin-top:10px;padding:12px 14px;border-radius:12px;border:1px solid color-mix(in srgb,var(--work) 35%,var(--line));background:color-mix(in srgb,var(--work) 6%,var(--surface))}
+.pjres.bad{border-color:color-mix(in srgb,var(--fail) 40%,var(--line))}
+.pjres.bad{background:var(--fail-soft)}
+.pjres-h{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.pjres-h .mono{font-size:12px;color:var(--text-3)}
+.pjres-h>.ic{color:var(--work)}.pjres.bad .pjres-h>.ic{color:var(--fail)}
+.pjres ul,.fm-checks{list-style:none;margin:10px 0 0;padding:0;display:grid;gap:6px;font-size:13px}
+.pjres li,.fm-checks li{display:flex;gap:8px;align-items:flex-start}
+.pjres li small,.fm-checks li small{display:block;color:var(--text-3);font-size:12px}
+li.ok>.ic{color:var(--work);margin-top:3px}li.no>.ic{color:var(--fail);margin-top:3px}
+.pjres .acts{display:flex;gap:6px;margin-top:12px}
+/* simulated folder browser */
+.scrim{position:fixed;inset:0;z-index:70;background:rgba(10,11,14,.42)}
+.fmodal{position:fixed;z-index:71;left:50%;top:50%;transform:translate(-50%,-50%);width:min(760px,94vw);max-height:86vh;display:flex;flex-direction:column;background:var(--surface);border:1px solid var(--line-2);border-radius:18px;box-shadow:var(--shadow-3);overflow:hidden;animation:popIn .16s var(--ease)}
+.fm-h{display:flex;align-items:center;gap:10px;padding:16px 16px 10px 20px}.fm-h h2{font-size:17px;font-weight:700}
+.fm-crumb{display:flex;align-items:center;gap:7px;padding:0 20px 12px;font-size:13px;color:var(--text-3);border-bottom:1px solid var(--line)}
+.fm-crumb b{color:var(--text)}
+.fm-b{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,1fr);min-height:330px}
+.fm-list{padding:8px;border-right:1px solid var(--line);overflow:auto;display:grid;align-content:start;gap:2px}
+.fm-i{display:flex;align-items:center;gap:10px;min-height:46px;padding:6px 10px;border-radius:10px;text-align:left;width:100%}
+.fm-i:hover{background:var(--hover-2)}.fm-i.on{background:var(--accent-soft);box-shadow:inset 0 0 0 1.5px var(--accent-line)}
+.fm-d{padding:18px 20px}.fm-d h3{font-size:16px;font-weight:700}.fm-d>.mono{font-size:12px;color:var(--text-3);margin-top:3px;word-break:break-all}
+.fm-empty{color:var(--text-3);font-size:13.5px;line-height:1.55}
+.fm-name{display:grid;gap:6px;margin-top:16px;font-size:12px;font-weight:700;color:var(--text-3);letter-spacing:.04em;text-transform:uppercase}
+.fm-name input,.fm-path input{height:36px;border-radius:9px;border:1px solid var(--line-2);background:var(--surface);padding:0 11px;font-size:14px;text-transform:none;letter-spacing:0;color:var(--text)}
+.fm-f{display:flex;align-items:center;gap:8px;padding:12px 16px;border-top:1px solid var(--line);background:var(--surface-2)}
+.fm-path{display:flex;align-items:center;gap:8px;color:var(--text-3)}.fm-path input{width:290px;font-size:12.5px}
+/* connections */
+.explain3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:1px;margin-top:20px;border-radius:14px;overflow:hidden;border:1px solid var(--line);background:var(--line)}
+.explain3>div{background:var(--surface-2);padding:14px 16px;display:grid;grid-template-columns:24px minmax(0,1fr);column-gap:10px;align-content:start}
+.explain3 b{font-weight:700}.explain3 small{grid-column:2;font-size:12.5px;color:var(--text-2);line-height:1.45;margin-top:2px}
+.qn{display:inline-grid;place-items:center;width:22px;height:22px;border-radius:50%;background:var(--sunken);border:1px solid var(--line-2);font-size:11.5px;font-weight:700;color:var(--text-2)}
+.explain3 .qn{grid-row:span 2}
+.provs{overflow:hidden}
+.prov2+.prov2{border-top:1px solid var(--line)}
+.prov2-h{display:flex;align-items:center;gap:14px;width:100%;padding:16px 18px;text-align:left}
+.prov2-h:not(.static):hover{background:var(--hover)}
+.prov2-h .plogo{width:44px;height:44px;border-radius:13px;font-size:15px}
+.prov2-h .pt{flex:1;min-width:0}.prov2-h .pt b{display:block;font-size:16px;font-weight:700}.prov2-h .pt small{display:block;color:var(--text-2);font-size:13.5px;margin-top:2px}
+.cols3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:0;margin:0 18px 16px;border:1px solid var(--line);border-radius:14px;overflow:hidden}
+.cq{padding:14px 14px 16px;display:grid;align-content:start;gap:10px;font-size:13px;line-height:1.5}
+.cq+.cq{border-left:1px solid var(--line)}
+.cq h4{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:700;margin:0}
+.cq p{color:var(--text-2)}.cq .btn{justify-self:start}
+.cfl{list-style:none;margin:0;padding:0;display:grid;gap:8px}
+.cf{display:grid;grid-template-columns:18px minmax(0,1fr);gap:7px}
+.cf small{display:block;color:var(--text-3);font-size:12px}
+.cf-i{margin-top:2px}.cf.ok .cf-i{color:var(--work)}.cf.warn .cf-i{color:var(--ask)}.cf.no .cf-i{color:var(--fail)}.cf.info .cf-i{color:var(--text-3)}
+.cu-src{font-weight:600;color:var(--text)!important}.cu-n{font-size:12.5px;color:var(--text-3)!important}
+.meter{display:grid;gap:5px}.meter-h{display:flex;justify-content:space-between;font-size:12.5px}.meter-h b{font-weight:700}
+.meter-b{height:6px;border-radius:3px;background:var(--sunken);overflow:hidden}.meter-b span{display:block;height:100%;border-radius:3px;background:var(--text-2)}
+.meter small{font-size:11.5px;color:var(--text-3)}
+.ackd summary{cursor:pointer;font-size:12.5px;font-weight:600;color:var(--text-2)}
+.ackd blockquote{margin:8px 0 6px;padding:8px 10px;border-left:3px solid var(--line-2);font-size:12px;color:var(--text-2);background:var(--sunken);border-radius:0 8px 8px 0}
+.prov2 .confirmb{margin:0 18px 18px}
+.cbelow{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;margin-top:16px;align-items:start}
+@media (max-width:1040px){.cbelow{grid-template-columns:1fr}}
+@media (max-width:1180px){.cols3{grid-template-columns:1fr}.cq+.cq{border-left:0;border-top:1px solid var(--line)}.explain3{grid-template-columns:1fr}.fm-path input{width:200px}}
+/* ---------- v2: balanced New Task (config left, sticky summary right) and actionable billing guidance ---------- */
+.nt2{display:grid;grid-template-columns:minmax(0,1fr) 352px;gap:28px;align-items:start;margin-top:22px}
+.nt-main{display:grid;gap:26px;min-width:0}
+.nt-main .write textarea{min-height:168px}
+.nt-main .pjfield{margin-top:0}
+.nt-sec{display:grid;gap:12px;padding-top:22px;border-top:1px solid var(--line)}
+.nt-sh{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}.nt-sh h2{font-size:16px;font-weight:700}.nt-sh span{font-size:13px;color:var(--text-3)}
+.leadcfg{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;padding:14px;border-radius:14px;background:var(--surface);border:1px solid var(--line);box-shadow:var(--shadow-1)}
+.lc{display:grid;gap:7px;align-content:start;min-width:0}
+.lc-l{font-size:12px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--text-3)}
+.lc small{font-size:12px;color:var(--text-3);line-height:1.4}
+.lc .sel select{max-width:100%;width:100%}.lc .sel{width:100%}
+.lc .segc{justify-self:start;max-width:100%}.lc-v{line-height:34px}
+.swrow{display:flex;align-items:center;gap:16px;padding:14px 16px;border-radius:14px;background:var(--surface);border:1px solid var(--line);box-shadow:var(--shadow-1)}
+.swrow>div{flex:1}.swrow b{display:block;font-weight:600}.swrow small{display:block;color:var(--text-3);font-size:12.5px;margin-top:1px}
+.hcfg{display:grid;gap:10px;padding:2px 2px 0}
+.acards{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.acard{display:flex;gap:11px;align-items:flex-start;padding:12px 14px;border-radius:12px;border:1.5px solid var(--line);background:var(--surface);text-align:left;min-height:64px}
+.acard:hover{border-color:var(--line-2)}
+.acard[aria-checked=true]{border-color:var(--ink);box-shadow:0 0 0 3px var(--accent-soft)}
+.acard b{display:block;font-weight:700}.acard small{display:block;font-size:12.5px;color:var(--text-3);margin-top:2px;line-height:1.4}
+.acard .radio{flex:none;width:18px;height:18px;border-radius:50%;border:1.5px solid var(--text-4);margin-top:2px;display:grid;place-items:center}
+.acard[aria-checked=true] .radio{border-color:var(--ink)}.acard[aria-checked=true] .radio::after{content:"";width:9px;height:9px;border-radius:50%;background:var(--ink)}
+.nt-side{position:sticky;top:18px;align-self:start}
+.nt-card .card-b{display:grid;gap:12px}
+.nt-card .preview{margin-top:0;padding:10px 12px 8px}
+.pv-cap{font-size:12px;color:var(--text-3);text-align:center}
+.nt-card .summary{margin-top:0;font-size:13.5px}
+.nt-acts{display:flex;gap:8px;align-items:center;padding-top:12px;border-top:1px solid var(--line)}
+.note-i.usage{font-size:12px}
+.steps2{margin:0;padding-left:18px;display:grid;gap:4px;color:var(--text)}
+.steps2 li::marker{color:var(--text-3);font-weight:700}
+.lnkrow{display:flex;flex-wrap:wrap;gap:6px}
+@media (max-width:1180px){.nt2{grid-template-columns:minmax(0,1fr) 300px;gap:22px}.leadcfg{grid-template-columns:1fr 1fr}.leadcfg .lc:last-child{grid-column:1/-1}}
+@media (max-width:1040px){.acards{grid-template-columns:1fr}.nt-main .tools{grid-template-columns:repeat(2,1fr)}}
+@media (max-width:900px){.nt2{grid-template-columns:1fr}.nt-side{position:sticky;top:auto;bottom:0}}
+@media (max-width:1320px){:root{--insp-w:372px;--olw:272px}.search{width:210px}.find{width:180px}.row,.ol-cols{grid-template-columns:minmax(0,2fr) 180px minmax(0,1.5fr) 64px}}
+@media (max-width:1180px){
+  :root{--insp-w:340px}
+  .search .lbl,.search .kbd,.brand .proto,.btn.primary .kbd{display:none}.search{width:auto}
+  .row,.ol-cols{grid-template-columns:minmax(0,1.3fr) minmax(0,1fr) 60px}.c-who,.ol-cols .h-who{display:none}
+  .find{display:none}
+  .cols,.compose{grid-template-columns:1fr}.tools{grid-template-columns:repeat(2,1fr)}.side{position:static}
+}
+@media (max-width:1040px){
+  :root{--insp-w:320px;--olw:240px}
+  .nav button{padding:0 9px}.whead{gap:8px;padding:0 12px}.lens .lt{display:none}.lens button{padding:0 10px}
+  .row,.ol-cols{grid-template-columns:minmax(0,1fr) 56px}.c-now,.ol-cols .h-now{display:none}
+  .pgrid{grid-template-columns:1fr 1fr}.sgrid{grid-template-columns:1fr}.sidx{display:none}
+}
+@media (max-width:960px){.insp{position:absolute;right:0;top:0;bottom:0;box-shadow:var(--shadow-3)}}
+@media (prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<script>
+/* ============================================================================================
+   Control Center · ATLAS — one workspace, two lenses.
+   The List is the index, the Map shows how work connects; they are the same objects.
+   Each hierarchy node is a TASK with its current AGENT (the worker assigned to it).
+   An edge means the parent task's agent delegated that child task. Nothing here talks to a backend.
+   Deep links (also used for screenshots), e.g.
+     #/work?lens=map&sel=t1b&theme=dark      #/task/t1    #/task/t5   #/new   #/connections   #/settings   #/projects
+     #/work?lens=map&sel=t4c2&insp=0         #/work?morph=0.5  (list→map transition frozen half way)
+   ============================================================================================ */
+const IC={
+  search:'M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14zM20 20l-4-4',plus:'M12 5v14M5 12h14',down:'M6 9l6 6 6-6',right:'M9 6l6 6-6 6',left:'M15 6l-6 6 6 6',
+  list:'M8 6.5h12M8 12h12M8 17.5h12M4 6.5h.01M4 12h.01M4 17.5h.01',map:'M12 4.5a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5zM5.5 15a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5zM18.5 15a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5zM12 9.5v2.5M5.5 15v-1a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1',
+  sun:'M12 16a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM12 2.5v2M12 19.5v2M4.6 4.6l1.4 1.4M18 18l1.4 1.4M2.5 12h2M19.5 12h2M4.6 19.4L6 18M18 6l1.4-1.4',moon:'M19.5 14.5A8 8 0 0 1 9.5 4.5a8 8 0 1 0 10 10z',monitor:'M3.5 5h17v11h-17zM9 20h6M12 16v4',
+  close:'M6 6l12 12M18 6L6 18',check:'M5 12.5l4.5 4.5L19 7.5',stop:'M7.5 7.5h9v9h-9z',redirect:'M15 5.5l4 4-4 4M19 9.5H10a5 5 0 0 0-5 5v4',reply:'M10 7l-5 5 5 5M5 12h9a5 5 0 0 1 5 5v1',
+  more:'M6 12h.01M12 12h.01M18 12h.01',focus:'M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3',fit:'M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5',
+  zin:'M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14zM20 20l-4-4M8 11h6M11 8v6',zout:'M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14zM20 20l-4-4M8 11h6',
+  folder:'M3.5 7.5a2 2 0 0 1 2-2h3.8l2 2h7.2a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z',open:'M14 4.5h5.5V10M19.5 4.5L11 13M18 14v5.5H4.5V6H10',
+  hand:'M8 13V6.5a1.5 1.5 0 0 1 3 0V12M11 11V4.5a1.5 1.5 0 0 1 3 0V11M14 11V6a1.5 1.5 0 0 1 3 0v7a6 6 0 0 1-6 6h-.5A5.5 5.5 0 0 1 5 15.2L3.8 12a1.5 1.5 0 0 1 2.7-1.3L8 13',
+  pause:'M9 6v12M15 6v12',bang:'M12 7v6M12 16.5v.5',terminal:'M4 5h16v14H4zM8 10l3 2-3 2M13 14h3',clock:'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM12 7.5V12l3 2',
+  shield:'M12 3.5l7.5 3v5.5c0 4.6-3.2 7.6-7.5 8.5-4.3-.9-7.5-3.9-7.5-8.5V6.5z',bolt:'M13 3L5 13h6l-1 8 8-10h-6z',merge:'M6 4v16M18 4v6a4 4 0 0 1-4 4H6',
+  split:'M6 4v6a4 4 0 0 0 4 4h8M14 10l4 4-4 4M6 4v16',edit:'M14.5 5.5l4 4M4.5 19.5l4-.9 10.6-10.6-3.1-3.1L5.4 15.5z',x:'M7 7l10 10M17 7L7 17',
+  play:'M8 5.5l11 6.5-11 6.5z',layers:'M12 3.5l8.5 4.6-8.5 4.6-8.5-4.6zM3.5 13l8.5 4.6 8.5-4.6',key:'M14.5 9.5a4 4 0 1 1-1.2-2.8L21 14v3h-3v2h-2v-2.5',
+  sidebar:'M4 5h16v14H4zM9 5v14',copy:'M9 9h11v11H9zM5 15H4V4h11v1',refresh:'M19.5 11A7.5 7.5 0 0 0 5.6 7.6M4.5 4.5v3.4h3.4M4.5 13a7.5 7.5 0 0 0 13.9 3.4M19.5 19.5v-3.4h-3.4',
+  bell:'M6 9a6 6 0 1 1 12 0c0 6 2 7.5 2 7.5H4S6 15 6 9M10 20a2 2 0 0 0 4 0',sliders:'M4 7h9M17 7h3M4 17h3M11 17h9M15 5v4M9 15v4',plug:'M9 7V3M15 7V3M7 7h10v4a5 5 0 0 1-10 0zM12 16v5',
+  grid:'M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z',
+  drop:'M12 4v11M7 10l5 5 5-5M5 19h14',info:'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM12 11v5M12 7.5h.01',
+};
+const ico=(n,s=16,w=1.8)=>`<svg class="ic" width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="${n==='more'?2.8:w}" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${IC[n]}"/></svg>`;
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+/* ---------------- fictional data ---------------- */
+const TOOLS={claude:{label:'Claude Code',m:'Cl'},codex:{label:'Codex',m:'Cx'},gemini:{label:'Gemini CLI',m:'Gm'},mock:{label:'Practice',m:'Pr'}};
+const COL={blue:'#97B4F3',violet:'#B9A7F2',cyan:'#86D2DC',green:'#91D3A6',yellow:'#EBD17E',orange:'#F2B07E',red:'#EF9A9A',pink:'#EFA3CC',neutral:'#BCC0C7'};
+const PROJ={csv:{name:'csv-toolkit',path:'~/code/csv-toolkit'},bill:{name:'billing-service',path:'~/code/billing-service'}};
+const N=[
+  {id:'t1',parent:null,proj:'csv',title:'Turn the CSV starter into a toolkit',ag:{name:'Toolkit lead',custom:1,tool:'claude',model:'Sonnet',effort:'Balanced',color:'blue',init:'TL'},st:'helpers',start:-20,since:-10,auto:1,
+    brief:'Turn the CSV starter in this repository into a small toolkit: a JSON command-line interface, an HTML summary report, and a parse_row that handles quoted fields, escaped quotes and embedded commas. Keep the public parse_row signature unchanged, add tests for every new behaviour, and run the full test suite before you finish.'},
+  {id:'t1a',parent:'t1',proj:'csv',title:'JSON command-line interface',ag:{tool:'codex',model:'GPT-5 Codex',effort:'Balanced',color:'cyan',init:'JC'},st:'done',start:-18,end:-11,note:'Merged into the lead’s copy · no conflicts'},
+  {id:'t1b',parent:'t1',proj:'csv',title:'HTML summary report with snapshot tests',ag:{tool:'claude',model:'Haiku',effort:'Quick',color:'cyan',init:'HR'},st:'work',start:-10,auto:1,live:['pytest -q · 24 passed, 2 failed','Editing report/templates/summary.html','Re-running the two failing snapshot tests']},
+  {id:'t1b1',parent:'t1b',proj:'csv',title:'Snapshot fixtures for the report',ag:{tool:'codex',model:'GPT-5 Codex mini',effort:'Quick',color:'green',init:'SF'},st:'work',start:-5,live:['Generating fixtures from samples/sales.csv','Writing tests/fixtures/report_basic.html']},
+  {id:'t1c',parent:'t1',proj:'csv',title:'Quoted fields, escaped quotes and embedded commas in parse_row',ag:{name:'Complete the unfinished quoted-field responsibility described in E2E_TASK.md',tool:'claude',model:'Sonnet',effort:'Balanced',color:'violet',init:'QF'},st:'ask',start:-9,since:-4,
+    question:'Should a newline inside a quoted field be supported, or rejected with a clear error? The spec doesn’t say, and the existing tests assume one row per line.'},
+  {id:'t1d',parent:'t1',proj:'csv',title:'XML export prototype',ag:{tool:'codex',model:'GPT-5 Codex',effort:'Quick',color:'neutral',init:'XE'},st:'removed',start:-19,end:-16,note:'Removed · replaced by the HTML report'},
+  {id:'t2',parent:null,proj:'bill',title:'תקן את ייצוא הדוחות כך שתאריכים יוצגו בפורמט DD/MM/YYYY',ag:{name:'Report dates',custom:1,tool:'codex',model:'GPT-5 Codex',effort:'Thorough',color:'orange',init:'RD'},st:'work',start:-6,
+    live:['Editing reports/export.py','Running tests/test_export.py · 9 passed','Updating the date fixtures'],brief:'תקן את ייצוא הדוחות כך שתאריכים יוצגו בפורמט DD/MM/YYYY. הקוד נמצא ב-reports/export.py, ויש לעדכן גם את הבדיקות ב-tests/test_export.py.'},
+  {id:'t3',parent:null,proj:'bill',title:'Audit third-party licenses before the 2.0 release',ag:{name:'License audit',custom:1,tool:'claude',model:'Sonnet 4.5',effort:'Medium',color:'yellow',init:'LA'},st:'paused',start:-32,since:-12,note:'Paused · Claude Code reported its session limit'},
+  {id:'t4',parent:null,proj:'bill',title:'Prepare the 2.0 release',ag:{name:'Release lead',custom:1,tool:'claude',model:'Opus',effort:'Thorough',color:'violet',init:'RL'},st:'helpers',start:-48,since:-30,auto:1,
+    brief:'Get billing-service ready for the 2.0 release: changelog and migration notes, database migrations with a tested rollback, an API compatibility review for v1 clients, a load test of the export endpoint, and updated docs.'},
+  {id:'t4a',parent:'t4',proj:'bill',title:'Changelog and migration notes',ag:{tool:'claude',model:'Haiku',effort:'Quick',color:'green',init:'CN'},st:'done',start:-44,end:-31,note:'Merged · no conflicts'},
+  {id:'t4b',parent:'t4',proj:'bill',title:'Database migration scripts',ag:{tool:'codex',model:'GPT-5 Codex',effort:'Thorough',color:'blue',init:'DM'},st:'helpers',start:-41,since:-20,auto:1},
+  {id:'t4b1',parent:'t4b',proj:'bill',title:'Backfill script for historical invoices',ag:{tool:'codex',model:'GPT-5 Codex mini',effort:'Balanced',color:'cyan',init:'BF'},st:'done',start:-38,end:-24,note:'Merged · no conflicts'},
+  {id:'t4b2',parent:'t4b',proj:'bill',title:'Rollback plan and dry run',ag:{tool:'claude',model:'Sonnet',effort:'Thorough',color:'orange',init:'RP'},st:'blocked',start:-22,since:-9,note:'Waiting for the staging database · the load test is using it'},
+  {id:'t4c',parent:'t4',proj:'bill',title:'API compatibility review',ag:{tool:'claude',model:'Sonnet',effort:'Balanced',color:'pink',init:'AC'},st:'helpers',start:-40,since:-18,auto:1},
+  {id:'t4c1',parent:'t4c',proj:'bill',title:'Check v1 endpoints',ag:{tool:'codex',model:'GPT-5 Codex',effort:'Balanced',color:'cyan',init:'V1'},st:'done',start:-36,end:-25,note:'Merged · no conflicts'},
+  {id:'t4c2',parent:'t4c',proj:'bill',title:'Check webhook payloads',ag:{tool:'codex',model:'GPT-5 Codex',effort:'Balanced',color:'red',init:'WP'},st:'failed',start:-34,end:-27,note:'Stopped by the Control Center · nothing was created'},
+  {id:'t4c3',parent:'t4c',proj:'bill',title:'Deprecation headers for v1',ag:{tool:'claude',model:'Haiku',effort:'Quick',color:'yellow',init:'DH'},st:'work',start:-17,live:['Adding Sunset headers to 6 endpoints','Running tests/api/test_headers.py']},
+  {id:'t4d',parent:'t4',proj:'bill',title:'Load-test the export endpoint',ag:{tool:'codex',model:'GPT-5 Codex',effort:'Balanced',color:'red',init:'LT'},st:'work',start:-15,live:['Ramping to 200 requests per second','p95 latency 182 ms at 150 rps']},
+  {id:'t4e',parent:'t4',proj:'bill',title:'Update the docs site for 2.0',ag:{tool:'claude',model:'Haiku',effort:'Quick',color:'green',init:'DS'},st:'work',start:-12,live:['Rewriting the upgrade guide','Checking links in docs/upgrade.md']},
+  {id:'t5',parent:null,proj:'csv',title:'Upgrade pytest to 8.x and fix the deprecation warnings',ag:{tool:'codex',model:'GPT-5 Codex',effort:'Balanced',color:'green',init:'UP'},st:'done',review:1,start:-142,end:-128,auto:1,
+    brief:'Upgrade pytest to the latest 8.x release and fix every deprecation warning. Don’t change test behaviour.',
+    report:'Upgraded pytest to 8.3 and pytest-cov to 5.0, and replaced 14 deprecated tmpdir uses with tmp_path. A helper added Python 3.13 to the CI matrix. All 61 tests pass on my machine.'},
+  {id:'t5a',parent:'t5',proj:'csv',title:'Add Python 3.13 to the CI matrix',ag:{tool:'claude',model:'Haiku',effort:'Quick',color:'green',init:'CI'},st:'done',start:-137,end:-131,note:'Merged · no conflicts'},
+  {id:'t6',parent:null,proj:'csv',title:'Generate an API reference from the docstrings',ag:{tool:'claude',model:'Haiku',effort:'Balanced',color:'pink',init:'AR'},st:'failed',start:-262,end:-256,note:'Stopped by the Control Center · nothing was created'},
+  {id:'t7',parent:null,proj:'bill',title:'Investigate the flaky test_exporter timeout',ag:{tool:'claude',model:'Sonnet',effort:'Thorough',color:'red',init:'FT'},st:'stopped',start:-205,end:-188,note:'Stopped by you · its copy and notes are kept'},
+];
+const BY=Object.fromEntries(N.map(n=>[n.id,n]));
+const kidsOf=id=>N.filter(n=>n.parent===id);
+const rootOf=n=>{while(n.parent)n=BY[n.parent];return n};
+const subtree=id=>{const out=[BY[id]];kidsOf(id).forEach(k=>out.push(...subtree(k.id)));return out};
+const pathTo=id=>{const p=[];let n=BY[id];while(n){p.unshift(n);n=n.parent?BY[n.parent]:null}return p};
+const STL={work:'Working',ask:'Needs your reply',helpers:'Waiting for helpers',paused:'Paused',blocked:'Blocked',failed:'Didn’t finish',done:'Finished',stopped:'Stopped',removed:'Removed'};
+const TONE={work:'t-work',ask:'t-ask',helpers:'t-idle',paused:'t-ask',blocked:'t-block',failed:'t-fail',done:'t-done',stopped:'t-gone',removed:'t-gone'};
+const ENDED=['done','failed','stopped','removed'];
+
+/* ---------------- state + routing ---------------- */
+const S={route:'work',taskId:null,lens:'list',sel:'t1',insp:true,tab:'now',focus:null,filter:'all',scope:'all',q:'',
+  expanded:new Set(N.filter(n=>kidsOf(n.id).length).map(n=>n.id)),showRemoved:true,olOpen:false,cam:null,themeMode:'auto',
+  answered:new Set(),inspW:404,toast:null,pop:null,draft:{text:'',tool:'claude',model:'sonnet',effort:'medium',access:'write',deleg:true,alloc:'auto',auto:['claude','codex'],project:'csv'},nt:{pop:false,q:'',modal:null,drop:null},conn:null,
+  provOpen:null,gem:false,confirm:false,freeze:null,enterInsp:false,stab:'appearance'};
+function readHash(){
+  const [path,q]=location.hash.replace(/^#/,'').split('?');const p=new URLSearchParams(q||'');const seg=(path||'/work').split('/').filter(Boolean);
+  S.route=seg[0]||'work';S.taskId=seg[1]||null;
+  if(p.get('lens'))S.lens=p.get('lens');if(p.get('sel'))S.sel=p.get('sel')==='none'?null:p.get('sel');
+  if(p.get('insp'))S.insp=p.get('insp')!=='0';if(p.get('tab'))S.tab=p.get('tab');if(p.get('focus'))S.focus=p.get('focus');
+  if(p.get('theme'))S.themeMode=p.get('theme');if(p.get('filter'))S.filter=p.get('filter');if(p.get('morph'))S.freeze=+p.get('morph');
+  if(p.get('ol'))S.olOpen=p.get('ol')==='1';if(p.get('collapse'))p.get('collapse').split(',').forEach(id=>S.expanded.delete(id));
+  if(p.get('draft')==='1')S.draft.text=SAMPLE;
+  if(p.get('tool')){S.draft.tool=p.get('tool');S.draft.model=CAT[S.draft.tool].dflt;const m=modelOf(S.draft.tool,S.draft.model);S.draft.effort=m&&m.efforts&&m.efforts.length?m.def:null}
+  if(p.get('model'))S.draft.model=p.get('model');if(p.get('effort'))S.draft.effort=p.get('effort')==='none'?null:p.get('effort');
+  if(p.get('deleg'))S.draft.deleg=p.get('deleg')==='1';if(p.get('alloc'))S.draft.alloc=p.get('alloc');
+  if(p.get('pick')==='1')S.nt.pop=true;if(p.get('browse'))S.nt.modal={sel:p.get('browse')==='1'?null:p.get('browse'),typing:p.get('typing')==='1'};
+  if(p.get('drop'))S.nt.drop=p.get('drop')==='over'?'over':FOLDERS.find(f=>f.name===p.get('drop'));
+  if(p.get('conn'))S.conn=p.get('conn');if(p.get('scroll'))S.scrollTo=p.get('scroll');if(p.get('confirm')==='1')S.confirm=true;
+}
+function hashFor(){
+  if(S.route==='task')return `#/task/${S.taskId}`;
+  if(S.route!=='work')return `#/${S.route}`;
+  return `#/work?lens=${S.lens}${S.lens==='map'&&S.olOpen?'&ol=1':''}${S.sel?`&sel=${S.sel}`:''}${S.focus?`&focus=${S.focus}`:''}`;
+}
+function nav(route,taskId){S.route=route;S.taskId=taskId||null;S.pop=null;history.pushState(null,'',hashFor());render();document.querySelector('.page')?.scrollTo?.(0,0)}
+function syncUrl(){history.replaceState(null,'',hashFor())}
+window.addEventListener('popstate',()=>{const keep={lens:S.lens,sel:S.sel};readHash();if(S.route==='work'&&!location.hash.includes('lens='))Object.assign(S,keep);render()});
+const mq=matchMedia('(prefers-color-scheme: dark)');
+function applyTheme(){document.documentElement.dataset.theme=S.themeMode==='auto'?(mq.matches?'dark':'light'):S.themeMode}
+mq.addEventListener('change',applyTheme);
+const SAMPLE=`Add a "summarize" command to the CLI that reads a CSV file and prints per-column statistics as JSON: row count, empty values, and min/max for numeric columns.
+
+Keep parse_row's signature unchanged and reuse the quoted-field parser. Add tests for empty files, mixed-type columns and quoted numbers like "1,200".`;
+
+/* ---------------- time & words ---------------- */
+const BASE=new Date(2026,9,25,14,22,0).getTime();
+const clock=m=>new Date(BASE+m*60000).toTimeString().slice(0,5);
+const dur=m=>{m=Math.max(0,Math.round(m));if(m<60)return m+'m';const h=Math.floor(m/60),r=m%60;return h+'h'+(r?' '+r+'m':'')};
+const ago=m=>{m=Math.round(-m);return m<60?m+'m ago':m<1440?Math.round(m/60)+'h ago':'yesterday'};
+const stOf=n=>S.answered.has(n.id)&&n.st==='ask'?'work':n.st;
+function agentName(n){return n.ag.custom?n.ag.name:(TOOLS[n.ag.tool].label+' agent')}
+function sectionOf(r){if(subtree(r.id).some(x=>['ask','paused'].includes(stOf(x))))return 'needs';if(ENDED.includes(r.st))return 'done';return 'active'}
+function nowLine(n){
+  const st=stOf(n);
+  if(st==='work')return {t:S.answered.has(n.id)?'Continuing with your answer':n.live[0],tone:'',live:n.live&&!S.answered.has(n.id)};
+  if(st==='ask')return {t:'Asks: '+n.question,tone:'t-ask'};
+  if(st==='helpers'){const k=kidsOf(n.id).filter(c=>!ENDED.includes(c.st));const ask=subtree(n.id).filter(c=>c!==n&&stOf(c)==='ask').length;const fail=subtree(n.id).filter(c=>c!==n&&c.st==='failed').length;
+    return {t:`Waiting for ${k.length} helper${k.length===1?'':'s'}`,t2:[ask?`${ask} needs your reply`:'',fail?`${fail} part didn’t finish`:''].filter(Boolean).join(' · ')||'Resumes when their results arrive',tone:''}}
+  if(st==='done')return {t:n.review?'Ready for your review':n.note,t2:n.review?'Not applied to your project yet':'',tone:n.review?'t-review':''};
+  return {t:n.note,tone:TONE[st]};
+}
+function timeOf(n){const st=stOf(n);if(ENDED.includes(st))return ago(n.end);if(st==='ask')return dur(-n.since);if(['paused','blocked'].includes(st))return dur(-n.since);return dur(-n.start)}
+function bead(st,s=16){
+  const o=`<svg width="${s}" height="${s}" viewBox="0 0 16 16" aria-hidden="true">`;
+  switch(st){
+    case 'work':return o+`<circle class="pulse" cx="8" cy="8" r="7" fill="none" stroke="var(--work)" stroke-width="1.4"/><circle cx="8" cy="8" r="4" fill="var(--work)"/></svg>`;
+    case 'ask':return o+`<circle cx="8" cy="8" r="7" fill="var(--ask-fill)"/><path d="M6.2 9.2V5.8a.9.9 0 0 1 1.8 0V8.4M8 8V5.2a.9.9 0 0 1 1.8 0v3.4M9.8 8.2V6.4a.85.85 0 0 1 1.7 0v3.1a3 3 0 0 1-3 3h-.4a3 3 0 0 1-2.7-1.7l-.6-1.4a.8.8 0 0 1 1.4-.7" fill="none" stroke="#2a1b00" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+    case 'helpers':return o+`<circle cx="8" cy="8" r="6.2" fill="none" stroke="var(--text-3)" stroke-width="1.4" stroke-dasharray="2.4 2.4"/><circle cx="8" cy="8" r="1.8" fill="var(--text-3)"/></svg>`;
+    case 'paused':return o+`<circle cx="8" cy="8" r="6.4" fill="none" stroke="var(--ask-fill)" stroke-width="1.6"/><path d="M6.3 5.6v4.8M9.7 5.6v4.8" stroke="var(--ask-fill)" stroke-width="1.7" stroke-linecap="round"/></svg>`;
+    case 'blocked':return o+`<path d="M8 1.6l6.4 6.4L8 14.4 1.6 8z" fill="none" stroke="var(--block)" stroke-width="1.5" stroke-linejoin="round"/><path d="M5.6 8h4.8" stroke="var(--block)" stroke-width="1.6" stroke-linecap="round"/></svg>`;
+    case 'failed':return o+`<path d="M8 1.8l6.6 11.8H1.4z" fill="var(--fail)" stroke="var(--fail)" stroke-linejoin="round"/><path d="M8 6.2v3.5" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/><circle cx="8" cy="11.8" r=".9" fill="#fff"/></svg>`;
+    case 'done':return o+`<circle cx="8" cy="8" r="6.4" fill="none" stroke="var(--text-3)" stroke-width="1.3"/><path d="M5.2 8.3l1.9 1.9 3.7-3.9" fill="none" stroke="var(--text-2)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+    case 'review':return o+`<circle cx="8" cy="8" r="7" fill="var(--work)"/><path d="M5 8.3l2 2 4-4.1" fill="none" stroke="#fff" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+    case 'stopped':return o+`<rect x="3.5" y="3.5" width="9" height="9" rx="2.2" fill="var(--text-3)"/></svg>`;
+    case 'removed':return o+`<circle cx="8" cy="8" r="6.4" fill="none" stroke="var(--text-4)" stroke-width="1.3"/><path d="M5.8 5.8l4.4 4.4M10.2 5.8l-4.4 4.4" stroke="var(--text-3)" stroke-width="1.4" stroke-linecap="round"/></svg>`;
+  }
+  return '';
+}
+const beadFor=n=>bead(n.review&&n.st==='done'?'review':stOf(n));
+const av=(n,s,extra='')=>`<span class="av${n.st==='removed'?' gone':''}" style="--s:${s}px;--c:${COL[n.ag.color]}" ${extra}>${n.ag.init}<i class="tb">${TOOLS[n.ag.tool].m}</i></span>`;
+
+/* ---------------- filtering ---------------- */
+function rootsVisible(){
+  return N.filter(n=>!n.parent).filter(r=>S.scope==='all'||r.proj===S.scope).filter(r=>{const s=sectionOf(r);return S.filter==='all'||(S.filter==='needs'&&s==='needs')||(S.filter==='active'&&s!=='done')||(S.filter==='done'&&s==='done')});
+}
+function matches(n){if(!S.q.trim())return true;const q=S.q.trim().toLowerCase();return (n.title+' '+agentName(n)+' '+TOOLS[n.ag.tool].label).toLowerCase().includes(q)}
+function counts(){const r=N.filter(n=>!n.parent).filter(r=>S.scope==='all'||r.proj===S.scope);return {all:r.length,needs:r.filter(x=>sectionOf(x)==='needs').length,active:r.filter(x=>sectionOf(x)!=='done').length,done:r.filter(x=>sectionOf(x)==='done').length}}
+const visibleKids=id=>kidsOf(id).filter(k=>S.showRemoved||k.st!=='removed');
+function inFocus(id){if(!S.focus)return true;return pathTo(id).some(p=>p.id===S.focus)}
+
+/* ---------------- top bar ---------------- */
+function topBar(){
+  const att=N.filter(n=>['ask','paused'].includes(stOf(n)));
+  const themeIcon={auto:'monitor',light:'sun',dark:'moon'}[S.themeMode];
+  return `<header class="topbar"><div class="brand"><svg width="26" height="26" viewBox="0 0 26 26" aria-hidden="true"><rect width="26" height="26" rx="8" fill="var(--ink)"/><path d="M13 9.5v3.2M13 12.7c0 2-4.6 1.4-4.6 4.2M13 12.7c0 2 4.6 1.4 4.6 4.2" stroke="#CBB494" stroke-width="1.6" fill="none" stroke-linecap="round"/><circle cx="13" cy="7.6" r="2.4" fill="var(--on-ink)"/><circle cx="8.4" cy="18.3" r="2.2" fill="var(--on-ink)"/><circle cx="17.6" cy="18.3" r="2.2" fill="#F0B232"/></svg>Control Center<span class="proto">Prototype · Atlas v2</span></div>
+    <nav class="nav" aria-label="Main">
+      ${[['work','Work'],['projects','Projects'],['connections','Connections'],['settings','Settings']].map(([k,l])=>`<button data-nav="${k}" ${S.route===k||(k==='work'&&['task','new'].includes(S.route))?'aria-current="page"':''}>${l}${k==='connections'?'<span class="badge" title="1 tool needs your OK">1</span>':''}</button>`).join('')}
+    </nav><span class="sp"></span>
+    <button class="search" data-act="search" aria-label="Search tasks and agents">${ico('search',15)}<span class="lbl">Search tasks and agents</span><span class="kbd">Ctrl K</span></button>
+    ${att.length?`<button class="needs" data-act="nextAttention" title="Jump to the next thing that needs you">${bead('ask',16)}<span class="num">${att.length}</span> need you</button>`:''}
+    <button class="ib" data-act="cycleTheme" aria-label="Appearance: ${S.themeMode}" title="Appearance: ${S.themeMode}">${ico(themeIcon,17)}</button>
+    <button class="btn primary" data-nav="new" style="margin-left:6px">${ico('plus',15,2.2)}New task<span class="kbd">N</span></button></header>`;
+}
+
+/* ---------------- work: header, outline, map, inspector ---------------- */
+function workHead(){
+  const c=counts();
+  return `<div class="whead">
+    <button class="scope" data-act="pop" data-v="scope" aria-haspopup="menu">${S.scope==='all'?'All projects':PROJ[S.scope].name}${ico('down',14,2.2)}</button>
+    <div class="seg" role="group" aria-label="Show">${[['all','All',c.all],['needs','Needs you',c.needs],['active','In progress',c.active],['done','Done',c.done]].map(([k,l,n])=>`<button data-filter="${k}" aria-pressed="${S.filter===k}">${l}<span class="n${k==='needs'&&n?' ask':''} num">${n}</span></button>`).join('')}</div>
+    <span class="sp"></span>
+    <label class="find">${ico('search',14)}<input data-in="q" value="${esc(S.q)}" placeholder="Find in hierarchy" aria-label="Find in hierarchy"></label>
+    <div class="lens" role="group" aria-label="View as"><button data-lens="list" aria-pressed="${S.lens==='list'}" title="List · L">${ico('list',16)}<span class="lt">List</span></button><button data-lens="map" aria-pressed="${S.lens==='map'}" title="Map · M">${ico('map',16)}<span class="lt">Map</span></button></div>
+    <button class="ib" data-act="pop" data-v="view" aria-label="View options">${ico('sliders',17)}</button></div>`;
+}
+const short=(s,n)=>s.length>n?s.slice(0,n-1)+'…':s;
+function outlineRows(){
+  const out=[];
+  const push=(n,depth,guides,last)=>{
+    if(!matches(n)&&!subtree(n.id).some(matches))return;
+    out.push({n,depth,guides,last});
+    if(S.expanded.has(n.id)||S.q.trim()){const k=visibleKids(n.id);k.forEach((c,i)=>push(c,depth+1,depth>0?[...guides,!last]:[],i===k.length-1))}
+  };
+  if(S.focus){out.push({crumbs:pathTo(S.focus)});push(BY[S.focus],0,[],true);return out}
+  const roots=rootsVisible();const groups={needs:[],active:[],done:[]};roots.forEach(r=>groups[sectionOf(r)].push(r));
+  [['needs','Needs you'],['active','In progress'],['done','Done']].forEach(([k,l])=>{if(!groups[k].length)return;out.push({sec:k,label:l,count:groups[k].length});groups[k].forEach(r=>push(r,0,[],true))});
+  return out;
+}
+function rowHTML(e){
+  if(e.sec)return `<div class="ol-sec${e.sec==='needs'?' sec-needs':''}" role="presentation">${e.sec==='needs'?bead('ask',14):''}${e.label}<span class="n num">${e.count}</span></div>`;
+  if(e.crumbs)return `<div class="crumbs" role="presentation"><span class="focusbar">${ico('focus',13)}Focused</span><button data-act="unfocus">All work</button>${e.crumbs.slice(0,-1).map(p=>`<span aria-hidden="true">›</span><button data-sel="${p.id}" class="bidi" dir="auto">${esc(short(p.title,28))}</button>`).join('')}<span class="sp"></span><button class="btn sm ghost" data-act="unfocus" title="Leave focus · Esc">${ico('close',12,2.4)}Leave</button></div>`;
+  const {n,depth,guides,last}=e,st=stOf(n),sel=S.sel===n.id,kids=visibleKids(n.id),open=S.expanded.has(n.id)||S.q.trim();
+  const g=depth===0?'':guides.map(v=>`<span class="g${v?' v':''}"></span>`).join('')+`<span class="g ${last?'el':'tee'}"></span>`;
+  const fold=kids.length?`<button class="fold" data-fold="${n.id}" tabindex="-1" aria-label="${open?'Collapse':'Expand'}">${ico(open?'down':'right',14,2.2)}</button>`:'<span class="fold-pad"></span>';
+  const now=nowLine(n);const askHere=['ask','paused'].includes(st)||(!open&&subtree(n.id).some(x=>x!==n&&['ask','paused'].includes(stOf(x))));
+  return `<div class="row${depth===0?' root':''}" role="treeitem" aria-level="${depth+1}" ${kids.length?`aria-expanded="${!!open}"`:''} aria-selected="${sel}" tabindex="${sel?0:-1}" data-id="${n.id}" data-sel="${n.id}">
+    <div class="c-main">${g}${fold}<span class="bead" title="${STL[st]}">${beadFor(n)}</span><span class="r-title${st==='removed'?' removed':''}"><span class="t bidi" dir="auto" title="${esc(n.title)}">${esc(n.title)}</span>${depth===0?`<span class="sub">${PROJ[n.proj].name}${kids.length?` · ${subtree(n.id).length-1} delegated`:' · working alone'}</span>`:''}</span>${askHere?'<span class="attn-dot" title="Needs you"></span>':''}</div>
+    <div class="c-who">${av(n,26)}<span class="w"><b class="bidi" dir="auto">${esc(agentName(n))}</b><small>${n.ag.custom?TOOLS[n.ag.tool].label+' · '+n.ag.model:n.ag.model+' · '+n.ag.effort}</small></span></div>
+    <div class="c-now"><span class="l ${now.tone}" ${now.live?`data-live="${n.id}"`:''}>${esc(now.t)}</span>${now.t2?`<span class="l2">${esc(now.t2)}</span>`:''}</div>
+    <div class="c-time num">${timeOf(n)}</div>
+    <div class="quick">${st==='ask'?`<button class="btn sm ask" data-reply="${n.id}">${ico('reply',13)}Reply</button>`:''}${depth===0?`<button class="btn sm" data-opentask="${n.id}">${ico('open',13)}Open</button>`:''}<button class="btn sm" data-mapfocus="${n.id}" title="Show in map" aria-label="Show in map">${ico('map',13)}</button></div></div>`;
+}
+/* each task tree sits on its own card in the List; in the side panel next to the Map the cards flatten */
+function outline(){
+  const rows=outlineRows();let h='',open=false;
+  rows.forEach(e=>{
+    if(e.sec||e.crumbs){if(open){h+='</div>';open=false}h+=rowHTML(e);return}
+    if(e.depth===0){if(open)h+='</div>';h+='<div class="tcard" role="none">';open=true}
+    h+=rowHTML(e);
+  });
+  if(open)h+='</div>';
+  return `<div class="outline ${S.lens==='list'?'wide':'compact'}" role="tree" aria-label="Work hierarchy" data-outline ${S.lens==='map'&&!S.olOpen?'aria-hidden="true"':''}>
+    <div class="ol-cols" aria-hidden="true"><span>Task</span><span class="h-who">Agent</span><span class="h-now">Now</span><span style="text-align:right">Time</span></div>
+    ${rows.length?h:'<p class="ol-empty">Nothing matches. <button class="btn sm" data-act="clear">Clear filters</button></p>'}</div>`;
+}
+/* map layout: top-down, a parent centred over its children; separate trees side by side.
+   When every child of a node is a leaf, the children stack as a short list under it,
+   joined by the same thread guides the List uses, so wide teams stay readable. */
+const NW=168,NH=122,RH=146,GX=20,GY=64,TGAP=120,TOPPAD=34,RW=208,RHT=52,RGAP=8,SIND=24;
+const kidsShown=id=>S.expanded.has(id)?visibleKids(id):[];
+const hOf=id=>BY[id].parent?NH:RH;
+const stacked=id=>{const k=kidsShown(id);return k.length>=2&&k.every(c=>!kidsShown(c.id).length)};
+function mW(id){const k=kidsShown(id);if(!k.length)return NW;if(stacked(id))return Math.max(NW,SIND+RW);return Math.max(NW,k.reduce((s,c)=>s+mW(c.id),0)+GX*(k.length-1))}
+function mPlace(id,x,y,pos){
+  const w=mW(id),k=kidsShown(id);pos[id]={x:x+w/2-NW/2,y,w:NW,h:hOf(id),kind:'node'};if(!k.length)return;
+  if(stacked(id)){const left=x+(w-(SIND+RW))/2,top=y+hOf(id)+GY*.62;pos[id].spine=left+9;k.forEach((c,i)=>{pos[c.id]={x:left+SIND,y:top+i*(RHT+RGAP),w:RW,h:RHT,kind:'row'}});return}
+  const tot=k.reduce((s,c)=>s+mW(c.id),0)+GX*(k.length-1);let cx=x+(w-tot)/2;k.forEach(c=>{mPlace(c.id,cx,y+hOf(id)+GY,pos);cx+=mW(c.id)+GX});
+}
+function forest(){const pos={},trees=[];let x=0;const roots=rootsVisible();const order={needs:0,active:1,done:2};roots.sort((a,b)=>order[sectionOf(a)]-order[sectionOf(b)]);
+  roots.forEach(r=>{const w=mW(r.id);mPlace(r.id,x,TOPPAD,pos);trees.push({id:r.id,x,w});x+=w+TGAP});
+  const ids=Object.keys(pos);const W=Math.max(1,x-TGAP);const H=Math.max(1,...ids.map(i=>pos[i].y+pos[i].h));return {pos,trees,W,H}}
+const mapDim=n=>(S.focus&&!inFocus(n.id))||(S.q.trim()&&!matches(n));
+function mapNode(n,p){
+  const st=stOf(n),sel=S.sel===n.id,root=!n.parent,s=root?60:48,kids=visibleKids(n.id),closed=kids.length&&!S.expanded.has(n.id),rv=n.review&&st==='done';
+  const ring=st==='work'?'<span class="ring"></span>':st==='ask'?'<span class="ring ask"></span>':st==='helpers'?'<span class="ring idle"></span>':'';
+  const badge={ask:`<span class="badge ask">${ico('hand',14,2)}</span>`,paused:`<span class="badge paused">${ico('pause',13,2.6)}</span>`,failed:`<span class="badge fail">${ico('bang',14,3)}</span>`,blocked:`<span class="badge block">${ico('clock',13,2.4)}</span>`,done:rv?`<span class="badge done rv">${ico('check',13,2.8)}</span>`:`<span class="badge done">${ico('check',12,2.6)}</span>`}[st]||'';
+  const gs=rv?'Ready for review':STL[st];
+  return `<button class="gn${root?' root':''}${mapDim(n)?' dim':''}" style="left:${p.x}px;top:${p.y}px" data-id="${n.id}" data-sel="${n.id}" aria-pressed="${sel}" aria-label="${esc(n.title)}, ${esc(agentName(n))}, ${gs}">
+    ${root?`<span class="gproj">${PROJ[n.proj].name}</span>`:''}
+    <span class="gav">${sel?'<span class="ring sel"></span>':ring}${av(n,s)}${badge}</span>
+    <span class="gt bidi${st==='removed'?' removed':''}" dir="auto">${esc(n.title)}</span>
+    <span class="gs ${rv?'t-review':TONE[st]}">${gs}${ENDED.includes(st)?'':` · ${timeOf(n)}`}</span>
+    ${closed?`<span class="gfold" data-fold="${n.id}">+${subtree(n.id).length-1}</span>`:''}</button>`;
+}
+function mapRow(n,p){
+  const st=stOf(n),sel=S.sel===n.id,rv=n.review&&st==='done',gs=rv?'Ready for review':STL[st];
+  const badge={ask:`<span class="badge ask">${ico('hand',11,2.2)}</span>`,paused:`<span class="badge paused">${ico('pause',10,2.8)}</span>`,failed:`<span class="badge fail">${ico('bang',11,3)}</span>`,blocked:`<span class="badge block">${ico('clock',10,2.6)}</span>`}[st]||'';
+  return `<button class="gr${mapDim(n)?' dim':''}${st==='ask'?' gr-ask':''}" style="left:${p.x}px;top:${p.y}px" data-id="${n.id}" data-sel="${n.id}" aria-pressed="${sel}" aria-label="${esc(n.title)}, ${esc(agentName(n))}, ${gs}">
+    <span class="gav">${st==='work'?'<span class="ring"></span>':''}${av(n,30)}${badge}</span>
+    <span class="grt"><span class="t bidi${st==='removed'?' removed':''}" dir="auto">${esc(n.title)}</span><span class="s ${rv?'t-review':TONE[st]}">${gs}${ENDED.includes(st)?'':` · ${timeOf(n)}`}</span></span></button>`;
+}
+/* edges are delegations only: the parent task's agent handed this task to the child's agent */
+function edgesSVG(F){
+  const paths=[],r=10,dim=id=>S.focus&&!inFocus(id)?' dim':'';
+  Object.keys(F.pos).forEach(id=>{
+    const n=BY[id],c=F.pos[id];if(!n.parent||!F.pos[n.parent])return;const p=F.pos[n.parent];
+    const cls=({work:'e-work',ask:'e-ask',removed:'e-gone',failed:'e-fail'}[stOf(n)]||'')+dim(id);
+    if(c.kind==='row'){const sx=p.spine,my=c.y+RHT/2;paths.push(`<path class="${cls}" d="M${sx},${my-r}Q${sx},${my} ${sx+r},${my}H${c.x}"/>`);return}
+    const px=p.x+NW/2,py=p.y+p.h-6,cx=c.x+NW/2,cy=c.y+2,my=py+(cy-py)/2,sg=cx>px?1:-1;
+    paths.push(`<path class="${cls}" d="${Math.abs(cx-px)<1?`M${px},${py}V${cy}`:`M${px},${py}V${my-r}Q${px},${my} ${px+sg*r},${my}H${cx-sg*r}Q${cx},${my} ${cx},${my+r}V${cy}`}"/>`);
+  });
+  Object.keys(F.pos).forEach(id=>{const p=F.pos[id];if(p.spine===undefined)return;const k=kidsShown(id),last=F.pos[k[k.length-1].id];
+    const px=p.x+NW/2,py=p.y+p.h-6,sx=p.spine,jy=py+GY*.3;
+    paths.unshift(`<path class="${dim(id).trim()}" d="M${px},${py}V${jy-r}Q${px},${jy} ${px-r},${jy}H${sx+r}Q${sx},${jy} ${sx},${jy+r}V${last.y+RHT/2-r}"/>`)});
+  return `<svg class="edges" width="${F.W}" height="${F.H}" aria-hidden="true">${paths.join('')}</svg>`;
+}
+let F=null;
+function mapPane(){
+  F=forest();
+  const sel=S.sel?BY[S.sel]:null,tree=sel?rootOf(sel):null,f=S.focus?BY[S.focus]:null;
+  return `<div class="mappane" data-map aria-label="Hierarchy map" role="group" ${S.lens!=='map'?'inert':''}>
+    <div class="minner" id="minner" style="width:${F.W}px;height:${F.H}px">${edgesSVG(F)}${Object.keys(F.pos).map(id=>F.pos[id].kind==='row'?mapRow(BY[id],F.pos[id]):mapNode(BY[id],F.pos[id])).join('')}</div>
+    <div class="mtool" id="mtool"><button class="mbtn" data-act="toggleOl" aria-pressed="${S.olOpen}" title="Show the list beside the map">${ico('sidebar',16)}${S.olOpen?'Hide list':'Show list'}</button>
+      ${f?`<span class="focusbar">${ico('focus',14)}<span class="ell bidi" dir="auto">Focused on ${esc(f.title)}</span><button class="ib sm" data-act="unfocus" aria-label="Leave focus" title="Leave focus · Esc">${ico('close',13,2.2)}</button></span>`
+        :tree?`<button class="mcard" data-act="pop" data-v="trees" aria-haspopup="menu">${beadFor(tree)}<span class="ell bidi" dir="auto">${esc(tree.title)}</span>${ico('down',14,2.2)}</button>`:''}</div>
+    <div class="mctl" id="mctl"><button class="ib sm" data-zoom="-1" aria-label="Zoom out">${ico('zout',16)}</button><span class="pct num" id="pct">100%</span><button class="ib sm" data-zoom="1" aria-label="Zoom in">${ico('zin',16)}</button><button class="ib sm" data-act="fitTree" aria-label="Fit this task" title="Fit this task">${ico('fit',16)}</button><button class="ib sm" data-act="fitAll" aria-label="Show all tasks" title="Show all tasks">${ico('grid',15)}</button></div>
+    <div class="mini" id="mini" title="Overview · click to move" aria-hidden="true"></div></div>`;
+}
+/* ---------------- inspector (agent-centred, in place) ---------------- */
+function inspector(where){
+  if(!S.insp||!S.sel)return '';
+  const n=BY[S.sel],st=stOf(n),root=rootOf(n);
+  const tabs=[['now','Now'],['activity','Activity'],['output','Output'],['settings','Settings']];
+  const head=`<div class="ih"><div class="ih-row">${av(n,44)}<div style="min-width:0;flex:1"><h2 class="bidi" dir="auto">${esc(agentName(n))}</h2><div class="role">${n.parent?'Helper':'Lead'} · ${TOOLS[n.ag.tool].label} · ${n.ag.model}</div></div>
+      <button class="ib sm" data-act="focusSel" title="Focus this branch · F" aria-label="Focus this branch">${ico('focus',16)}</button><button class="ib sm" data-act="pop" data-v="agentMenu" aria-label="More actions">${ico('more',16)}</button><button class="ib sm" data-act="closeInsp" aria-label="Close details" title="Close · Esc">${ico('close',15)}</button></div>
+    <div class="state ${n.review&&st==='done'?'t-review':TONE[st]}">${beadFor(n)}${n.review&&st==='done'?'Ready for your review':STL[st]}<span class="muted">${ENDED.includes(st)?'· '+ago(n.end):'· '+timeOf(n)}</span></div></div>`;
+  const body={now:inspNow,activity:inspActivity,output:inspOutput,settings:inspSettings}[S.tab](n);
+  let foot='';
+  if(st==='ask')foot=`<button class="btn ask" data-act="sendReply">${ico('reply',15)}Send reply</button><button class="btn" data-toast="The agent decides this one itself and continues.">Decide for me</button>`;
+  else if(st==='work')foot=`<button class="btn" data-toast="Your correction reaches the agent; it continues in the same session.">${ico('redirect',15)}Redirect</button><button class="btn danger" data-toast="Stops this agent after you confirm. Its copy and notes are kept.">${ico('stop',14,2.2)}Stop</button>`;
+  else if(st==='helpers')foot=`<button class="btn danger" data-toast="Stops this agent and everyone below it, after you confirm.">${ico('stop',14,2.2)}Stop branch</button>`;
+  else if(st==='paused')foot=`<button class="btn" data-toast="Hands this task, with its progress, to Claude Code or Codex.">Switch tool…</button><button class="btn" data-toast="Every readiness, billing and usage check runs again first. A reported reset time is not a guarantee.">Resume…</button>`;
+  else if(st==='failed')foot=`<button class="btn" data-toast="Starts a new agent on the same task with your instructions.">${ico('play',14)}Start again…</button>`;
+  else if(n.review)foot=`<button class="btn primary" data-opentask="${n.id}">Review the result</button>`;
+  return `<aside class="insp${S.enterInsp?' enter':''}" ${S.inspW!==404?`style="--insp-w:${S.inspW}px"`:''} aria-label="Agent details"><div class="resize" data-resize title="Drag to resize · double-click to reset"></div>${head}
+    <div class="tabs" role="tablist">${tabs.map(([k,l])=>`<button class="tab" role="tab" aria-selected="${S.tab===k}" data-tab="${k}">${l}</button>`).join('')}</div>
+    <div class="ibody" role="tabpanel">${body}</div>${foot?`<div class="ifoot">${foot}<span class="sp"></span>${root.id===n.id||true?`<button class="btn ghost sm" data-opentask="${n.id}">${ico('open',14)}Open task</button>`:''}</div>`:`<div class="ifoot"><span class="sp"></span><button class="btn ghost sm" data-opentask="${n.id}">${ico('open',14)}Open task</button></div>`}</aside>`;
+}
+function familySVG(n){
+  const par=n.parent?BY[n.parent]:null,kids=visibleKids(n.id).slice(0,5);
+  const W=360,cx=W/2;const nodeAt=(m,x,y,s,label,max=18)=>`<g class="fnode" data-sel="${m.id}"><title>${esc(m.title)}</title><circle cx="${x}" cy="${y}" r="${s}" fill="${COL[m.ag.color]}" ${m.st==='removed'?'opacity=".45"':''}/><text x="${x}" y="${y+4}" text-anchor="middle" font-size="${s*.7}" font-weight="700" fill="#17181B" font-family="Hanken Grotesk">${m.ag.init}</text>${label?`<text x="${x}" y="${y+s+14}" text-anchor="middle" font-size="11" fill="var(--text-2)" font-family="Hanken Grotesk">${esc(short(label,max))}</text>`:''}</g>`;
+  let y=24,svg='';
+  if(par){svg+=nodeAt(par,cx,y,13,par.title,40);svg+=`<path d="M${cx},${y+30} V${y+50}" stroke="var(--thread)" stroke-width="1.6"/>`;y+=72}
+  svg+=`<circle cx="${cx}" cy="${y}" r="21" fill="none" stroke="var(--accent)" stroke-width="2"/>`+nodeAt(n,cx,y,17,'');
+  if(kids.length){const step=Math.min(78,(W-40)/kids.length);const x0=cx-step*(kids.length-1)/2;svg+=`<path d="M${cx},${y+22} V${y+36} M${x0},${y+36} H${x0+step*(kids.length-1)}" stroke="var(--thread)" stroke-width="1.6" fill="none"/>`;
+    kids.forEach((k,i)=>{const x=x0+step*i;svg+=`<path d="M${x},${y+36} V${y+50}" stroke="var(--thread)" stroke-width="1.6"/>`+nodeAt(k,x,y+64,13,k.title,Math.max(6,Math.floor(step/6.8)))});y+=64}
+  return `<svg viewBox="0 0 ${W} ${y+30}" role="img" aria-label="Parent and helpers">${svg}</svg>`;
+}
+function inspNow(n){
+  const st=stOf(n);let h='';
+  if(st==='ask')h+=`<div class="blk"><div class="qcard"><div class="qh">${ico('hand',15,2)}Asked you · ${dur(-n.since)} ago</div><p class="qt bidi" dir="auto">${esc(n.question)}</p><textarea dir="auto" aria-label="Your answer">Reject it with a clear error for now. Multi-line fields can come later as an option.</textarea><div class="acts"><span style="font-size:12.5px;color:var(--text-3)">Goes back to this agent; it continues in the same session.</span></div></div></div>`;
+  if(st==='paused')h+=`<div class="blk"><div class="note" style="background:var(--ask-soft);border-color:var(--ask-line)"><b>Paused by the tool, not by an error.</b> Claude Code reported its session limit (reset reported by Claude Code: 14:30). The session and its copy are kept. Nothing resumes by itself: resume when you’re ready, or switch this task to another allowed tool.</div></div>`;
+  if(st==='failed')h+=`<div class="blk"><div class="note fail"><b>The Control Center stopped this agent.</b> It tried to hand off work without an accepted plan, so nothing was created and the task was not completed.${n.parent?' Its lead will see this when it reviews results.':''}</div></div>`;
+  if(st==='blocked')h+=`<div class="blk"><div class="note block"><b>Waiting for a shared resource.</b> ${esc(n.note)}. It continues by itself when the resource is free; nothing is retried in the meantime.</div></div>`;
+  if(st==='removed')h+=`<div class="blk"><div class="note"><b>Removed at ${clock(n.end)}.</b> ${esc(n.note.replace('Removed · ',''))}. Its assignment, output and history are kept.</div></div>`;
+  if(st==='work')h+=`<div class="blk"><h3>Doing now<button class="link" data-tab="output">Output ${ico('right',12,2.4)}</button></h3><div class="live">${(n.live||[]).slice(0,3).map((l,i,a)=>`<div class="${i===0?'cur':''}"><span class="k">${i===0?'now':'-'+(i*2)+'m'}</span>${esc(l)}</div>`).join('')}</div></div>`;
+  h+=`<div class="blk"><h3>Responsible for</h3><button class="resp" data-opentask="${n.id}"><div class="rt bidi" dir="auto">${esc(n.title)}</div><div class="rm">${ico('folder',13)}${PROJ[n.proj].name}${n.parent?` · delegated by ${esc(agentName(BY[n.parent]))}`:''}<span class="sp"></span>${ico('open',13)}</div></button></div>`;
+  const k=visibleKids(n.id);
+  if(n.parent||k.length)h+=`<div class="blk"><h3>Family${k.length?`<span class="link" style="font-weight:500;color:var(--text-3)">${k.length} helper${k.length===1?'':'s'}</span>`:''}</h3><div class="fam">${familySVG(n)}</div></div>`;
+  if(k.length)h+=`<div class="blk"><h3>Delegated work</h3><div class="kids">${k.map(c=>{const cs=stOf(c);return `<button class="kid" data-sel="${c.id}">${beadFor(c)}<span style="min-width:0"><span class="kt ell${cs==='removed'?' removed':''}" style="display:block">${esc(c.title)}</span><small style="color:var(--text-3);font-size:12px">${TOOLS[c.ag.tool].label} · ${STL[cs]}</small></span><span class="c-time num">${timeOf(c)}</span></button>`}).join('')}</div></div>`;
+  return h;
+}
+function inspActivity(n){
+  const ev=n.id==='t1'?[['14:02','play','Started','Claude Code · Sonnet · may bring in helpers'],['14:04','split','Split the work into three parts','Helpers chosen automatically from Claude Code and Codex'],['14:06','x','Removed the XML export helper','Replaced by the HTML report'],['14:11','merge','JSON CLI handed in its work','Merged into this copy · no conflicts'],['14:12','check','Accepted the JSON CLI result','After reviewing the merged changes'],['14:18','hand','Quoted fields asked you a question','About newlines inside quoted fields']]
+    :[[clock(n.start),'play','Started',`${TOOLS[n.ag.tool].label} · ${n.ag.model} · ${n.ag.effort}`],...(n.parent?[[clock(n.start),'split','Joined as a helper',`Delegated by ${agentName(BY[n.parent])}`]]:[]),...(n.st==='ask'?[[clock(n.since),'hand','Asked you a question','']]:[]),...(ENDED.includes(n.st)?[[clock(n.end),n.st==='failed'?'bang':'check',STL[n.st],n.note]]:[])];
+  return `<div class="blk"><h3>Today</h3><div class="tl">${ev.slice().reverse().map(([t,i,a,b])=>`<div class="tl-i"><span class="tl-d">${ico(i,11,2.2)}</span><div class="tl-t">${esc(a)}${b?`<small>${esc(b)}</small>`:''}</div><span class="tl-time">${t}</span></div>`).join('')}</div></div><p style="font-size:12.5px;color:var(--text-3)">Recorded by the Control Center. The full record is under Output.</p>`;
+}
+function inspOutput(n){
+  const lines=[['14:12:04','tool','Read src/cli.py'],['14:12:06','tool','Bash python -m pytest tests/test_cli.py -q'],['14:12:19','ok','12 passed in 0.84s'],['14:12:21','agent','The CLI matches the spec; accepting it.'],['14:12:22','ctl','Result accepted · JSON command-line interface'],['14:13:01','agent','Two helpers are still working. Waiting for their results.']];
+  return `<div class="blk"><h3>Output<span style="display:flex;gap:4px"><button class="btn sm ghost" data-toast="Loads the previous page of output.">Earlier</button><button class="btn sm" data-toast="Follows new lines as they arrive.">${ico('play',11)}Follow</button></span></h3><div class="out">${lines.map(([t,k,l])=>`<div><span class="k">${t.slice(0,5)}</span><span class="${k==='ok'?'ok':k==='ctl'?'ctl':''}">${k==='agent'?'':k+' · '}${esc(l)}</span></div>`).join('')}</div></div>`;
+}
+function inspSettings(n){
+  return `<div class="blk"><h3>Tool and model</h3><div class="set"><div class="set-r"><div><b>${TOOLS[n.ag.tool].label} · ${n.ag.model}</b><small>Changing only the model keeps the session.</small></div><button class="btn sm" data-toast="Choose another tool or model, with a clear session hand-off choice.">Change…</button></div>
+    <div class="set-r"><div><b>Effort · ${n.ag.effort}</b><small>Used for this agent’s next instructions.</small></div><button class="btn sm" data-toast="Quick, Balanced or Thorough (low, medium, high).">Edit</button></div></div></div>
+    ${n.auto?`<div class="blk"><h3>Helpers</h3><div class="set"><div class="set-r"><div><b>Auto · Claude Code, Codex</b><small>Picks the best available tool for each delegated part. An unavailable tool is never quietly swapped.</small></div><button class="btn sm" data-toast="Allowed tools, models, preference order.">Edit</button></div>
+    <div class="set-r"><div><b>Tools allowed for this task</b><small>Same as your Connections: Claude Code, Codex.</small></div><button class="btn sm" data-toast="Restrict which tools this task and its helpers may use.">Restrict…</button></div></div></div>`:''}
+    <div class="blk"><h3>Questions</h3><div class="set"><div class="set-r"><div><b>Decide similar questions automatically</b><small>Off · it asks you each time.</small></div><button class="sw" role="switch" aria-checked="false" aria-label="Decide similar questions automatically" data-toast="Prototype only."></button></div><div class="set-r"><div><b>Always decide for this agent</b><small>Off · it can still ask when something is genuinely missing.</small></div><button class="sw" role="switch" aria-checked="false" aria-label="Always decide" data-toast="Prototype only."></button></div></div></div>
+    <div class="blk"><h3>Technical details</h3><dl class="kv"><dt>Agent</dt><dd class="mono">3f2a8d43-2b8c-4fd1</dd><dt>Task</dt><dd class="mono">16c9ae20-b90e-435a</dd><dt>Session</dt><dd class="mono">8ce42489-6378-463c</dd><dt>Process</dt><dd>Supervised · ownership verified</dd><dt>Works in</dt><dd>Its own copy of ${PROJ[n.proj].name}</dd></dl></div>
+    <div class="blk"><h3>Remove</h3><div class="note" style="display:flex;gap:12px;align-items:center"><span style="flex:1">Removing shows what would stop and who takes over this responsibility before anything happens.</span><button class="btn sm danger" data-toast="Opens the removal preview first.">Review removal…</button></div></div>`;
+}
+function workView(){
+  return `<div class="work"><div class="wmain lens-${S.lens}${S.olOpen?'':' ol-hidden'}">${workHead()}<div class="wbody" id="wbody">${mapPane()}${outline()}</div></div>${inspector('work')}</div>`;
+}
+/* ---------------- task view (the task as a whole) ---------------- */
+function taskView(){
+  const n=BY[S.taskId]||BY.t1,st=stOf(n),path=pathTo(n.id),team=subtree(n.id);
+  const done=st==='done'&&n.review;
+  const head=`<div class="pcrumb"><button data-nav="work">Work</button>${path.map((p,i)=>i<path.length-1?`<span>›</span><button data-opentask="${p.id}">${esc(p.title.length>34?p.title.slice(0,32)+'…':p.title)}</button>`:'').join('')}<span>›</span><span>${n.parent?'Delegated task':'Task'}</span></div>
+    <div style="display:flex;align-items:flex-start;gap:16px"><div style="flex:1;min-width:0"><h1 class="ptitle bidi" dir="auto">${esc(n.title)}</h1><div class="pmeta">${ico('folder',15)}${PROJ[n.proj].name}<span>·</span>Started ${clock(n.start)}<span>·</span>${n.parent?'Delegated by '+esc(agentName(BY[n.parent])):'Led by '+esc(agentName(n))}${n.auto?'<span>·</span>May bring in helpers':''}</div></div>
+    <button class="btn" data-mapfocus="${n.id}">${ico('map',15)}Show in map</button>${ENDED.includes(st)?'':`<button class="btn" data-toast="New instructions reach the lead right away.">${ico('edit',15)}New instructions</button><button class="btn danger" data-toast="Stops the lead and its helpers after you confirm. Nothing is deleted.">${ico('stop',14,2.2)}Stop</button>`}</div>`;
+  const banner=done?`<div class="banner ok">${bead('review',20)}<span>Finished ${ago(n.end)}. <b>Ready for your review — nothing has been applied to your project yet.</b></span></div>`
+    :st==='helpers'?`<div class="banner ask">${bead('ask',20)}<span>Waiting for ${kidsOf(n.id).filter(c=>!ENDED.includes(c.st)).length} helpers. <b>${subtree(n.id).some(c=>stOf(c)==='ask')?'One of them has a question for you.':'They’re working.'}</b></span>${subtree(n.id).some(c=>stOf(c)==='ask')?`<span class="sp"></span><button class="btn ask sm" data-reply="${subtree(n.id).find(c=>stOf(c)==='ask').id}">Answer</button>`:''}</div>`
+    :`<div class="banner" style="background:var(--surface);border:1px solid var(--line)">${beadFor(n)}<span>${STL[st]} · ${esc(nowLine(n).t)}</span></div>`;
+  const main=done?`<div class="card"><div class="card-h"><h2>Result</h2></div><div class="card-b">
+      <p style="font-size:12.5px;font-weight:700;letter-spacing:.04em;color:var(--text-3);margin-bottom:8px">REPORTED BY ${TOOLS[n.ag.tool].label.toUpperCase()}</p><div class="say">${esc(n.report)}</div>
+      <p style="font-size:12.5px;font-weight:700;letter-spacing:.04em;color:var(--text-3);margin:22px 0 4px">VERIFIED BY THE CONTROL CENTER</p>
+      <div class="ck"><span class="t-work">${ico('check',18,2.4)}</span><span>The work stayed in its own copy<small>Your project files are exactly as they were.</small></span></div>
+      <div class="ck"><span class="t-work">${ico('check',18,2.4)}</span><span>The helper’s part merged into this copy cleanly<small>No conflicts, and ${TOOLS[n.ag.tool].label} reviewed and accepted it.</small></span></div>
+      <p style="font-size:12.5px;font-weight:700;letter-spacing:.04em;color:var(--text-3);margin:22px 0 4px">NOT VERIFIED</p>
+      <div class="ck"><span class="t-ask">${ico('clock',18,2)}</span><span>The tests<small>“All 61 tests pass” is the agent’s own report. The Control Center doesn’t run your tests.</small></span></div>
+      <div class="ck"><span class="t-ask">${ico('clock',18,2)}</span><span>Your project<small>The changes haven’t been applied to ${PROJ[n.proj].name}.</small></span></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:18px"><button class="btn primary" data-toast="A careful three-way merge into ${PROJ[n.proj].name}. If anything conflicts, nothing is written and you see which files.">Apply to ${PROJ[n.proj].name}</button><button class="btn" data-toast="Opens the folder of the task’s private copy.">${ico('folder',15)}Open the task’s copy</button><button class="btn" data-toast="Starts the agent again on this task with your new instructions.">Ask for changes</button></div></div></div>`
+    :`<div class="card"><div class="card-h"><h2>Request</h2><span class="sp"></span><span style="font-size:12.5px;color:var(--text-3)">written by you</span></div><div class="card-b"><p class="prose bidi" dir="auto">${esc(n.brief||n.title)}</p></div></div>
+      <div class="card" style="margin-top:16px"><div class="card-h"><h2>How it’s going</h2></div><div class="card-b steps">${(n.id==='t1'?[['split','Planned the work in three parts','A JSON CLI, an HTML report and quoted-field parsing — each handed to a helper with its own copy.','14:04'],['x','Dropped the XML export idea','Replaced by the HTML report. Nothing from it was used.','14:06'],['merge','The JSON CLI is done and merged','No conflicts. The lead reviewed and accepted it.','14:12'],['hand','Quoted fields asked you a question','About newlines inside quoted fields.','14:18']]:[['play','Started',`${TOOLS[n.ag.tool].label} · ${n.ag.model}`,clock(n.start)]]).map(([i,a,b,t])=>`<div class="st"><span class="sd">${ico(i,12,2.2)}</span><div><b>${a}</b><small>${b}</small></div><span class="tm">${t}</span></div>`).join('')}</div></div>
+      <div class="card" style="margin-top:16px"><div class="card-h"><h2>Result</h2></div><div class="card-b" style="color:var(--text-3)">Appears here when the lead finishes: what it reports, what the Control Center verified, and what still needs checking.</div></div>`;
+  const side=`<div class="card"><div class="card-h"><h2>Who’s on it</h2><span class="sp"></span><div class="mini-lens" role="group" aria-label="View team as"><button aria-pressed="${S.teamLens!=='map'}" data-teamlens="list">List</button><button aria-pressed="${S.teamLens==='map'}" data-teamlens="map">Map</button></div></div>
+    <div class="card-b">${S.teamLens==='map'?`<div class="fam" style="padding:4px">${familySVG(n)}</div>`:team.map((m,i)=>{const d=pathTo(m.id).length-pathTo(n.id).length;const ms=stOf(m);return `<button class="kid team" data-teamsel="${m.id}" style="padding-left:${8+d*18}px" aria-pressed="${S.sel===m.id}">${beadFor(m)}${av(m,24)}<span style="min-width:0"><span class="kt ell${ms==='removed'?' removed':''}" style="display:block">${esc(m.id===n.id?agentName(m):m.title)}</span><small style="color:var(--text-3);font-size:12px">${m.id===n.id?(n.parent?'This task’s agent':'Lead'):TOOLS[m.ag.tool].label} · ${m.review&&ms==='done'?'Ready for review':STL[ms]}</small></span><span class="c-time num">${timeOf(m)}</span></button>`}).join('')}
+    <p style="font-size:12.5px;color:var(--text-3);margin-top:10px">Select someone to see their details. <button class="btn sm ghost" data-mapfocus="${n.id}">Open the full map ${ico('right',12,2.4)}</button></p></div></div>`;
+  return `<div class="work"><div class="page" style="flex:1"><div class="pwrap">${head}${banner}<div class="cols"><div>${main}</div><div>${side}</div></div></div></div>${S.insp&&S.sel&&S.sel!==n.id&&team.some(m=>m.id===S.sel)?inspector('task'):''}</div>`;
+}
+/* ---------------- new task ----------------
+   Refinement round 1. Mirrors the real form's semantics (StartAgentForm, autonomousCreation, allocation):
+   - the lead's model and effort come from that provider's catalog; effort levels are per model;
+   - only Claude Code and Codex can lead autonomous work; Practice simulates one agent;
+   - Child agents: without Auto each child uses the tool/model the lead's plan names, else the lead's tool,
+     and an unavailable tool is never replaced; with Auto the lead may also ask the Control Center to choose,
+     only among the tools the user checks here that are also allowed and eligible.
+   Folder browsing and dropping are SIMULATED: a browser cannot hand the backend a real folder path. */
+const CAT={
+  claude:{dflt:'sonnet',models:[
+    {id:'sonnet',label:'Sonnet 4.5',efforts:['low','medium','high'],def:'medium'},
+    {id:'opus',label:'Opus 4.1',efforts:['low','medium','high'],def:'high'},
+    {id:'haiku',label:'Haiku 4.5',efforts:[]}]},
+  codex:{dflt:'gpt-5-codex',models:[
+    {id:'gpt-5-codex',label:'GPT-5 Codex',efforts:['low','medium','high'],def:'medium'},
+    {id:'gpt-5-codex-mini',label:'GPT-5 Codex mini',efforts:['low','medium'],def:'medium'},
+    {id:'gpt-5-pro',label:'GPT-5 Pro',disabled:'Not available with your current plan'}]},
+  gemini:{dflt:'auto',noEffort:'Gemini CLI has no reasoning-effort control.',models:[
+    {id:'auto',label:'Auto (Gemini CLI chooses)'},
+    {id:'pro',label:'Gemini 2.5 Pro',disabled:'Gemini CLI can’t guarantee that a specific model runs'}]},
+  mock:{dflt:null,models:[]},
+};
+const PSTATE={claude:{allowed:true,ready:true,note:'Ready · your default'},codex:{allowed:true,ready:true,note:'Ready'},
+  gemini:{allowed:false,ready:true,note:'Not allowed for tasks yet',why:'Gemini CLI isn’t allowed for tasks yet. Allow it in Connections after confirming its billing route.'},
+  mock:{allowed:true,ready:true,note:'Simulated work'}};
+const LEADS=['claude','codex'];
+const cap=s=>s?s[0].toUpperCase()+s.slice(1):s;
+const modelOf=(tool,id)=>(CAT[tool].models||[]).find(m=>m.id===id)||null;
+const FOLDERS=[
+  {name:'csv-toolkit',kind:'registered',proj:'csv',meta:'Git · main'},
+  {name:'billing-service',kind:'registered',proj:'bill',meta:'Git · main'},
+  {name:'docs-site',kind:'ok',meta:'Git · main · 214 commits'},
+  {name:'payments-api',kind:'nocommit',meta:'Git · no commits yet'},
+  {name:'old-scripts',kind:'nogit',meta:'Folder'},
+  {name:'מסמכים-פנימיים',kind:'nogit',meta:'Folder'},
+  {name:'csv-toolkit\\docs',kind:'inside',meta:'Inside csv-toolkit'},
+];
+const FBASE='C:\\Work\\code\\';
+function folderChecks(f){
+  const ok=(t,s)=>({ok:true,t,s}),bad=(t,s)=>({ok:false,t,s});
+  if(f.kind==='registered')return [ok('Already a project','You can use it right away.')];
+  return [ok('The folder exists'),
+    f.kind==='nogit'?bad('Not a Git repository','Projects must be the top folder of a Git repository.'):f.kind==='inside'?bad('Not the repository’s top folder','Choose the folder that contains .git.'):ok('Top folder of a Git repository'),
+    f.kind==='nocommit'?bad('No commits yet','Make a first commit, then add it again. Agents work from a commit.'):['nogit','inside'].includes(f.kind)?null:ok('Has at least one commit'),
+    f.kind==='inside'?bad('Overlaps csv-toolkit','It’s inside a folder that is already a project.'):ok('Doesn’t overlap another project')].filter(Boolean);
+}
+const folderValid=f=>f.kind==='registered'||folderChecks(f).every(c=>c.ok);
+function addFolder(f){
+  if(f.kind==='registered'){S.draft.project=f.proj}
+  else{const k='p'+Object.keys(PROJ).length;PROJ[k]={name:f.name,path:'~/code/'+f.name.replace(/\\/g,'/'),added:true};S.draft.project=k}
+  S.nt.modal=null;S.nt.pop=false;S.nt.drop=null;
+}
+/* Vocabulary used across Atlas: the "lead" (lead agent) is responsible for a task; the agents it brings in
+   for parts of the work are "helpers". (Backend terms stay root/child; only the words people read change.) */
+function draftSummary(d){
+  const m=modelOf(d.tool,d.model),tl=TOOLS[d.tool].label,proj=PROJ[d.project]?.name||'no project yet';
+  if(d.tool==='mock')return [`<b>Practice mode</b> simulates one agent in <b>${esc(proj)}</b>. No AI tool runs and no helpers are brought in.`];
+  const lead=`<b>${tl}</b> (${m?esc(m.label):'provider default'}${d.effort?`, ${cap(d.effort)} effort`:''}) leads this task in a private copy of <b>${esc(proj)}</b> and ${d.access==='write'?'may edit files there':'can only read files'}.`;
+  if(!LEADS.includes(d.tool)||!d.deleg)return [lead,'It works alone. No helpers are brought in.'];
+  const allowed=d.auto.filter(p=>PSTATE[p].allowed).map(p=>TOOLS[p].label);
+  return [lead,'It may bring in helpers for parts of the work, if it decides that helps.',
+    d.alloc==='auto'?(allowed.length?`The lead chooses each helper’s tool. When it leaves that open, the Control Center picks <b>${allowed.join(' or ')}</b>.`:'Check at least one tool for automatic choice.')
+      :`The lead chooses each helper’s tool and model. A helper with none named uses <b>${tl}</b>.`];
+}
+function projectField(){
+  const d=S.draft,p=PROJ[d.project],dr=S.nt.drop;
+  const res=dr&&dr!=='over'?dr:null,chk=res?folderChecks(res):null,valid=res&&folderValid(res);
+  const q=(S.nt.q||'').toLowerCase();
+  const pop=S.nt.pop?`<div class="pjpop" role="dialog" aria-label="Choose a project">
+      <label class="pjsearch">${ico('search',15)}<input data-ntin="q" value="${esc(S.nt.q||'')}" placeholder="Find a project" aria-label="Find a project"></label>
+      <div class="pjh">Your projects</div>
+      ${Object.entries(PROJ).filter(([,v])=>!q||v.name.toLowerCase().includes(q)).map(([k,v])=>`<button class="pjo" data-nt="pjpick" data-v="${k}" aria-pressed="${d.project===k}"><span class="pji">${ico('folder',15)}</span><span class="pjt"><b class="bidi" dir="auto">${esc(v.name)}</b><small class="mono">${esc(v.path)}</small></span>${d.project===k?ico('check',15,2.4):''}</button>`).join('')}
+      <div class="pjsep"></div>
+      <button class="pjo" data-nt="browse"><span class="pji">${ico('plus',15,2.2)}</span><span class="pjt"><b>Add a project folder…</b><small>Browse, or type a path</small></span></button>
+    </div>`:'';
+  return `<div class="field pjfield"><span class="flabel" id="pjlbl">Project</span>
+    <div class="pjwrap${dr==='over'?' over':''}${res&&!valid?' bad':''}" data-dropzone>
+      <button class="pj" data-nt="pjpop" aria-haspopup="dialog" aria-expanded="${!!S.nt.pop}" aria-labelledby="pjlbl pjname">
+        <span class="pji lg">${ico('folder',18)}</span>
+        ${p?`<span class="pjt"><b id="pjname" class="bidi" dir="auto">${esc(p.name)}</b><small class="mono">${esc(p.path)}</small></span><span class="pjmeta">${p.added?'Added just now':'Git · main'}</span>`
+          :`<span class="pjt"><b id="pjname">Choose a project</b><small>Required</small></span>`}
+        <span class="pjchg">Change${ico('down',13,2.2)}</span></button>
+      <div class="pjdrop" aria-hidden="true">${ico('drop',18,2)}Drop the folder to add it as a project</div>
+      ${pop}
+    </div>
+    ${res?`<div class="pjres${valid?'':' bad'}" role="status">
+        <div class="pjres-h">${valid?ico('check',16,2.4):ico('x',16,2.4)}<b class="bidi" dir="auto">${esc(res.name)}</b><span class="mono">${esc(FBASE+res.name)}</span><span class="simtag">Simulated drop</span></div>
+        <ul>${chk.map(c=>`<li class="${c.ok?'ok':'no'}">${c.ok?ico('check',13,2.6):ico('x',13,2.6)}<span>${c.t}${c.s?` <small>${c.s}</small>`:''}</span></li>`).join('')}</ul>
+        <div class="acts">${valid?`<button class="btn sm primary" data-nt="adddrop">${res.kind==='registered'?'Use this project':'Add as a project and use it'}</button>`:`<button class="btn sm" data-nt="browse">Choose another folder…</button>`}<button class="btn sm ghost" data-nt="cleardrop">Cancel</button></div></div>`
+      :`<p class="pjhint">Drag a folder from File Explorer onto this field, or <button class="lnk" data-nt="browse">browse folders</button>. Agents work in a private copy; your folder changes only when you apply a result.</p>
+        <p class="simrow"><span class="simtag">Prototype</span>Simulate dropping: <button class="lnk" data-nt="simdrop" data-v="docs-site">a Git repository</button> · <button class="lnk" data-nt="simdrop" data-v="old-scripts">a plain folder</button> · <button class="lnk" data-nt="simdrop" data-v="payments-api">a repo without commits</button></p>`}
+  </div>`;
+}
+function folderModal(){
+  if(!S.nt.modal)return '';
+  const sel=FOLDERS.find(f=>f.name===S.nt.modal.sel),typed=S.nt.modal.typing;
+  const chk=sel?folderChecks(sel):null,valid=sel&&folderValid(sel);
+  return `<div class="scrim" data-nt="closemodal"></div><div class="fmodal" role="dialog" aria-modal="true" aria-labelledby="fmh">
+    <div class="fm-h"><h2 id="fmh">Add a project folder</h2><span class="simtag">Simulated browser</span><span class="sp"></span><button class="ib sm" data-nt="closemodal" aria-label="Close">${ico('close',15)}</button></div>
+    <div class="fm-crumb">${ico('folder',14)}<span>C:</span>›<span>Work</span>›<b>code</b></div>
+    <div class="fm-b"><div class="fm-list" role="listbox" aria-label="Folders in code">
+      ${FOLDERS.map(f=>`<button class="fm-i${S.nt.modal.sel===f.name?' on':''}" role="option" aria-selected="${S.nt.modal.sel===f.name}" data-nt="fsel" data-v="${esc(f.name)}"><span class="pji">${ico('folder',15)}</span><span class="pjt"><b class="bidi" dir="auto">${esc(f.name)}</b><small>${f.meta}</small></span>${f.kind==='registered'?'<span class="chip">Project</span>':''}</button>`).join('')}
+    </div>
+    <div class="fm-d">${sel?`<h3 class="bidi" dir="auto">${esc(sel.name)}</h3><p class="mono">${esc(FBASE+sel.name)}</p>
+        <ul class="fm-checks">${chk.map(c=>`<li class="${c.ok?'ok':'no'}">${c.ok?ico('check',14,2.6):ico('x',14,2.6)}<span>${c.t}${c.s?`<small>${c.s}</small>`:''}</span></li>`).join('')}</ul>
+        ${valid&&sel.kind!=='registered'?`<label class="fm-name">Project name<input value="${esc(sel.name)}" aria-label="Project name"></label>`:''}`
+      :`<p class="fm-empty">Choose a folder to check whether it can be a project.<br><br>A project is the top folder of a Git repository with at least one commit, not inside another project.</p>`}</div></div>
+    <div class="fm-f">${typed?`<label class="fm-path">${ico('terminal',14)}<input class="mono" value="C:\\Work\\code\\docs-site" aria-label="Folder path"></label><button class="btn sm" data-nt="fsel" data-v="docs-site">Check path</button>`
+        :`<button class="btn sm ghost" data-nt="typepath">${ico('edit',13)}Type a path instead</button>`}
+      <span class="sp"></span><button class="btn sm" data-nt="closemodal">Cancel</button>
+      <button class="btn sm primary" data-nt="usefolder" ${valid?'':'disabled'}>${sel&&sel.kind==='registered'?'Use this project':'Add project and use it'}</button></div></div>`;
+}
+/* v2 layout: everything you configure sits in the wide left column (the composer stays on top); the right
+   column is a sticky "Before you start" card with the preview, the plain-language summary and Start, so the
+   result of every choice and the main action stay in view while scrolling. */
+function newTaskView(){
+  const d=S.draft,tl=TOOLS[d.tool].label,cat=CAT[d.tool],m=modelOf(d.tool,d.model),canLead=LEADS.includes(d.tool);
+  const avc=k=>({claude:COL.blue,codex:COL.green,gemini:COL.yellow,mock:COL.neutral}[k]);
+  const toolCard=k=>{const st=PSTATE[k];return `<button class="tool" role="radio" aria-checked="${d.tool===k}" ${st.allowed?`data-nt="tool" data-v="${k}"`:'aria-disabled="true"'} aria-describedby="tn-${k}"><span class="av" style="--s:30px;--c:${avc(k)}">${TOOLS[k].m}</span><b>${TOOLS[k].label}</b><small id="tn-${k}">${st.note}</small></button>`};
+  const efforts=m&&m.efforts?m.efforts:[];
+  const effortNote=d.tool==='gemini'?cat.noEffort:!m?'':!efforts.length?`${m.label} lists no effort levels.`:`Provider default: ${cap(m.def)}.`;
+  const kids=canLead&&d.deleg,blocked=['claude','codex','gemini'].filter(p=>!PSTATE[p].allowed);
+  const autoChips=['claude','codex','gemini'].map(p=>{const st=PSTATE[p],on=d.auto.includes(p);return `<button class="pchip${on?' on':''}" role="checkbox" aria-checked="${on}" ${st.allowed?`data-nt="auto" data-v="${p}"`:`aria-disabled="true" aria-describedby="why-${p}"`}><span class="av" style="--s:20px;--c:${avc(p)}">${TOOLS[p].m}</span>${TOOLS[p].label}${on?ico('check',13,2.6):''}</button>`}).join('');
+  const ready=d.text.trim()&&PROJ[d.project]&&!(kids&&d.alloc==='auto'&&!d.auto.some(p=>PSTATE[p].allowed));
+  const allocCard=(v,t,s)=>`<button class="acard" role="radio" aria-checked="${d.alloc===v}" data-nt="alloc" data-v="${v}"><span class="radio" aria-hidden="true"></span><span><b>${t}</b><small>${s}</small></span></button>`;
+  const autoNames=d.auto.filter(p=>PSTATE[p].allowed).map(p=>TOOLS[p].m);
+  const slots=kids?[100,160,220].map(x=>`<circle cx="${x}" cy="128" r="13" fill="none" stroke="var(--text-4)" stroke-width="1.5" stroke-dasharray="3 3"/><text x="${x}" y="132" text-anchor="middle" font-size="11" fill="var(--text-3)" font-family="Hanken Grotesk">+</text><text x="${x}" y="158" text-anchor="middle" font-size="10.5" fill="var(--text-3)" font-family="Hanken Grotesk">${d.alloc==='auto'?(autoNames.join(' / ')||'?'):'lead picks'}</text>`).join(''):'';
+  return `<div class="page"><div class="pwrap"><div class="pcrumb"><button data-act="back">${ico('left',13,2.4)}Back</button></div>
+    <h1 class="ptitle">New task</h1><p class="psub">Describe what you want done. The agent works in a private copy of your project and checks in when something is unclear.</p>
+    <div class="nt2"><div class="nt-main">
+      <div class="write"><label class="sr" for="draft">What should be done?</label><textarea id="draft" dir="auto" data-in="draft" placeholder="For example: Fix the flaky timeout in test_exporter.py and explain the cause.">${esc(d.text)}</textarea>
+      <div class="starts"><span style="font-size:13px;color:var(--text-3);align-self:center;margin-right:4px">Start from:</span><button data-toast="Adds: What’s broken · How to reproduce · How to check the fix">Fix a bug</button><button data-toast="Adds: Goal · Constraints · How to check it">Build something</button><button data-toast="Adds: Question · What to look at · What to report back">Investigate</button></div></div>
+      ${projectField()}
+      <section class="nt-sec" id="sec-lead" aria-labelledby="lead-h"><div class="nt-sh"><h2 id="lead-h">Lead agent</h2><span>Responsible for the whole task</span></div>
+        <div class="tools" role="radiogroup" aria-label="Lead agent’s tool">${['claude','codex','gemini','mock'].map(toolCard).join('')}</div>
+        ${blocked.length?`<p class="pjhint" id="why-gemini">${ico('info',13)} ${PSTATE.gemini.why} <button class="lnk" data-nav="connections">Open Connections</button></p>`:''}
+        ${d.tool==='mock'?'':`<div class="leadcfg">
+          <div class="lc"><span class="lc-l" id="lc-model">Model</span><label class="sel">${ico('down',13,2.2)}<select data-ntsel="model" aria-labelledby="lc-model">${cat.models.map(x=>`<option value="${x.id}" ${x.id===d.model?'selected':''} ${x.disabled?'disabled':''}>${x.label}${x.disabled?` (${x.disabled})`:''}</option>`).join('')}</select></label><small>${d.tool==='gemini'?'Gemini CLI picks the model itself.':`From ${tl}’s list for your account.`}</small></div>
+          <div class="lc"><span class="lc-l" id="lc-eff">Reasoning effort</span>${efforts.length?`<div class="segc" role="radiogroup" aria-labelledby="lc-eff">${efforts.map(e=>`<button role="radio" aria-pressed="${d.effort===e}" aria-checked="${d.effort===e}" data-nt="effort" data-v="${e}">${cap(e)}</button>`).join('')}</div>`:'<span class="dim-val lc-v">Provider default</span>'}<small>${effortNote}</small></div>
+          <div class="lc"><span class="lc-l" id="lc-acc">File access</span><div class="segc" role="radiogroup" aria-labelledby="lc-acc"><button role="radio" aria-pressed="${d.access==='read'}" aria-checked="${d.access==='read'}" data-nt="access" data-v="read">Read only</button><button role="radio" aria-pressed="${d.access==='write'}" aria-checked="${d.access==='write'}" data-nt="access" data-v="write">Can edit</button></div><small>Only in its private copy.</small></div>
+        </div>`}
+      </section>
+      <section class="nt-sec" id="sec-helpers" aria-labelledby="help-h"><div class="nt-sh"><h2 id="help-h">Helpers</h2><span>Agents the lead brings in for parts of the work</span></div>
+        <div class="swrow"><div><b id="dlg-l">Let the lead bring in helpers</b><small>${!canLead?(d.tool==='mock'?'Practice mode simulates a single agent.':'Only Claude Code and Codex can lead helpers.'):kids?'It decides whether helpers are worth it. It may also do everything itself.':'The lead does all the work itself.'}</small></div>
+          <button class="sw" role="switch" aria-checked="${kids}" aria-labelledby="dlg-l" ${canLead?'data-nt="deleg"':'aria-disabled="true" disabled'}></button></div>
+        ${kids?`<div class="hcfg"><span class="lc-l" id="alloc-l">Choosing each helper’s tool</span>
+          <div class="acards" role="radiogroup" aria-labelledby="alloc-l">${allocCard('plan','Follow the lead’s choices','The lead picks each helper’s tool and model.')}${allocCard('auto','Also allow automatic choice','When the lead leaves it open, the Control Center picks.')}</div>
+          ${d.alloc==='plan'?`<p class="expl">A helper with no tool named uses ${tl}. If a named tool isn’t available, that helper waits; it’s never swapped for another tool.</p>`
+            :`<p class="expl">The lead’s own choices still win. For a helper it leaves open, the Control Center picks one of the tools checked here that is allowed, ready and suited to that work. If none fits, the helper waits with an explanation. Running agents are never switched.</p>
+            <div class="pchips" role="group" aria-label="Tools that may be picked automatically">${autoChips}</div>
+            ${blocked.map(p=>`<p class="why" id="why-${p}">${TOOLS[p].label} isn’t allowed for tasks. You can allow it in <button class="lnk" data-nav="connections">Connections</button>; nothing is enabled from here.</p>`).join('')}`}
+          <p class="note-i">${ico('info',14)}<span>Helpers don’t inherit ${m?esc(m.label):tl}${d.effort?` · ${cap(d.effort)}`:''}: each helper’s model and effort come from the lead’s choice${d.alloc==='auto'?' or the automatic pick':''}. Limits and preferences for automatic choice can be set on the task after it starts.</span></p></div>`:''}
+      </section>
+    </div>
+    <aside class="nt-side" aria-label="Before you start"><div class="card nt-card"><div class="card-h"><h2>Before you start</h2></div><div class="card-b">
+      <div class="preview" aria-hidden="true"><svg viewBox="0 0 320 ${kids?168:96}" width="100%">
+        <circle cx="160" cy="30" r="21" fill="${avc(d.tool)}"/><text x="160" y="35" text-anchor="middle" font-size="14" font-weight="700" fill="#17181B" font-family="Hanken Grotesk">${TOOLS[d.tool].m}</text>
+        <text x="160" y="68" text-anchor="middle" font-size="12.5" font-weight="700" fill="var(--text)" font-family="Hanken Grotesk">Lead · ${tl}</text>
+        <text x="160" y="84" text-anchor="middle" font-size="11.5" fill="var(--text-3)" font-family="Hanken Grotesk">${d.tool==='mock'?'Simulated':`${m?esc(m.label):'Default model'}${d.effort?' · '+cap(d.effort):''}`}</text>
+        ${kids?`<path d="M160 92V100M100 100H220M100 100V115M160 100V115M220 100V115" stroke="var(--thread)" stroke-width="1.6" fill="none" stroke-dasharray="3 3"/>${slots}`:''}</svg>
+        <p class="pv-cap">${kids?'Helpers appear only if the lead brings them in.':'One agent, working alone.'}</p></div>
+      <div class="summary" aria-live="polite">${draftSummary(d).map(s=>`<p>${s}</p>`).join('')}</div>
+      ${kids?`<p class="note-i usage">${ico('bolt',14)}<span>Helpers and follow-up rounds use more of your plans, possibly on other provider accounts. Provider limits and billing still apply. <button class="lnk" data-nav="connections">Usage &amp; billing</button></span></p>`:''}
+      <div class="nt-acts"><button class="btn ghost" data-act="back">Cancel</button><span class="sp"></span><button class="btn primary" data-act="start" ${ready?'':'disabled'}>Start task<span class="kbd">Ctrl ⏎</span></button></div>
+      ${ready?'':`<p class="pv-cap" role="status">${!d.text.trim()?'Describe the task to start.':!PROJ[d.project]?'Choose a project to start.':'Check at least one tool for automatic choice.'}</p>`}
+    </div></div></aside></div></div></div>${folderModal()}`;
+}
+/* ---------------- connections ----------------
+   Refinement round 1: three separate questions per tool, never merged into one green light.
+   1. Ready for tasks (the Control Center's own checks and your permission);
+   2. Usage limits, exactly as far as the tool reports them (Claude Code: meters via /usage;
+      Codex: only limit-reached signals; Gemini CLI: nothing);
+   3. Paid usage beyond the plan, which lives in the provider account and is not visible here.
+   Acknowledgment texts are the backend's own (providers.py CONFIRMATION / CODEX_ACKNOWLEDGMENT). */
+const ACK_CONFIRM='I confirm that this provider uses my existing subscription sign-in and that paid overage, extra usage, credits and API billing are not enabled for the Control Center.';
+const ACK_CODEX='I understand that Codex runs through my ChatGPT subscription and that its usage limits apply. Existing credits or automatic credit purchases configured on my OpenAI account may still affect billing outside the Control Center. The Control Center never purchases credits, never enables a paid fallback and never uses an API key, but it cannot enforce account-side spending limits that OpenAI does not expose. This acknowledgment does not permit pay-per-use API routes.';
+function connectionsView(){
+  const fact=(tone,t,s='')=>`<li class="cf ${tone}"><span class="cf-i">${tone==='ok'?ico('check',13,2.6):tone==='warn'?ico('clock',13,2.2):tone==='no'?ico('x',13,2.6):ico('info',13,2)}</span><span>${t}${s?`<small>${s}</small>`:''}</span></li>`;
+  const meter=(l,pct,reset,obs)=>`<div class="meter"><div class="meter-h"><span>${l}</span><b class="num">${pct}% used</b></div><div class="meter-b" role="img" aria-label="${l}: ${pct}% used, as reported by Claude Code"><span style="width:${pct}%"></span></div><small>Reset reported by Claude Code: ${reset} · observed ${obs}</small></div>`;
+  const open=S.conn||'claude';
+  const P={
+    claude:{c:COL.blue,chip:'<span class="chip">Ready for tasks</span>',lead:'Runs on your Claude subscription sign-in. New tasks use it by default.',
+      ready:[fact('ok','Installed 2.1.280','Update 2.1.290 available'),fact('ok','Signed in · claude.ai subscription'),fact('ok','Allowed for tasks'),fact('ok','Billing route: subscription','Read from the sign-in. API keys aren’t used.')],
+      usage:`<p class="cu-src">Claude Code reports usage meters through its /usage command.</p>${meter('Session limit',38,'today 17:00','14:10')}${meter('Weekly limit (all models)',61,'Thu 09:00','14:10')}
+        <p class="cu-n">These are the tool’s own readings. Remaining usage isn’t calculated from them, and a reset time isn’t a promise of availability.</p><button class="btn sm" data-toast="Asks Claude Code for its local usage report. No model request; no agent resumes.">${ico('refresh',13)}Refresh usage</button>`,
+      paid:`<p>Claude plans can add <b>extra usage</b>: usage past your plan’s limit, billed separately. Where to check:</p><ol class="steps2"><li>On claude.ai, open <b>Settings › Usage</b>.</li><li>Look at <b>Extra usage</b>: whether it’s on, and its monthly limit.</li></ol>`,
+      links:[['https://claude.ai','Open claude.ai'],['https://support.claude.com/en/articles/12429409','About extra usage']],
+      ack:{who:'Your confirmation',when:'Oct 21',text:ACK_CONFIRM}},
+    codex:{c:COL.green,chip:'<span class="chip">Ready for tasks</span>',lead:'Runs on your ChatGPT sign-in. It can lead tasks or work as a helper.',
+      ready:[fact('ok','Installed 0.154.0','Up to date'),fact('ok','Signed in · ChatGPT'),fact('ok','Allowed for tasks'),fact('ok','Billing route: subscription','Built-in OpenAI provider; no API key.')],
+      usage:`<p class="cu-src">Codex doesn’t share usage with the Control Center.</p><ul class="cfl">${fact('info','Remaining usage: unknown','Not exposed by Codex.')}${fact('info','Limits: detected only when a run reports one','None reported in the last 24 hours.')}${fact('info','Reset time: unknown until a limit is reported')}</ul>`,
+      paid:`<p>After your plan’s Codex limit, usage can draw on <b>credits</b>, and eligible plans can turn on <b>auto top-up</b>. Where to check:</p><ol class="steps2"><li>In Codex, open <b>Settings › Usage</b>.</li><li>Check your credit balance and whether auto top-up is on.</li></ol>`,
+      links:[['https://chatgpt.com','Open chatgpt.com'],['https://help.openai.com/en/articles/11369540','About Codex usage']],
+      ack:{who:'Your acknowledgment',when:'Oct 23',text:ACK_CODEX}},
+    gemini:{c:COL.yellow,chip:'<span class="chip ask">Needs your OK</span>',lead:'Installed, but not allowed for tasks. Its sign-in can’t be verified from here.',
+      ready:[fact('ok','Installed 0.9.0'),fact('warn','Sign-in can’t be checked','Gemini CLI has no sign-in status command; its settings select Google sign-in.'),fact('no','Not enabled or allowed for tasks'),fact('warn','Billing route: not verified','Only what its settings select.')],
+      usage:`<p class="cu-src">Gemini CLI exposes no usage or quota information.</p><ul class="cfl">${fact('info','Remaining usage: unknown')}${fact('info','Limits: not detected','Its failures can’t be told apart from quota limits.')}${fact('info','Reset time: unknown')}</ul>`,
+      paid:`<p>With Google sign-in, Gemini CLI uses your account’s daily allowance. A Gemini API key or Vertex AI would bill through Google instead. Where to check:</p><ol class="steps2"><li>In Gemini CLI, run <b>/auth</b> to see which sign-in it uses.</li><li>Compare it with the quota and pricing guide.</li></ol>`,
+      links:[['https://geminicli.com/docs/resources/quota-and-pricing/','Quotas and pricing']],
+      ack:null},
+  };
+  const block=k=>{const p=P[k],isOpen=open===k;
+    return `<section class="prov2${isOpen?' open':''}" aria-labelledby="pv-${k}">
+      <button class="prov2-h" data-nt="conn" data-v="${k}" aria-expanded="${isOpen}"><span class="plogo" style="background:${p.c}">${TOOLS[k].m}</span>
+        <span class="pt"><b id="pv-${k}">${TOOLS[k].label}</b><small>${p.lead}</small></span>${p.chip}${ico(isOpen?'down':'right',15,2.2)}</button>
+      ${isOpen?`<div class="cols3">
+        <div class="cq"><h4><span class="qn">1</span>Ready for tasks</h4><ul class="cfl">${p.ready.join('')}</ul></div>
+        <div class="cq"><h4><span class="qn">2</span>Usage limits</h4>${p.usage}</div>
+        <div class="cq"><h4><span class="qn">3</span>Paid usage beyond your plan</h4>${p.paid}
+          <div class="lnkrow">${p.links.map(([u,l])=>`<a class="btn sm" href="${u}" target="_blank" rel="noreferrer">${ico('open',13)}${l}</a>`).join('')}</div>
+          <p class="cu-n">The Control Center can’t see these settings, so “Ready for tasks” doesn’t mean extra charges are impossible.</p>
+          ${p.ack?`<details class="ackd"><summary>${p.ack.who} · ${p.ack.when}</summary><blockquote>${p.ack.text}</blockquote><p class="cu-n">This is your statement, recorded locally. It doesn’t prove what your account allows.</p></details>`:''}
+        </div></div>
+        ${k==='gemini'?`<div class="confirmb"><b>Enable Gemini CLI</b><span>Enabling it records your confirmation below. Allowing it for tasks is a separate step under Permissions. Nothing changes in your Google account.</span>
+          <label><input type="checkbox" ${S.confirm?'checked':''} data-act="confirm"> ${ACK_CONFIRM}</label>
+          <div style="display:flex;gap:8px"><button class="btn primary sm" ${S.confirm?'':'disabled'} data-toast="Prototype only: in the app this enables Gemini CLI and records your confirmation. Allowing it for tasks is a separate permission.">Enable and confirm</button></div></div>`:''}`:''}
+    </section>`};
+  return `<div class="page"><div class="pwrap" style="max-width:1180px">
+    <div style="display:flex;align-items:flex-end;gap:16px"><div style="flex:1"><h1 class="ptitle">Connections</h1><p class="psub">The AI tools on this computer that your agents use, with your own sign-in.</p></div><button class="btn" data-toast="Quick local checks only: installation, sign-in and billing route. No AI request.">${ico('refresh',15)}Check all</button></div>
+    <div class="explain3" role="note"><div><span class="qn">1</span><b>Ready for tasks</b><small>The Control Center can start this tool, and you’ve allowed it.</small></div>
+      <div><span class="qn">2</span><b>Usage limits</b><small>Your plan’s allowance, only as far as the tool reports it.</small></div>
+      <div><span class="qn">3</span><b>Paid usage beyond your plan</b><small>Extra usage, credits or top-ups are set in your provider account. Each tool below says where to look.</small></div></div>
+    <div style="margin-top:18px"><div class="card provs">${['claude','codex','gemini'].map(block).join('')}
+      <section class="prov2"><div class="prov2-h static"><span class="plogo" style="background:${COL.neutral}">Pr</span><span class="pt"><b>Practice</b><small>Simulates work without any AI tool. Nothing is used or billed.</small></span><span class="chip">Always available</span></div></section></div>
+    <div class="cbelow"><div class="card"><div class="card-h"><h2>Defaults for new tasks</h2></div><div class="card-b">
+      <div class="opt"><div><b>Lead agent</b><small>You can pick another per task.</small></div><span class="dim-val">Claude Code · Sonnet 4.5 · Medium</span></div>
+      <div class="opt"><div><b>Tools that may be picked for helpers</b><small>Only tools allowed here.</small></div><span class="dim-val">Claude Code, Codex</span></div></div></div>
+      <div class="card"><div class="card-h"><h2>Recent setup activity</h2></div><div class="card-b">
+        <div class="kid" style="cursor:default">${bead('done')}<span><span class="kt">Acknowledged billing · Codex</span><small style="display:block;color:var(--text-3);font-size:12px">Recorded locally</small></span><span class="c-time">Oct 23</span></div>
+        <div class="kid" style="cursor:default">${bead('done')}<span><span class="kt">Installed · Claude Code 2.1.280</span><small style="display:block;color:var(--text-3);font-size:12px">Succeeded</small></span><span class="c-time">Oct 21</span></div>
+        <div class="kid" style="cursor:default">${bead('stopped')}<span><span class="kt">Update · Gemini CLI</span><small style="display:block;color:var(--text-3);font-size:12px">Cancelled by you</small></span><span class="c-time">Oct 19</span></div></div></div></div></div></div></div>`;
+}
+/* ---------------- settings ---------------- */
+function settingsView(){
+  const tile=(k,l,cls,i)=>`<button class="theme" role="radio" aria-checked="${S.themeMode===k}" data-theme="${k}"><div class="pv ${cls}"><div class="a"><i></i><i style="width:70%"></i><i></i><i style="width:55%"></i></div><div class="b"><i style="left:46%;top:16px;background:${COL.blue}"></i><i style="left:24%;top:52px;background:${COL.cyan}"></i><i style="left:68%;top:52px;background:${COL.violet}"></i></div></div><div class="lbl">${ico(i,15)}${l}</div></button>`;
+  const sec=(id,t,d,b)=>`<section class="card ssec" id="s-${id}"><div class="card-h" style="padding-bottom:2px"><h2>${t}</h2></div><p style="padding:0 18px;color:var(--text-3);font-size:13px">${d}</p><div class="card-b" style="padding-top:12px">${b}</div></section>`;
+  return `<div class="page"><div class="pwrap" style="max-width:1080px"><h1 class="ptitle">Settings</h1><p class="psub">How the Control Center looks and behaves on this computer.</p>
+    <div class="sgrid" style="margin-top:22px"><nav class="sidx" aria-label="Settings sections">${[['appearance','Appearance'],['notifications','Notifications'],['projects','Projects'],['workspace','Workspace'],['keyboard','Keyboard'],['about','About']].map(([k,l])=>`<button data-sidx="${k}" aria-current="${S.stab===k}">${l}</button>`).join('')}</nav>
+    <div>${sec('appearance','Appearance','Automatic follows your system setting.',`<div class="themes" role="radiogroup" aria-label="Appearance">${tile('auto','Automatic','pv-l','monitor').replace('class="pv pv-l"','class="pv pv-l" style="background:linear-gradient(90deg,#fff 50%,#16171B 50%)"')}${tile('light','Light','pv-l','sun')}${tile('dark','Dark','pv-d','moon')}</div>`)}
+    ${sec('notifications','Notifications','When an agent needs you or finishes.',`<div class="set"><div class="set-r"><div><b>Desktop notifications</b><small>Allowed by this browser. Windows Focus assist can still hide them.</small></div><button class="sw" role="switch" aria-checked="true" aria-label="Desktop notifications" data-toast="Turns notifications off for this app."></button></div><div class="set-r"><div><b>Tool updates</b><small>Shown in Connections. Nothing installs without your approval.</small></div><span class="chip">On</span></div></div>`)}
+    ${sec('projects','Projects','Git repositories your agents can work in. Each task gets its own private copy.',`${Object.entries(PROJ).map(([k,p])=>`<div class="projrow"><span class="pi">${ico('folder',16)}</span><div style="min-width:0"><b>${p.name}</b><div class="mono" style="color:var(--text-3);font-size:12px">${p.path}</div></div><button class="btn sm" data-scope="${k}">Show its work</button></div>`).join('')}<div class="inputrow"><input placeholder="Path to an existing Git repository, e.g. ~/code/docs-site" aria-label="Project path"><button class="btn sm" data-toast="Registers the repository after checking it has a first commit.">Add project</button></div>`)}
+    ${sec('workspace','Workspace','How work is shown.',`<div class="set"><div class="set-r"><div><b>Open Work as</b><small>You can switch any time with L and M.</small></div><div class="segc"><button aria-pressed="true">List</button><button>Map</button></div></div><div class="set-r"><div><b>Show removed agents</b><small>Kept in the list and map, crossed out, with the reason.</small></div><button class="sw" role="switch" aria-checked="${S.showRemoved}" data-act="toggleRemoved" aria-label="Show removed agents"></button></div><div class="set-r"><div><b>Details panel width</b><small><span class="num">${S.inspW}px</span> · drag its edge to resize</small></div><button class="btn sm" data-act="resetW">Reset</button></div></div>`)}
+    ${sec('keyboard','Keyboard','Everything is reachable without a mouse.',`<div class="keys">${[['New task','N'],['List / Map','L · M'],['Move in the list','↑ ↓'],['Open / close a branch','→ ←'],['Focus a branch','F'],['Search','Ctrl K'],['Close details or focus','Esc'],['Send a reply','Ctrl ⏎']].map(([a,b])=>`<div><span>${a}</span><span class="kbd">${b}</span></div>`).join('')}</div>`)}
+    ${sec('about','About','',`<dl class="kv"><dt>Backend</dt><dd>127.0.0.1:8000 · live updates connected</dd><dt>Version</dt><dd>Stage 2J prototype · fictional data</dd></dl>`)}</div></div></div></div>`;
+}
+/* ---------------- projects ---------------- */
+function projectsView(){
+  const stat=(k)=>{const r=N.filter(n=>!n.parent&&n.proj===k);return {active:r.filter(x=>sectionOf(x)!=='done').length,needs:r.filter(x=>sectionOf(x)==='needs').length,done:r.filter(x=>sectionOf(x)==='done').length,agents:N.filter(n=>n.proj===k&&!ENDED.includes(n.st)).length}};
+  return `<div class="page"><div class="pwrap"><div style="display:flex;align-items:flex-end;gap:16px"><div style="flex:1"><h1 class="ptitle">Projects</h1><p class="psub">Repositories your agents work in. Choosing one narrows Work to it.</p></div><button class="btn" data-nav="settings">${ico('plus',15,2.2)}Add project</button></div>
+    <div class="pgrid">${Object.entries(PROJ).map(([k,p])=>{const s=stat(k);return `<button class="card pcard" data-scope="${k}"><div class="pthumb" aria-hidden="true">${forestThumb(k)}</div><h3>${ico('folder',18)}${p.name}</h3><span class="mono" style="color:var(--text-3);font-size:12.5px">${p.path}</span><div class="stats"><span><b class="num">${s.active}</b>active tasks</span><span><b class="num">${s.agents}</b>agents active</span><span><b class="num ${s.needs?'t-ask':''}">${s.needs}</b>need you</span></div><span style="font-size:13px;color:var(--text-2);display:flex;align-items:center;gap:6px">Show its work ${ico('right',13,2.4)}</span></button>`}).join('')}
+    <div class="card pcard" style="border-style:dashed;box-shadow:none"><h3 style="color:var(--text-2)">${ico('plus',18)}Add a project</h3><span style="color:var(--text-3);font-size:13.5px">Any local Git repository with at least one commit. Agents never change it directly — they work in private copies.</span><button class="btn sm" style="align-self:flex-start" data-nav="settings">Add in Settings</button></div></div></div></div>`;
+}
+function forestThumb(pk){
+  const pos={};let x=0;N.filter(n=>!n.parent&&n.proj===pk).forEach(r=>{const w=mW(r.id);mPlace(r.id,x,TOPPAD,pos);x+=w+TGAP});
+  const ids=Object.keys(pos);if(!ids.length)return '';
+  const W=Math.max(1,x-TGAP),H=Math.max(...ids.map(i=>pos[i].y+pos[i].h)),s=Math.min(286/W,96/H);
+  const at=id=>{const b=pos[id];return b.kind==='row'?[(b.x+6)*s,(b.y+b.h/2)*s]:[(b.x+NW/2)*s,(b.y+30)*s]};
+  let e='',d='';
+  ids.forEach(id=>{const n=BY[id],[x1,y1]=at(id);
+    if(n.parent&&pos[n.parent]){const [x0,y0]=at(n.parent);e+=pos[id].kind==='row'?`<path d="M${x0},${y0}V${y1}H${x1}"/>`:`<path d="M${x0},${y0}V${(y0+y1)/2}H${x1}V${y1}"/>`}
+    const c=COL[n.ag.color],o=n.st==='removed'?' opacity=".35"':'';
+    d+=pos[id].kind==='row'?`<rect x="${x1-3}" y="${y1-3.5}" width="${Math.max(12,RW*s*.75)}" height="7" rx="3.5" fill="${c}"${o}/>`:`<circle cx="${x1}" cy="${y1}" r="${n.parent?4.5:7}" fill="${c}"${o}/>`});
+  return `<svg viewBox="-8 -8 ${W*s+16} ${H*s+16}" width="${Math.round(W*s+16)}" height="${Math.round(H*s+16)}">${e}${d}</svg>`;
+}
+/* ---------------- popovers ---------------- */
+function popover(){
+  if(!S.pop)return '';
+  if(S.pop==='scope')return `<div class="pop" style="left:20px;top:108px" role="menu"><div class="ph">Show work from</div><button data-scope="all">${S.scope==='all'?ico('check',14,2.4):'<span style="width:14px"></span>'}All projects</button>${Object.entries(PROJ).map(([k,p])=>`<button data-scope="${k}">${S.scope===k?ico('check',14,2.4):'<span style="width:14px"></span>'}${p.name}</button>`).join('')}<button data-nav="projects">${ico('folder',14)}Manage projects</button></div>`;
+  if(S.pop==='view')return `<div class="pop" style="right:${S.insp&&S.sel?S.inspW+16:16}px;top:108px" role="menu"><button data-act="toggleRemoved">${S.showRemoved?ico('check',14,2.4):'<span style="width:14px"></span>'}Show removed agents</button><button data-act="expandAll">${ico('down',14)}Expand everything</button><button data-act="collapseAll">${ico('right',14)}Collapse to tasks</button></div>`;
+  if(S.pop==='trees'){const at=document.querySelector('.mcard')?.getBoundingClientRect();return `<div class="pop" style="left:${at?at.left:340}px;top:${at?at.bottom+6:160}px;max-width:420px" role="menu"><div class="ph">Jump to a task</div>${rootsVisible().map(r=>`<button data-sel="${r.id}" data-centre="1">${beadFor(r)}<span class="ell bidi" dir="auto">${esc(r.title)}</span></button>`).join('')}</div>`}
+  if(S.pop==='agentMenu')return `<div class="pop" style="right:24px;top:118px" role="menu"><button data-toast="Inline rename.">${ico('edit',14)}Rename</button><button data-toast="Nine colour labels.">${ico('layers',14)}Colour label</button><button data-act="focusSel">${ico('focus',14)}Focus this branch</button><button data-toast="Stops this agent and everyone below it, after you confirm.">${ico('stop',14)}Stop branch…</button><button style="color:var(--fail)" data-tab="settings">${ico('x',14)}Remove…</button></div>`;
+  return '';
+}
+
+/* ---------------- render ---------------- */
+const app=document.getElementById('app');
+function render(opts={}){
+  const olScroll=document.querySelector('[data-outline]')?.scrollTop||0;const pageScroll=document.querySelector('.page')?.scrollTop||0;
+  let view;
+  if(S.route==='task')view=taskView();else if(S.route==='new')view=newTaskView();else if(S.route==='connections')view=connectionsView();else if(S.route==='settings')view=settingsView();else if(S.route==='projects')view=projectsView();else view=workView();
+  app.innerHTML=`<div class="app">${topBar()}${view}</div>${popover()}${S.toast?`<div class="toast" role="status">${ico('check',15,2.4)}${esc(S.toast)}</div>`:''}`;
+  S.enterInsp=false;
+  const ol=document.querySelector('[data-outline]');if(ol)ol.scrollTop=olScroll;const pg=document.querySelector('.page');if(pg&&!opts.top)pg.scrollTop=pageScroll;
+  if(S.route==='work'){if(!S.cam)fitTree(false);applyCam(false);drawMini();if(opts.reveal)reveal()}
+  const d=document.getElementById('draft');if(d&&opts.focusDraft)d.focus();
+}
+function reveal(){const r=document.querySelector(`.row[data-id="${S.sel}"]`);if(r)r.scrollIntoView({block:'nearest'})}
+/* ---------------- camera ---------------- */
+const boxOf=id=>F.pos[id];
+function overlayW(){const i=document.querySelector('.insp');return i&&getComputedStyle(i).position==='absolute'?i.getBoundingClientRect().width:0}
+function visRect(){const wb=document.getElementById('wbody');if(!wb)return {l:0,w:1000,h:700};const ol=document.querySelector('[data-outline]');const left=S.lens==='map'&&S.olOpen&&ol?ol.getBoundingClientRect().width:0;return {l:left,w:wb.clientWidth-left-overlayW(),h:wb.clientHeight}}
+function treeIds(id){return subtree(id).map(n=>n.id).filter(i=>F&&F.pos[i])}
+/* fits a set of nodes; if they would only fit at an unreadable size, keeps text legible and centres on the selection */
+function fitIds(ids,animate=true,{maxK=1,minK=.72,anchor=null}={}){
+  if(!F||!ids.length)return;const v=visRect(),bs=ids.map(boxOf);
+  const minX=Math.min(...bs.map(b=>b.x))-30,maxX=Math.max(...bs.map(b=>b.x+b.w))+30,minY=Math.min(...bs.map(b=>b.y))-34,maxY=Math.max(...bs.map(b=>b.y+b.h))+10;
+  let k=Math.min(maxK,(v.w-72)/(maxX-minX),(v.h-130)/(maxY-minY));
+  if(k>=minK)S.cam={k,x:v.l+(v.w-(maxX-minX)*k)/2-minX*k,y:Math.max(70,(v.h-(maxY-minY)*k)/2)-minY*k};
+  else{
+    k=Math.max(minK,Math.min(maxK,.82));const aid=anchor&&F.pos[anchor]?anchor:(S.sel&&ids.includes(S.sel)?S.sel:ids[0]),a=boxOf(aid);
+    let x=v.l+v.w/2-(a.x+a.w/2)*k;x=Math.min(x,v.l+36-minX*k);x=Math.max(x,v.l+v.w-36-maxX*k);
+    const th=(maxY-minY)*k;S.cam={k,x,y:th<=v.h-100?Math.max(70,(v.h-th)/2)-minY*k:Math.min(v.h/2-(a.y+a.h/2)*k,70-minY*k)};
+  }
+  if(animate)applyCam(true);
+}
+function fitTree(animate=true){
+  if(!F)return;const sel=S.sel&&F.pos[S.sel]?BY[S.sel]:null;
+  const base=S.focus&&F.pos[S.focus]?S.focus:sel?rootOf(sel).id:(rootsVisible()[0]||{}).id;const ids=base?treeIds(base):[];
+  if(ids.length)fitIds(ids,animate);else{const all=Object.keys(F.pos);if(all.length)fitIds(all,animate,{maxK:.9,minK:.3})}
+}
+function centreOn(id,animate=true){if(!F||!F.pos[id])return;const v=visRect(),b=boxOf(id),k=S.cam?S.cam.k:.9;S.cam={k,x:v.l+v.w/2-(b.x+b.w/2)*k,y:v.h/2-(b.y+b.h/2)*k+20};applyCam(animate)}
+function ensureVisible(id){if(!F||!F.pos[id])return;if(!S.cam)return centreOn(id);const v=visRect(),k=S.cam.k,b=boxOf(id),sx=S.cam.x+b.x*k,sy=S.cam.y+b.y*k;if(sx<v.l+20||sx+b.w*k>v.l+v.w-20||sy<70||sy+b.h*k>v.h-20)centreOn(id)}
+function applyCam(animate){
+  const inner=document.getElementById('minner');if(!inner||!S.cam)return;
+  inner.style.transition=animate&&!matchMedia('(prefers-reduced-motion: reduce)').matches?'transform .45s cubic-bezier(.2,.75,.2,1)':'none';
+  inner.style.transform=`translate(${S.cam.x}px,${S.cam.y}px) scale(${S.cam.k})`;inner.classList.toggle('far',S.cam.k<.68);
+  const p=document.getElementById('pct');if(p)p.textContent=Math.round(S.cam.k*100)+'%';
+  const left=visRect().l,t=document.getElementById('mtool'),c=document.getElementById('mctl'),mi=document.getElementById('mini');
+  if(t)t.style.left=(left+16)+'px';if(c)c.style.left=(left+16)+'px';if(mi)mi.style.right=(overlayW()+16)+'px';
+  drawMini();
+}
+function drawMini(){
+  const m=document.getElementById('mini');if(!m||!F||!S.cam)return;const W=196,H=118,s=Math.min((W-16)/F.W,(H-16)/F.H),ox=(W-F.W*s)/2,oy=(H-F.H*s)/2,v=visRect();
+  const dots=Object.keys(F.pos).map(id=>{const n=BY[id],b=F.pos[id],st=stOf(n);const c={work:'var(--work)',ask:'var(--ask-fill)',paused:'var(--ask-fill)',failed:'var(--fail)',blocked:'var(--block)'}[st]||'var(--text-4)';
+    return b.kind==='row'?`<rect x="${ox+b.x*s}" y="${oy+(b.y+b.h/2)*s-1.5}" width="${Math.max(5,b.w*s*.55)}" height="3" rx="1.5" fill="${c}"/>`:`<circle cx="${ox+(b.x+b.w/2)*s}" cy="${oy+(b.y+28)*s}" r="${n.parent?2.4:3.6}" fill="${c}"/>`}).join('');
+  const vx=ox+((v.l-S.cam.x)/S.cam.k)*s,vy=oy+((0-S.cam.y)/S.cam.k)*s,vw=(v.w/S.cam.k)*s,vh=(v.h/S.cam.k)*s;
+  m.innerHTML=`<svg width="${W}" height="${H}">${dots}<rect x="${vx}" y="${vy}" width="${vw}" height="${vh}" rx="4" fill="var(--accent-soft)" stroke="var(--accent)" stroke-width="1.2"/></svg>`;
+  m.onclick=e=>{const r=m.getBoundingClientRect();const fx=(e.clientX-r.left-ox)/s,fy=(e.clientY-r.top-oy)/s;S.cam={...S.cam,x:v.l+v.w/2-fx*S.cam.k,y:v.h/2-fy*S.cam.k};applyCam(true)};
+}
+/* ---------------- the lens transition: the same agents travel between List and Map ----------------
+   Each agent's avatar lifts out of its List row and flies to its place in the Map (and back),
+   while the List slides away or returns and the Map's threads draw in around the agents as they land. */
+const onScreen=r=>r.bottom>-40&&r.top<innerHeight+40&&r.right>-40&&r.left<innerWidth+40;
+function listAnchor(row){const a=row.querySelector('.c-who .av');return a&&a.getBoundingClientRect().width?a:row.querySelector('.bead')}
+function anchors(){const m={};
+  if(S.lens==='list')document.querySelectorAll('.row[data-id]').forEach(row=>{const r=listAnchor(row).getBoundingClientRect();if(r.width)m[row.dataset.id]=r});
+  else document.querySelectorAll('[data-map] [data-id]').forEach(g=>{const a=g.querySelector('.av');if(!a)return;const r=a.getBoundingClientRect();if(r.width)m[g.dataset.id]=r});
+  return m}
+function switchLens(next,{freeze=null}={}){
+  if(S.lens===next&&freeze===null)return;
+  const reduce=matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const from=anchors(),ol=document.querySelector('[data-outline]'),fromW=ol?ol.getBoundingClientRect().width:0;
+  S.lens=next;S.pop=null;render();syncUrl();
+  if(next==='map'){fitTree(false);applyCam(false)}else reveal();
+  if(reduce)return;
+  const D=680,E='cubic-bezier(.3,.7,.1,1)',anims=[];
+  const ol2=document.querySelector('[data-outline]');
+  if(ol2){const toW=ol2.getBoundingClientRect().width;if(Math.abs(toW-fromW)>1)anims.push(ol2.animate([{width:fromW+'px',visibility:'visible'},{width:toW+'px',visibility:'visible'}],{duration:D,easing:E}))}
+  if(next==='list'){const mi=document.getElementById('minner');if(mi){anims.push(mi.animate([{opacity:1},{opacity:0,offset:.5},{opacity:0}],{duration:D,easing:'ease-out'}));mi.querySelectorAll('.av').forEach(a=>anims.push(a.animate([{opacity:0},{opacity:0}],{duration:D})))}}
+  const layer=document.createElement('div');layer.className='ghosts';layer.setAttribute('aria-hidden','true');document.body.appendChild(layer);
+  const wb=document.getElementById('wbody')?.getBoundingClientRect();if(wb)layer.style.clipPath=`inset(${wb.top}px ${innerWidth-wb.right+overlayW()}px ${innerHeight-wb.bottom}px ${wb.left}px)`;
+  const targets=next==='map'?[...document.querySelectorAll('[data-map] [data-id]')]:[...document.querySelectorAll('.row[data-id]')];
+  targets.forEach(el=>{
+    const id=el.dataset.id,a=from[id],t=next==='map'?el.querySelector('.av'):listAnchor(el);if(!t)return;const b=t.getBoundingClientRect();
+    if(next==='map'){const o=getComputedStyle(el).opacity;anims.push(el.animate([{opacity:0},{opacity:0,offset:.5},{opacity:o}],{duration:D,easing:'ease-out'}))}
+    else el.querySelectorAll('.c-main,.c-who .w,.c-now,.c-time').forEach(c=>anims.push(c.animate([{opacity:0},{opacity:0,offset:.4},{opacity:1}],{duration:D,easing:'ease-out'})));
+    if(!a||!b.width||!(onScreen(a)||onScreen(b)))return;
+    const n=BY[id],g=document.createElement('span');g.className='av'+(n.st==='removed'?' gone':'');
+    g.style.cssText=`--s:${b.width}px;--c:${COL[n.ag.color]};left:${b.left}px;top:${b.top}px`;g.innerHTML=`${n.ag.init}<i class="tb">${TOOLS[n.ag.tool].m}</i>`;layer.appendChild(g);
+    const dx=a.left+a.width/2-(b.left+b.width/2),dy=a.top+a.height/2-(b.top+b.height/2),s=a.width/b.width;
+    anims.push(g.animate([{transform:`translate(${dx}px,${dy}px) scale(${s})`,opacity:1},{opacity:1,offset:.9},{transform:'none',opacity:0}],{duration:D,easing:E,fill:'forwards'}));
+    anims.push(t.animate([{opacity:0},{opacity:0,offset:.9},{opacity:1}],{duration:D}));
+  });
+  const e=document.querySelector('.edges');if(next==='map'&&e)anims.push(e.animate([{opacity:0},{opacity:0,offset:.45},{opacity:1}],{duration:D,easing:'ease-out'}));
+  if(freeze!==null){anims.forEach(x=>{x.pause();x.currentTime=D*freeze});return}
+  const done=()=>layer.remove();Promise.all(anims.map(x=>x.finished)).then(done,done);setTimeout(done,D+300);
+}
+/* ---------------- interactions ---------------- */
+function select(id,{centre=false,from='list'}={}){
+  if(!BY[id])return;S.sel=id;S.insp=true;S.enterInsp=true;S.pop=null;
+  pathTo(id).slice(0,-1).forEach(p=>S.expanded.add(p.id));
+  if(S.focus&&!inFocus(id))S.focus=null;
+  if(S.tab==='output'&&!['t1'].includes(id))S.tab='now';
+  render({reveal:true});syncUrl();
+  if(S.route==='work'&&S.lens==='map'){if(centre)centreOn(id);else ensureVisible(id)}
+}
+let tt;function toast(m){S.toast=m;render();clearTimeout(tt);tt=setTimeout(()=>{S.toast=null;render()},2800)}
+function nextAttention(){const list=N.filter(n=>['ask','paused'].includes(stOf(n)));if(!list.length)return;const i=list.findIndex(n=>n.id===S.sel);const n=list[(i+1)%list.length];if(S.route!=='work'){S.route='work';history.pushState(null,'','#/work')}S.tab='now';select(n.id,{centre:true})}
+document.addEventListener('click',e=>{
+  const el=e.target.closest('[data-nav],[data-act],[data-sel],[data-fold],[data-lens],[data-filter],[data-tab],[data-opentask],[data-mapfocus],[data-reply],[data-toast],[data-zoom],[data-scope],[data-theme],[data-dtool],[data-daccess],[data-dhelp],[data-deffort],[data-teamlens],[data-teamsel],[data-sidx]');
+  if(!el){if(S.pop&&!e.target.closest('.pop')){S.pop=null;render()}return}
+  if(el.closest('.mappane')&&e.target.closest('.mappane')&&dragMoved)return;
+  if(el.disabled||el.getAttribute('aria-disabled')==='true')return;
+  const d=el.dataset;e.stopPropagation();
+  if(d.fold!==undefined&&d.fold){S.expanded.has(d.fold)?S.expanded.delete(d.fold):S.expanded.add(d.fold);render();return}
+  if(d.nav){if(d.nav==='work'){S.route='work';history.pushState(null,'',hashFor());render({reveal:true})}else nav(d.nav);return}
+  if(d.lens){switchLens(d.lens);return}
+  if(d.filter){S.filter=d.filter;S.cam=null;render();return}
+  if(d.tab){S.tab=d.tab;S.pop=null;render();return}
+  if(d.opentask){S.teamLens='list';S.sel=d.opentask;nav('task',d.opentask);return}
+  if(d.mapfocus){S.route='work';S.sel=d.mapfocus;S.insp=true;if(S.lens!=='map'){history.pushState(null,'','#/work');switchLens('map')}else{render();syncUrl()}fitIds(treeIds(d.mapfocus));return}
+  if(d.reply){S.tab='now';if(S.route==='task'){S.sel=d.reply;S.insp=true;S.enterInsp=true;render()}else select(d.reply,{centre:true});setTimeout(()=>document.querySelector('.qcard textarea')?.focus(),40);return}
+  if(d.teamsel){S.sel=d.teamsel;S.insp=true;S.enterInsp=true;render();return}
+  if(d.teamlens){S.teamLens=d.teamlens;render();return}
+  if(d.zoom){zoomBy(+d.zoom>0?1.18:1/1.18);return}
+  if(d.scope){S.scope=d.scope;S.pop=null;S.cam=null;if(S.route!=='work'){S.route='work';history.pushState(null,'','#/work')}render();return}
+  if(d.theme){S.themeMode=d.theme;applyTheme();render();return}
+  if(d.sidx){S.stab=d.sidx;render();document.getElementById('s-'+d.sidx)?.scrollIntoView({behavior:'smooth',block:'start'});return}
+  if(d.dtool){S.draft.tool=d.dtool;if(d.dtool==='mock')S.draft.helpers='off';render();return}
+  if(d.daccess){S.draft.access=d.daccess;render();return}
+  if(d.dhelp){if(S.draft.tool==='mock'&&d.dhelp==='auto')return;S.draft.helpers=d.dhelp;render();return}
+  if(d.deffort){S.draft.effort=d.deffort;render();return}
+  if(d.sel){if(S.route==='task'){S.sel=d.sel;S.insp=true;S.enterInsp=true;render();return}select(d.sel,{centre:!!d.centre});return}
+  if(d.act){const a=d.act;
+    if(a==='closeInsp'){S.insp=false;render()}
+    else if(a==='pop'){S.pop=S.pop===d.v?null:d.v;render()}
+    else if(a==='cycleTheme'){S.themeMode={auto:'light',light:'dark',dark:'auto'}[S.themeMode];applyTheme();render()}
+    else if(a==='nextAttention')nextAttention();
+    else if(a==='unfocus'){S.focus=null;render();syncUrl();if(S.lens==='map')fitTree()}
+    else if(a==='focusSel'){if(S.sel){S.focus=S.sel;S.pop=null;S.route='work';render();syncUrl();if(S.lens==='map')fitIds(treeIds(S.focus))}}
+    else if(a==='toggleOl'){const w0=document.querySelector('[data-outline]')?.getBoundingClientRect().width||0;S.olOpen=!S.olOpen;render();syncUrl();fitTree();const ol=document.querySelector('[data-outline]');if(ol&&!matchMedia('(prefers-reduced-motion: reduce)').matches)ol.animate([{width:w0+'px',visibility:'visible'},{width:ol.getBoundingClientRect().width+'px',visibility:'visible'}],{duration:340,easing:'cubic-bezier(.3,.7,.1,1)'})}
+    else if(a==='fitTree')fitTree();
+    else if(a==='fitAll')fitIds(Object.keys(F.pos),true,{maxK:.9,minK:.3});
+    else if(a==='toggleRemoved'){S.showRemoved=!S.showRemoved;S.pop=null;render()}
+    else if(a==='expandAll'){N.forEach(n=>{if(kidsOf(n.id).length)S.expanded.add(n.id)});S.pop=null;render()}
+    else if(a==='collapseAll'){S.expanded.clear();S.pop=null;render()}
+    else if(a==='sendReply'){S.answered.add(S.sel);toast('Sent. The agent continues in the same session.')}
+    else if(a==='search'){document.querySelector('.find input')?.focus()||toast('Search tasks, agents and projects.')}
+    else if(a==='back'){history.length>1?history.back():nav('work')}
+    else if(a==='more'){S.draft.more=!S.draft.more;render()}
+    else if(a==='start'){toast('The task would appear at the top of Work, in the List and on the Map.');}
+    else if(a==='gem'){S.gem=!S.gem;S.confirm=false;render()}
+    else if(a==='confirm'){S.confirm=!S.confirm;render()}
+    else if(a==='upd'){S.provOpen=S.provOpen==='claude'?null:'claude';render()}
+    else if(a==='resetW'){S.inspW=404;render()}
+    else if(a==='clear'){S.q='';S.filter='all';S.scope='all';render()}
+    return}
+  if(d.toast){toast(d.toast)}
+});
+document.addEventListener('input',e=>{const k=e.target.dataset.in;if(k==='q'){S.q=e.target.value;const pos=e.target.selectionStart;render();const i=document.querySelector('.find input');if(i){i.focus();i.setSelectionRange(pos,pos)}}if(k==='draft'){S.draft.text=e.target.value;const b=document.querySelector('[data-act="start"]');if(b)b.disabled=!S.draft.text.trim()}});
+/* synchronised hover between list and map */
+document.addEventListener('mouseover',e=>{const t=e.target.closest('.row[data-id],[data-map] [data-id]');document.querySelectorAll('.hl').forEach(x=>x.classList.remove('hl'));if(t)document.querySelectorAll(`[data-id="${t.dataset.id}"]`).forEach(x=>x!==t&&x.classList.add('hl'))});
+/* keyboard: outline is a real tree; map arrows follow the same relationships */
+document.addEventListener('keydown',e=>{
+  const t=e.target,typing=['INPUT','TEXTAREA'].includes(t.tagName);
+  if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='k'){e.preventDefault();if(S.route!=='work'){S.route='work';render()}document.querySelector('.find input')?.focus();return}
+  if((e.ctrlKey||e.metaKey)&&e.key==='Enter'){if(t.id==='draft')toast('The task would appear at the top of Work, in the List and on the Map.');else if(t.closest('.qcard')){S.answered.add(S.sel);toast('Sent. The agent continues in the same session.')}return}
+  if(e.key==='Escape'){if(S.pop){S.pop=null}else if(S.insp&&S.sel){S.insp=false}else if(S.focus){S.focus=null}else return;render();return}
+  if(typing)return;
+  if(e.key==='n'||e.key==='N'){e.preventDefault();nav('new');setTimeout(()=>document.getElementById('draft')?.focus(),30);return}
+  if(S.route!=='work')return;
+  if(e.key==='l'||e.key==='L'){switchLens('list');return}
+  if(e.key==='m'||e.key==='M'){switchLens('map');return}
+  if(e.key==='f'||e.key==='F'){if(S.sel){S.focus=S.sel;render();syncUrl();if(S.lens==='map')fitIds(treeIds(S.focus))}return}
+  const nodeNav=['ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.key);if(!nodeNav||!S.sel)return;
+  e.preventDefault();const n=BY[S.sel];
+  if(S.lens==='list'||t.closest('[data-outline]')){
+    const ids=[...document.querySelectorAll('.row[data-id]')].map(r=>r.dataset.id);const i=ids.indexOf(S.sel);
+    if(e.key==='ArrowDown'&&i<ids.length-1)select(ids[i+1]);else if(e.key==='ArrowUp'&&i>0)select(ids[i-1]);
+    else if(e.key==='ArrowRight'){if(visibleKids(n.id).length&&!S.expanded.has(n.id)){S.expanded.add(n.id);render()}else if(visibleKids(n.id).length)select(visibleKids(n.id)[0].id)}
+    else if(e.key==='ArrowLeft'){if(S.expanded.has(n.id)&&visibleKids(n.id).length){S.expanded.delete(n.id);render()}else if(n.parent)select(n.parent)}
+  }else{
+    const sib=n.parent?visibleKids(n.parent):rootsVisible();const i=sib.findIndex(s=>s.id===n.id);
+    if(e.key==='ArrowUp'&&n.parent)select(n.parent);else if(e.key==='ArrowDown'&&visibleKids(n.id).length){S.expanded.add(n.id);select(visibleKids(n.id)[0].id)}
+    else if(e.key==='ArrowRight'&&i<sib.length-1)select(sib[i+1].id);else if(e.key==='ArrowLeft'&&i>0)select(sib[i-1].id);
+  }
+  setTimeout(()=>document.querySelector(S.lens==='list'?'.row[aria-selected=true]':`[data-map] [data-id="${S.sel}"]`)?.focus({preventScroll:true}),0);
+});
+/* map: drag to pan, wheel to zoom, double-click to focus a branch */
+let drag=null,dragMoved=false;
+document.addEventListener('pointerdown',e=>{
+  const r=e.target.closest('[data-resize]');if(r){drag={k:'w',x:e.clientX,w:S.inspW,el:r};r.classList.add('on');r.setPointerCapture(e.pointerId);return}
+  const mp=e.target.closest('.mappane');if(mp&&!e.target.closest('.mtool,.mctl,.mini')&&S.cam){drag={k:'pan',x:e.clientX,y:e.clientY,cx:S.cam.x,cy:S.cam.y};dragMoved=false}
+});
+document.addEventListener('pointermove',e=>{
+  if(!drag)return;
+  if(drag.k==='w'){S.inspW=Math.max(340,Math.min(600,drag.w-(e.clientX-drag.x)));const i=document.querySelector('.insp');if(i)i.style.setProperty('--insp-w',S.inspW+'px')}
+  if(drag.k==='pan'){const dx=e.clientX-drag.x,dy=e.clientY-drag.y;if(Math.abs(dx)+Math.abs(dy)>4){dragMoved=true;document.querySelector('.mappane')?.classList.add('drag')}if(dragMoved){S.cam={...S.cam,x:drag.cx+dx,y:drag.cy+dy};applyCam(false)}}
+});
+document.addEventListener('pointerup',()=>{if(!drag)return;if(drag.k==='w')drag.el.classList.remove('on');document.querySelector('.mappane')?.classList.remove('drag');drag=null;setTimeout(()=>dragMoved=false,0)});
+document.addEventListener('dblclick',e=>{if(e.target.closest('[data-resize]')){S.inspW=404;render();return}const g=e.target.closest('[data-map] [data-id]');if(g){S.focus=g.dataset.id;render();syncUrl();fitIds(treeIds(S.focus))}});
+function zoomBy(f,cx,cy){if(!S.cam)return;const v=visRect();cx=cx??v.l+v.w/2;cy=cy??v.h/2;const k=Math.max(.35,Math.min(1.6,S.cam.k*f));S.cam={k,x:cx-(cx-S.cam.x)*k/S.cam.k,y:cy-(cy-S.cam.y)*k/S.cam.k};applyCam(true)}
+document.addEventListener('wheel',e=>{const mp=e.target.closest('.mappane');if(!mp||e.target.closest('.mini'))return;e.preventDefault();const r=mp.getBoundingClientRect();zoomBy(e.deltaY<0?1.1:1/1.1,e.clientX-r.left,e.clientY-r.top)},{passive:false});
+window.addEventListener('resize',()=>{if(S.route==='work'&&S.lens==='map'){fitTree(false);applyCam(false)}});
+/* liveness: the latest line of each working agent (stand-in for its output stream) */
+let tick=0;setInterval(()=>{tick++;document.querySelectorAll('[data-live]').forEach(el=>{const n=BY[el.dataset.live];if(!n.live||n.live.length<2)return;el.classList.add('fade');setTimeout(()=>{el.textContent=n.live[tick%n.live.length];el.classList.remove('fade')},300)})},4200);
+
+/* ---------------- refinement round 1: New Task and Connections controls ---------------- */
+document.addEventListener('click',e=>{
+  const el=e.target.closest('[data-nt]');
+  if(!el){if(S.nt.pop&&!e.target.closest('.pjpop')){S.nt.pop=false;render()}return}
+  if(el.getAttribute('aria-disabled')==='true'||el.disabled)return;
+  e.stopPropagation();const a=el.dataset.nt,v=el.dataset.v,d=S.draft;
+  if(a==='tool'){d.tool=v;d.model=CAT[v].dflt;const m=modelOf(v,d.model);d.effort=m&&m.efforts&&m.efforts.length?m.def:null}
+  else if(a==='effort')d.effort=v;
+  else if(a==='access')d.access=v;
+  else if(a==='deleg')d.deleg=!d.deleg;
+  else if(a==='alloc')d.alloc=v;
+  else if(a==='auto')d.auto=d.auto.includes(v)?d.auto.filter(x=>x!==v):[...d.auto,v];
+  else if(a==='pjpop'){S.nt.pop=!S.nt.pop;S.nt.q=''}
+  else if(a==='pjpick'){d.project=v;S.nt.pop=false}
+  else if(a==='browse'){S.nt.pop=false;S.nt.drop=null;S.nt.modal={sel:null,typing:false}}
+  else if(a==='closemodal')S.nt.modal=null;
+  else if(a==='fsel')S.nt.modal={...S.nt.modal,sel:v};
+  else if(a==='typepath')S.nt.modal={...S.nt.modal,typing:true};
+  else if(a==='usefolder')addFolder(FOLDERS.find(f=>f.name===S.nt.modal.sel));
+  else if(a==='simdrop')S.nt.drop=FOLDERS.find(f=>f.name===v);
+  else if(a==='adddrop')addFolder(S.nt.drop);
+  else if(a==='cleardrop')S.nt.drop=null;
+  else if(a==='conn')S.conn=(S.conn||'claude')===v?'_':v;
+  render();
+  if(a==='browse')document.querySelector('.fm-i')?.focus();
+  if(a==='pjpop'&&S.nt.pop)document.querySelector('.pjsearch input')?.focus();
+  if(['closemodal','usefolder','pjpick','adddrop','cleardrop'].includes(a))document.querySelector('.pj')?.focus();
+},true);
+document.addEventListener('change',e=>{if(e.target.dataset.ntsel==='model'){const d=S.draft;d.model=e.target.value;const m=modelOf(d.tool,d.model);d.effort=m&&m.efforts&&m.efforts.length?(m.efforts.includes(d.effort)?d.effort:m.def):null;render();document.querySelector('[data-ntsel="model"]')?.focus()}});
+document.addEventListener('input',e=>{if(e.target.dataset.ntin==='q'){S.nt.q=e.target.value;render();const i=document.querySelector('.pjsearch input');if(i){i.focus();i.setSelectionRange(i.value.length,i.value.length)}}});
+document.addEventListener('keydown',e=>{if(e.key!=='Escape')return;if(S.nt.modal){S.nt.modal=null}else if(S.nt.pop){S.nt.pop=false}else return;e.stopImmediatePropagation();render();document.querySelector('.pj')?.focus()},true);
+/* drag a folder from File Explorer: the browser shows the drop state, but the folder itself is simulated */
+let dragDepth=0;
+window.addEventListener('dragenter',e=>{if(S.route!=='new')return;e.preventDefault();dragDepth++;if(S.nt.drop!=='over'){S.nt.drop='over';render()}});
+window.addEventListener('dragover',e=>{if(S.route==='new')e.preventDefault()});
+window.addEventListener('dragleave',()=>{if(S.route!=='new')return;if(--dragDepth<=0){dragDepth=0;if(S.nt.drop==='over'){S.nt.drop=null;render()}}});
+window.addEventListener('drop',e=>{if(S.route!=='new')return;e.preventDefault();dragDepth=0;S.nt.drop=FOLDERS.find(f=>f.name==='docs-site');toast('Simulated: a browser can’t pass a real folder path, so the prototype checks docs-site.')});
+/* ---------------- boot ---------------- */
+readHash();applyTheme();
+if(!location.hash)history.replaceState(null,'','#/work?lens=list&sel=t1');
+render({reveal:true});
+if(S.route==='work'&&S.freeze!==null){const target=S.lens;S.lens=target==='map'?'list':'map';render();switchLens(target,{freeze:S.freeze})}
+if(S.scrollTo)document.getElementById(S.scrollTo)?.scrollIntoView({block:'start'});
+</script>
+</body>
+</html>
