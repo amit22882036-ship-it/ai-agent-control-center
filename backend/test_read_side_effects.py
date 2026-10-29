@@ -54,7 +54,7 @@ class ReadSideEffectTests(unittest.TestCase):
         manager.get_agent_output(agent_id)
         for path in ('/agents', f'/agents/{agent_id}', f'/agents/{agent_id}?include_output=false',
                      f'/agents/{agent_id}/output', f'/agents/{agent_id}/activity', f'/agents/{agent_id}/hierarchy',
-                     f'/agents/{agent_id}/name-history', '/workspace', '/tasks', '/projects'):
+                     f'/agents/{agent_id}/name-history', '/workspace', '/workspace/tasks', '/tasks', '/projects'):
             path, _, query = path.partition('?')
             status, _, _ = call('GET', path, headers(token=None))
             self.assertNotEqual(status, 500, path)

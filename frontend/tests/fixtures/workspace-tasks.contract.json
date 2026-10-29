@@ -1,0 +1,2044 @@
+{
+ "all": {
+  "tasks": [
+   {
+    "task_id": "loop-b",
+    "parent_task_id": "loop-a",
+    "project_id": "p1",
+    "title": "Loop B",
+    "status": "pending",
+    "control_intent": "active",
+    "stop_required": false,
+    "created_at": "2026-01-01T00:00:45.000Z",
+    "updated_at": "2026-01-01T00:00:45.000Z",
+    "root_task_id": null,
+    "depth": null,
+    "ancestry": "cycle",
+    "child_count": 1,
+    "blockers": [],
+    "blockers_more": 0,
+    "assignment": {
+     "current": null,
+     "last_ended": null,
+     "count": 0,
+     "previous_agent_ids": []
+    },
+    "agent": null,
+    "waiting_context": null,
+    "responsibility_awaiting": false,
+    "transfer": null,
+    "continuation": null,
+    "delegation": null,
+    "delegations": {
+     "requested": 0,
+     "materialized": 0,
+     "result_ready": 0,
+     "acknowledged": 0,
+     "canceled": 0
+    },
+    "planned": {
+     "unmaterialized": 0,
+     "by_disposition": {}
+    },
+    "plan_revision": null,
+    "rounds": 0,
+    "integration": null
+   },
+   {
+    "task_id": "loop-a",
+    "parent_task_id": "loop-b",
+    "project_id": "p1",
+    "title": "Loop A",
+    "status": "pending",
+    "control_intent": "active",
+    "stop_required": false,
+    "created_at": "2026-01-01T00:00:44.000Z",
+    "updated_at": "2026-01-01T00:00:44.000Z",
+    "root_task_id": null,
+    "depth": null,
+    "ancestry": "cycle",
+    "child_count": 1,
+    "blockers": [],
+    "blockers_more": 0,
+    "assignment": {
+     "current": null,
+     "last_ended": null,
+     "count": 0,
+     "previous_agent_ids": []
+    },
+    "agent": null,
+    "waiting_context": null,
+    "responsibility_awaiting": false,
+    "transfer": null,
+    "continuation": null,
+    "delegation": null,
+    "delegations": {
+     "requested": 0,
+     "materialized": 0,
+     "result_ready": 0,
+     "acknowledged": 0,
+     "canceled": 0
+    },
+    "planned": {
+     "unmaterialized": 0,
+     "by_disposition": {}
+    },
+    "plan_revision": null,
+    "rounds": 0,
+    "integration": null
+   },
+   {
+    "task_id": "stray",
+    "parent_task_id": "missing-parent",
+    "project_id": "p1",
+    "title": "Stray Task",
+    "status": "pending",
+    "control_intent": "active",
+    "stop_required": false,
+    "created_at": "2026-01-01T00:00:43.000Z",
+    "updated_at": "2026-01-01T00:00:43.000Z",
+    "root_task_id": null,
+    "depth": null,
+    "ancestry": "missing_parent",
+    "child_count": 0,
+    "blockers": [],
+    "blockers_more": 0,
+    "assignment": {
+     "current": null,
+     "last_ended": null,
+     "count": 0,
+     "previous_agent_ids": []
+    },
+    "agent": null,
+    "waiting_context": null,
+    "responsibility_awaiting": false,
+    "transfer": null,
+    "continuation": null,
+    "delegation": null,
+    "delegations": {
+     "requested": 0,
+     "materialized": 0,
+     "result_ready": 0,
+     "acknowledged": 0,
+     "canceled": 0
+    },
+    "planned": {
+     "unmaterialized": 0,
+     "by_disposition": {}
+    },
+    "plan_revision": null,
+    "rounds": 0,
+    "integration": null
+   },
+   {
+    "task_id": "blocked",
+    "parent_task_id": null,
+    "project_id": "p1",
+    "title": "Deploy the preview",
+    "status": "blocked",
+    "control_intent": "active",
+    "stop_required": false,
+    "created_at": "2026-01-01T00:00:40.000Z",
+    "updated_at": "2026-01-01T00:00:40.000Z",
+    "root_task_id": "blocked",
+    "depth": 0,
+    "ancestry": "complete",
+    "child_count": 0,
+    "blockers": [
+     "resource_conflict"
+    ],
+    "blockers_more": 0,
+    "assignment": {
+     "current": {
+      "assignment_id": "as-blocked",
+      "agent_id": "blocked-agent",
+      "assigned_at": "2026-01-01T00:00:41.000Z"
+     },
+     "last_ended": null,
+     "count": 1,
+     "previous_agent_ids": []
+    },
+    "agent": {
+     "agent_id": "blocked-agent",
+     "role": "current",
+     "status": "waiting",
+     "display_name": "Blocked",
+     "display_color": "blue",
+     "agent_type": "claude",
+     "model": "model-x",
+     "effort": "high",
+     "asks_user": false,
+     "provider_condition": null,
+     "autonomous": false,
+     "removed": false,
+     "removal": null
+    },
+    "waiting_context": {
+     "kind": "coordination",
+     "label": "Coordination blocked"
+    },
+    "responsibility_awaiting": false,
+    "transfer": null,
+    "continuation": null,
+    "delegation": null,
+    "delegations": {
+     "requested": 0,
+     "materialized": 0,
+     "result_ready": 0,
+     "acknowledged": 0,
+     "canceled": 0
+    },
+    "planned": {
+     "unmaterialized": 0,
+     "by_disposition": {}
+    },
+    "plan_revision": null,
+    "rounds": 0,
+    "integration": null
+   },
+   {
+    "task_id": "paused",
+    "parent_task_id": null,
+    "project_id": "p1",
+    "title": "Refactor the parser",
+    "status": "paused",
+    "control_intent": "paused",
+    "stop_required": false,
+    "created_at": "2026-01-01T00:00:37.000Z",
+    "updated_at": "2026-01-01T00:00:37.000Z",
+    "root_task_id": "paused",
+    "depth": 0,
+    "ancestry": "complete",
+    "child_count": 0,
+    "blockers": [],
+    "blockers_more": 0,
+    "assignment": {
+     "current": null,
+     "last_ended": {
+      "assignment_id": "as-paused",
+      "agent_id": "paused-agent",
+      "assigned_at": "2026-01-01T00:00:38.000Z",
+      "ended_at": "2026-01-01T00:00:39.000Z",
+      "ended_reason": "paused"
+     },
+     "count": 1,
+     "previous_agent_ids": [
+      "paused-agent"
+     ]
+    },
+    "agent": {
+     "agent_id": "paused-agent",
+     "role": "last",
+     "status": "stopped",
+     "display_name": "Paused",
+     "display_color": "blue",
+     "agent_type": "claude",
+     "model": "model-x",
+     "effort": "high",
+     "asks_user": false,
+     "provider_condition": null,
+     "autonomous": false,
+     "removed": false,
+     "removal": null
+    },
+    "waiting_context": null,
+    "responsibility_awaiting": false,
+    "transfer": null,
+    "continuation": null,
+    "delegation": null,
+    "delegations": {
+     "requested": 0,
+     "materialized": 0,
+     "result_ready": 0,
+     "acknowledged": 0,
+     "canceled": 0
+    },
+    "planned": {
+     "unmaterialized": 0,
+     "by_disposition": {}
+    },
+    "plan_revision": null,
+    "rounds": 0,
+    "integration": null
+   },
+   {
+    "task_id": "limited",
+    "parent_task_id": null,
+    "project_id": "p1",
+    "title": "Summarize the logs",
+    "status": "waiting",
+    "control_intent": "active",
+    "stop_required": false,
+    "created_at": "2026-01-01T00:00:35.000Z",
+    "updated_at": "2026-01-01T00:00:35.000Z",
+    "root_task_id": "limited",
+    "depth": 0,
+    "ancestry": "complete",
+    "child_count": 0,
+    "blockers": [],
+    "blockers_more": 0,
+    "assignment": {
+     "current": {
+      "assignment_id": "as-limited",
+      "agent_id": "limited-agent",
+      "assigned_at": "2026-01-01T00:00:36.000Z"
+     },
+     "last_ended": null,
+     "count": 1,
+     "previous_agent_ids": []
+    },
+    "agent": {
+     "agent_id": "limited-agent",
+     "role": "current",
+     "status": "waiting",
+     "display_name": "Limited",
+     "display_color": "blue",
+     "agent_type": "claude",
+     "model": "model-x",
+     "effort": "high",
+     "asks_user": false,
+     "provider_condition": {
+      "kind": "usage_limited",
+      "label": "Waiting for provider usage",
+      "provider": null,
+      "model": null,
+      "condition": null,
+      "reset_at": null,
+      "resume_available": false,
+      "blocking": [
+       {
+        "label": "5-hour limit",
+        "reset_at": "2026-01-01T05:00:00Z",
+        "window_id": null
+       }
+      ],
+      "observed_at": null,
+      "session_preserved": false,
+      "detail": null
+     },
+     "autonomous": false,
+     "removed": false,
+     "removal": null
+    },
+    "waiting_context": {
+     "kind": "provider",
+     "label": "Waiting for provider usage",
+     "condition": "usage_limited"
+    },
+    "responsibility_awaiting": false,
+    "transfer": null,
+    "continuation": null,
+    "delegation": null,
+    "delegations": {
+     "requested": 0,
+     "materialized": 0,
+     "result_ready": 0,
+     "acknowledged": 0,
+     "canceled": 0
+    },
+    "planned": {
+     "unmaterialized": 0,
+     "by_disposition": {}
+    },
+    "plan_revision": null,
+    "rounds": 0,
+    "integration": null
+   },
+   {
+    "task_id": "orphaned-work",
+    "parent_task_id": null,
+    "project_id": "p1",
+    "title": "Migrate the database",
+    "status": "in_progress",
+    "control_intent": "active",
+    "stop_required": false,
+    "created_at": "2026-01-01T00:00:31.000Z",
+    "updated_at": "2026-01-01T00:00:31.000Z",
+    "root_task_id": "orphaned-work",
+    "depth": 0,
+    "ancestry": "complete",
+    "child_count": 0,
+    "blockers": [],
+    "blockers_more": 0,
+    "assignment": {
+     "current": null,
+     "last_ended": {
+      "assignment_id": "as-gone",
+      "agent_id": "gone",
+      "assigned_at": "2026-01-01T00:00:33.000Z",
+      "ended_at": "2026-01-01T00:00:34.000Z",
+      "ended_reason": "removed"
+     },
+     "count": 1,
+     "previous_agent_ids": [
+      "gone"
+     ]
+    },
+    "agent": {
+     "agent_id": "gone",
+     "role": "last",
+     "status": "stopped",
+     "display_name": "Gone",
+     "display_color": "blue",
+     "agent_type": "claude",
+     "model": "model-x",
+     "effort": "high",
+     "asks_user": false,
+     "provider_condition": null,
+     "autonomous": false,
+     "removed": true,
+     "removal": {
+      "state": "removed",
+      "mode": null,
+      "failure": null,
+      "removed_at": "2026-01-01T00:00:32.000Z"
+     }
+    },
+    "waiting_context": null,
+    "responsibility_awaiting": true,
+    "transfer": null,
+    "continuation": null,
+    "delegation": null,
+    "delegations": {
+     "requested": 0,
+     "materialized": 0,
+     "result_ready": 0,
+     "acknowledged": 0,
+     "canceled": 0
+    },
+    "planned": {
+     "unmaterialized": 0,
+     "by_disposition": {}
+    },
+    "plan_revision": null,
+    "rounds": 0,
+    "integration": null
+   },
+   {
+    "task_id": "solo",
+    "parent_task_id": null,
+    "project_id": "p1",
+    "title": "Rename the settings page",
+    "status": "completed",
+    "control_intent": "active",
+    "stop_required": false,
+    "created_at": "2026-01-01T00:00:26.000Z",
+    "updated_at": "2026-01-01T00:00:26.000Z",
+    "root_task_id": "solo",
+    "depth": 0,
+    "ancestry": "complete",
+    "child_count": 0,
+    "blockers": [],
+    "blockers_more": 0,
+    "assignment": {
+     "current": null,
+     "last_ended": {
+      "assignment_id": "as-solo",
+      "agent_id": "solo-agent",
+      "assigned_at": "2026-01-01T00:00:27.000Z",
+      "ended_at": "2026-01-01T00:00:28.000Z",
+      "ended_reason": "completed"
+     },
+     "count": 1,
+     "previous_agent_ids": [
+      "solo-agent"
+     ]
+    },
+    "agent": {
+     "agent_id": "solo-agent",
+     "role": "last",
+     "status": "finished",
+     "display_name": "Solo",
+     "display_color": "blue",
+     "agent_type": "codex",
+     "model": "model-x",
+     "effort": "high",
+     "asks_user": false,
+     "provider_condition": null,
+     "autonomous": false,
+     "removed": false,
+     "removal": null
+    },
+    "waiting_context": null,
+    "responsibility_awaiting": false,
+    "transfer": null,
+    "continuation": null,
+    "delegation": null,
+    "delegations": {
+     "requested": 0,
+     "materialized": 0,
+     "result_ready": 0,
+     "acknowledged": 0,
+     "canceled": 0
+    },
+    "planned": {
+     "unmaterialized": 0,
+     "by_disposition": {}
+    },
+    "plan_revision": null,
+    "rounds": 0,
+    "integration": {
+     "integration_id": "i-solo",
+     "destination_kind": "project",
+     "status": "applied",
+     "validation_status": "not_run",
+     "created_at": "2026-01-01T00:00:29.000Z",
+     "applied_at": "2026-01-01T00:00:30.000Z"
+    }
+   },
+   {
+    "task_id": "flaky",
+    "parent_task_id": "tests",
+    "project_id": "p1",
+    "title": "Investigate the flaky test",
+    "status": "pending",
+    "control_intent": "active",
+    "stop_required": false,
+    "created_at": "2026-01-01T00:00:21.000Z",
+    "updated_at": "2026-01-01T00:00:21.000Z",
+    "root_task_id": "release",
+    "depth": 2,
+    "ancestry": "complete",
+    "child_count": 0,
+    "blockers": [],
+    "blockers_more": 0,
+    "assignment": {
+     "current": null,
+     "last_ended": null,
+     "count": 0,
+     "previous_agent_ids": []
+    },
+    "agent": null,
+    "waiting_context": null,
+    "responsibility_awaiting": false,
+    "transfer": null,
+    "continuation": null,
+    "delegation": null,
+    "delegations": {
+     "requested": 0,
+     "materialized": 0,
+     "result_ready": 0,
+     "acknowledged": 0,
+     "canceled": 0
+    },
+    "planned": {
+     "unmaterialized": 0,
+     "by_disposition": {}
+    },
+    "plan_revision": null,
+    "rounds": 0,
+    "integration": null
+   },
+   {
+    "task_id": "tests",
+    "parent_task_id": "release",
+    "project_id": "p1",
+    "title": "Fix the tests",
+    "status": "waiting",
+    "control_intent": "active",
+    "stop_required": false,
+    "created_at": "2026-01-01T00:00:16.000Z",
+    "updated_at": "2026-01-01T00:00:16.000Z",
+    "root_task_id": "release",
+    "depth": 1,
+    "ancestry": "complete",
+    "child_count": 1,
+    "blockers": [],
+    "blockers_more": 0,
+    "assignment": {
+     "current": {
+      "assignment_id": "as-tests",
+      "agent_id": "tester",
+      "assigned_at": "2026-01-01T00:00:17.000Z"
+     },
+     "last_ended": null,
+     "count": 1,
+     "previous_agent_ids": []
+    },
+    "agent": {
+     "agent_id": "tester",
+     "role": "current",
+     "status": "waiting",
+     "display_name": "Tester",
+     "display_color": "blue",
+     "agent_type": "claude",
+     "model": "model-x",
+     "effort": "high",
+     "asks_user": true,
+     "provider_condition": null,
+     "autonomous": false,
+     "removed": false,
+     "removal": null
+    },
+    "waiting_context": {
+     "kind": "user",
+     "label": "Waiting for you"
+    },
+    "responsibility_awaiting": false,
+    "transfer": null,
+    "continuation": null,
+    "delegation": {
+     "delegation_id": "d-tests",
+     "parent_task_id": "release",
+     "status": "materialized",
+     "result": null
+    },
+    "delegations": {
+     "requested": 0,
+     "materialized": 0,
+     "result_ready": 0,
+     "acknowledged": 0,
+     "canceled": 0
+    },
+    "planned": {
+     "unmaterialized": 0,
+     "by_disposition": {}
+    },
+    "plan_revision": null,
+    "rounds": 0,
+    "integration": null
+   },
+   {
+    "task_id": "docs",
+    "parent_task_id": "release",
+    "project_id": "p1",
+    "title": "Write the docs",
+    "status": "completed",
+    "control_intent": "active",
+    "stop_required": false,
+    "created_at": "2026-01-01T00:00:03.000Z",
+    "updated_at": "2026-01-01T00:00:03.000Z",
+    "root_task_id": "release",
+    "depth": 1,
+    "ancestry": "complete",
+    "child_count": 0,
+    "blockers": [],
+    "blockers_more": 0,
+    "assignment": {
+     "current": null,
+     "last_ended": {
+      "assignment_id": "as-docs-2",
+      "agent_id": "docs-new",
+      "assigned_at": "2026-01-01T00:00:07.000Z",
+      "ended_at": "2026-01-01T00:00:08.000Z",
+      "ended_reason": "completed"
+     },
+     "count": 2,
+     "previous_agent_ids": [
+      "docs-new",
+      "docs-old"
+     ]
+    },
+    "agent": {
+     "agent_id": "docs-new",
+     "role": "last",
+     "status": "finished",
+     "display_name": "Second writer",
+     "display_color": "blue",
+     "agent_type": "claude",
+     "model": "model-x",
+     "effort": "high",
+     "asks_user": false,
+     "provider_condition": null,
+     "autonomous": false,
+     "removed": false,
+     "removal": null
+    },
+    "waiting_context": null,
+    "responsibility_awaiting": false,
+    "transfer": null,
+    "continuation": null,
+    "delegation": {
+     "delegation_id": "d-docs",
+     "parent_task_id": "release",
+     "status": "result_ready",
+     "result": {
+      "outcome": "completed",
+      "phase": "delivered",
+      "integration": {
+       "integration_id": "i-docs",
+       "status": "applied",
+       "applied_at": "2026-01-01T00:00:13.000Z"
+      }
+     }
+    },
+    "delegations": {
+     "requested": 0,
+     "materialized": 0,
+     "result_ready": 0,
+     "acknowledged": 0,
+     "canceled": 0
+    },
+    "planned": {
+     "unmaterialized": 0,
+     "by_disposition": {}
+    },
+    "plan_revision": null,
+    "rounds": 0,
+    "integration": {
+     "integration_id": "i-docs",
+     "destination_kind": "task",
+     "status": "applied",
+     "validation_status": "not_run",
+     "created_at": "2026-01-01T00:00:12.000Z",
+     "applied_at": "2026-01-01T00:00:13.000Z"
+    }
+   },
+   {
+    "task_id": "release",
+    "parent_task_id": null,
+    "project_id": "p1",
+    "title": "Ship the release",
+    "status": "in_progress",
+    "control_intent": "active",
+    "stop_required": false,
+    "created_at": "2026-01-01T00:00:01.000Z",
+    "updated_at": "2026-01-01T00:00:01.000Z",
+    "root_task_id": "release",
+    "depth": 0,
+    "ancestry": "complete",
+    "child_count": 2,
+    "blockers": [],
+    "blockers_more": 0,
+    "assignment": {
+     "current": {
+      "assignment_id": "as-lead",
+      "agent_id": "lead",
+      "assigned_at": "2026-01-01T00:00:02.000Z"
+     },
+     "last_ended": null,
+     "count": 1,
+     "previous_agent_ids": []
+    },
+    "agent": {
+     "agent_id": "lead",
+     "role": "current",
+     "status": "running",
+     "display_name": "Lead",
+     "display_color": "blue",
+     "agent_type": "claude",
+     "model": "model-x",
+     "effort": "high",
+     "asks_user": false,
+     "provider_condition": null,
+     "autonomous": true,
+     "removed": false,
+     "removal": null
+    },
+    "waiting_context": null,
+    "responsibility_awaiting": false,
+    "transfer": null,
+    "continuation": {
+     "phase": "reviewing",
+     "mode": "reviewing",
+     "current_assignment": true
+    },
+    "delegation": null,
+    "delegations": {
+     "requested": 2,
+     "materialized": 1,
+     "result_ready": 1,
+     "acknowledged": 0,
+     "canceled": 0
+    },
+    "planned": {
+     "unmaterialized": 2,
+     "by_disposition": {
+      "blocked": 1,
+      "direct": 1
+     }
+    },
+    "plan_revision": 2,
+    "rounds": 2,
+    "integration": null
+   }
+  ],
+  "ancestors": [],
+  "ancestors_truncated": false,
+  "next_after": null,
+  "total": 12,
+  "root": null
+ },
+ "paged": [
+  {
+   "tasks": [
+    {
+     "task_id": "loop-b",
+     "parent_task_id": "loop-a",
+     "project_id": "p1",
+     "title": "Loop B",
+     "status": "pending",
+     "control_intent": "active",
+     "stop_required": false,
+     "created_at": "2026-01-01T00:00:45.000Z",
+     "updated_at": "2026-01-01T00:00:45.000Z",
+     "root_task_id": null,
+     "depth": null,
+     "ancestry": "cycle",
+     "child_count": 1,
+     "blockers": [],
+     "blockers_more": 0,
+     "assignment": {
+      "current": null,
+      "last_ended": null,
+      "count": 0,
+      "previous_agent_ids": []
+     },
+     "agent": null,
+     "waiting_context": null,
+     "responsibility_awaiting": false,
+     "transfer": null,
+     "continuation": null,
+     "delegation": null,
+     "delegations": {
+      "requested": 0,
+      "materialized": 0,
+      "result_ready": 0,
+      "acknowledged": 0,
+      "canceled": 0
+     },
+     "planned": {
+      "unmaterialized": 0,
+      "by_disposition": {}
+     },
+     "plan_revision": null,
+     "rounds": 0,
+     "integration": null
+    },
+    {
+     "task_id": "loop-a",
+     "parent_task_id": "loop-b",
+     "project_id": "p1",
+     "title": "Loop A",
+     "status": "pending",
+     "control_intent": "active",
+     "stop_required": false,
+     "created_at": "2026-01-01T00:00:44.000Z",
+     "updated_at": "2026-01-01T00:00:44.000Z",
+     "root_task_id": null,
+     "depth": null,
+     "ancestry": "cycle",
+     "child_count": 1,
+     "blockers": [],
+     "blockers_more": 0,
+     "assignment": {
+      "current": null,
+      "last_ended": null,
+      "count": 0,
+      "previous_agent_ids": []
+     },
+     "agent": null,
+     "waiting_context": null,
+     "responsibility_awaiting": false,
+     "transfer": null,
+     "continuation": null,
+     "delegation": null,
+     "delegations": {
+      "requested": 0,
+      "materialized": 0,
+      "result_ready": 0,
+      "acknowledged": 0,
+      "canceled": 0
+     },
+     "planned": {
+      "unmaterialized": 0,
+      "by_disposition": {}
+     },
+     "plan_revision": null,
+     "rounds": 0,
+     "integration": null
+    },
+    {
+     "task_id": "stray",
+     "parent_task_id": "missing-parent",
+     "project_id": "p1",
+     "title": "Stray Task",
+     "status": "pending",
+     "control_intent": "active",
+     "stop_required": false,
+     "created_at": "2026-01-01T00:00:43.000Z",
+     "updated_at": "2026-01-01T00:00:43.000Z",
+     "root_task_id": null,
+     "depth": null,
+     "ancestry": "missing_parent",
+     "child_count": 0,
+     "blockers": [],
+     "blockers_more": 0,
+     "assignment": {
+      "current": null,
+      "last_ended": null,
+      "count": 0,
+      "previous_agent_ids": []
+     },
+     "agent": null,
+     "waiting_context": null,
+     "responsibility_awaiting": false,
+     "transfer": null,
+     "continuation": null,
+     "delegation": null,
+     "delegations": {
+      "requested": 0,
+      "materialized": 0,
+      "result_ready": 0,
+      "acknowledged": 0,
+      "canceled": 0
+     },
+     "planned": {
+      "unmaterialized": 0,
+      "by_disposition": {}
+     },
+     "plan_revision": null,
+     "rounds": 0,
+     "integration": null
+    }
+   ],
+   "ancestors": [],
+   "ancestors_truncated": false,
+   "next_after": "WyIyMDI2LTAxLTAxVDAwOjAwOjQzLjAwMFoiLCJzdHJheSIsbnVsbF0",
+   "total": 12,
+   "root": null
+  },
+  {
+   "tasks": [
+    {
+     "task_id": "blocked",
+     "parent_task_id": null,
+     "project_id": "p1",
+     "title": "Deploy the preview",
+     "status": "blocked",
+     "control_intent": "active",
+     "stop_required": false,
+     "created_at": "2026-01-01T00:00:40.000Z",
+     "updated_at": "2026-01-01T00:00:40.000Z",
+     "root_task_id": "blocked",
+     "depth": 0,
+     "ancestry": "complete",
+     "child_count": 0,
+     "blockers": [
+      "resource_conflict"
+     ],
+     "blockers_more": 0,
+     "assignment": {
+      "current": {
+       "assignment_id": "as-blocked",
+       "agent_id": "blocked-agent",
+       "assigned_at": "2026-01-01T00:00:41.000Z"
+      },
+      "last_ended": null,
+      "count": 1,
+      "previous_agent_ids": []
+     },
+     "agent": {
+      "agent_id": "blocked-agent",
+      "role": "current",
+      "status": "waiting",
+      "display_name": "Blocked",
+      "display_color": "blue",
+      "agent_type": "claude",
+      "model": "model-x",
+      "effort": "high",
+      "asks_user": false,
+      "provider_condition": null,
+      "autonomous": false,
+      "removed": false,
+      "removal": null
+     },
+     "waiting_context": {
+      "kind": "coordination",
+      "label": "Coordination blocked"
+     },
+     "responsibility_awaiting": false,
+     "transfer": null,
+     "continuation": null,
+     "delegation": null,
+     "delegations": {
+      "requested": 0,
+      "materialized": 0,
+      "result_ready": 0,
+      "acknowledged": 0,
+      "canceled": 0
+     },
+     "planned": {
+      "unmaterialized": 0,
+      "by_disposition": {}
+     },
+     "plan_revision": null,
+     "rounds": 0,
+     "integration": null
+    },
+    {
+     "task_id": "paused",
+     "parent_task_id": null,
+     "project_id": "p1",
+     "title": "Refactor the parser",
+     "status": "paused",
+     "control_intent": "paused",
+     "stop_required": false,
+     "created_at": "2026-01-01T00:00:37.000Z",
+     "updated_at": "2026-01-01T00:00:37.000Z",
+     "root_task_id": "paused",
+     "depth": 0,
+     "ancestry": "complete",
+     "child_count": 0,
+     "blockers": [],
+     "blockers_more": 0,
+     "assignment": {
+      "current": null,
+      "last_ended": {
+       "assignment_id": "as-paused",
+       "agent_id": "paused-agent",
+       "assigned_at": "2026-01-01T00:00:38.000Z",
+       "ended_at": "2026-01-01T00:00:39.000Z",
+       "ended_reason": "paused"
+      },
+      "count": 1,
+      "previous_agent_ids": [
+       "paused-agent"
+      ]
+     },
+     "agent": {
+      "agent_id": "paused-agent",
+      "role": "last",
+      "status": "stopped",
+      "display_name": "Paused",
+      "display_color": "blue",
+      "agent_type": "claude",
+      "model": "model-x",
+      "effort": "high",
+      "asks_user": false,
+      "provider_condition": null,
+      "autonomous": false,
+      "removed": false,
+      "removal": null
+     },
+     "waiting_context": null,
+     "responsibility_awaiting": false,
+     "transfer": null,
+     "continuation": null,
+     "delegation": null,
+     "delegations": {
+      "requested": 0,
+      "materialized": 0,
+      "result_ready": 0,
+      "acknowledged": 0,
+      "canceled": 0
+     },
+     "planned": {
+      "unmaterialized": 0,
+      "by_disposition": {}
+     },
+     "plan_revision": null,
+     "rounds": 0,
+     "integration": null
+    },
+    {
+     "task_id": "limited",
+     "parent_task_id": null,
+     "project_id": "p1",
+     "title": "Summarize the logs",
+     "status": "waiting",
+     "control_intent": "active",
+     "stop_required": false,
+     "created_at": "2026-01-01T00:00:35.000Z",
+     "updated_at": "2026-01-01T00:00:35.000Z",
+     "root_task_id": "limited",
+     "depth": 0,
+     "ancestry": "complete",
+     "child_count": 0,
+     "blockers": [],
+     "blockers_more": 0,
+     "assignment": {
+      "current": {
+       "assignment_id": "as-limited",
+       "agent_id": "limited-agent",
+       "assigned_at": "2026-01-01T00:00:36.000Z"
+      },
+      "last_ended": null,
+      "count": 1,
+      "previous_agent_ids": []
+     },
+     "agent": {
+      "agent_id": "limited-agent",
+      "role": "current",
+      "status": "waiting",
+      "display_name": "Limited",
+      "display_color": "blue",
+      "agent_type": "claude",
+      "model": "model-x",
+      "effort": "high",
+      "asks_user": false,
+      "provider_condition": {
+       "kind": "usage_limited",
+       "label": "Waiting for provider usage",
+       "provider": null,
+       "model": null,
+       "condition": null,
+       "reset_at": null,
+       "resume_available": false,
+       "blocking": [
+        {
+         "label": "5-hour limit",
+         "reset_at": "2026-01-01T05:00:00Z",
+         "window_id": null
+        }
+       ],
+       "observed_at": null,
+       "session_preserved": false,
+       "detail": null
+      },
+      "autonomous": false,
+      "removed": false,
+      "removal": null
+     },
+     "waiting_context": {
+      "kind": "provider",
+      "label": "Waiting for provider usage",
+      "condition": "usage_limited"
+     },
+     "responsibility_awaiting": false,
+     "transfer": null,
+     "continuation": null,
+     "delegation": null,
+     "delegations": {
+      "requested": 0,
+      "materialized": 0,
+      "result_ready": 0,
+      "acknowledged": 0,
+      "canceled": 0
+     },
+     "planned": {
+      "unmaterialized": 0,
+      "by_disposition": {}
+     },
+     "plan_revision": null,
+     "rounds": 0,
+     "integration": null
+    }
+   ],
+   "ancestors": [],
+   "ancestors_truncated": false,
+   "next_after": "WyIyMDI2LTAxLTAxVDAwOjAwOjM1LjAwMFoiLCJsaW1pdGVkIixudWxsXQ",
+   "total": 12,
+   "root": null
+  },
+  {
+   "tasks": [
+    {
+     "task_id": "orphaned-work",
+     "parent_task_id": null,
+     "project_id": "p1",
+     "title": "Migrate the database",
+     "status": "in_progress",
+     "control_intent": "active",
+     "stop_required": false,
+     "created_at": "2026-01-01T00:00:31.000Z",
+     "updated_at": "2026-01-01T00:00:31.000Z",
+     "root_task_id": "orphaned-work",
+     "depth": 0,
+     "ancestry": "complete",
+     "child_count": 0,
+     "blockers": [],
+     "blockers_more": 0,
+     "assignment": {
+      "current": null,
+      "last_ended": {
+       "assignment_id": "as-gone",
+       "agent_id": "gone",
+       "assigned_at": "2026-01-01T00:00:33.000Z",
+       "ended_at": "2026-01-01T00:00:34.000Z",
+       "ended_reason": "removed"
+      },
+      "count": 1,
+      "previous_agent_ids": [
+       "gone"
+      ]
+     },
+     "agent": {
+      "agent_id": "gone",
+      "role": "last",
+      "status": "stopped",
+      "display_name": "Gone",
+      "display_color": "blue",
+      "agent_type": "claude",
+      "model": "model-x",
+      "effort": "high",
+      "asks_user": false,
+      "provider_condition": null,
+      "autonomous": false,
+      "removed": true,
+      "removal": {
+       "state": "removed",
+       "mode": null,
+       "failure": null,
+       "removed_at": "2026-01-01T00:00:32.000Z"
+      }
+     },
+     "waiting_context": null,
+     "responsibility_awaiting": true,
+     "transfer": null,
+     "continuation": null,
+     "delegation": null,
+     "delegations": {
+      "requested": 0,
+      "materialized": 0,
+      "result_ready": 0,
+      "acknowledged": 0,
+      "canceled": 0
+     },
+     "planned": {
+      "unmaterialized": 0,
+      "by_disposition": {}
+     },
+     "plan_revision": null,
+     "rounds": 0,
+     "integration": null
+    },
+    {
+     "task_id": "solo",
+     "parent_task_id": null,
+     "project_id": "p1",
+     "title": "Rename the settings page",
+     "status": "completed",
+     "control_intent": "active",
+     "stop_required": false,
+     "created_at": "2026-01-01T00:00:26.000Z",
+     "updated_at": "2026-01-01T00:00:26.000Z",
+     "root_task_id": "solo",
+     "depth": 0,
+     "ancestry": "complete",
+     "child_count": 0,
+     "blockers": [],
+     "blockers_more": 0,
+     "assignment": {
+      "current": null,
+      "last_ended": {
+       "assignment_id": "as-solo",
+       "agent_id": "solo-agent",
+       "assigned_at": "2026-01-01T00:00:27.000Z",
+       "ended_at": "2026-01-01T00:00:28.000Z",
+       "ended_reason": "completed"
+      },
+      "count": 1,
+      "previous_agent_ids": [
+       "solo-agent"
+      ]
+     },
+     "agent": {
+      "agent_id": "solo-agent",
+      "role": "last",
+      "status": "finished",
+      "display_name": "Solo",
+      "display_color": "blue",
+      "agent_type": "codex",
+      "model": "model-x",
+      "effort": "high",
+      "asks_user": false,
+      "provider_condition": null,
+      "autonomous": false,
+      "removed": false,
+      "removal": null
+     },
+     "waiting_context": null,
+     "responsibility_awaiting": false,
+     "transfer": null,
+     "continuation": null,
+     "delegation": null,
+     "delegations": {
+      "requested": 0,
+      "materialized": 0,
+      "result_ready": 0,
+      "acknowledged": 0,
+      "canceled": 0
+     },
+     "planned": {
+      "unmaterialized": 0,
+      "by_disposition": {}
+     },
+     "plan_revision": null,
+     "rounds": 0,
+     "integration": {
+      "integration_id": "i-solo",
+      "destination_kind": "project",
+      "status": "applied",
+      "validation_status": "not_run",
+      "created_at": "2026-01-01T00:00:29.000Z",
+      "applied_at": "2026-01-01T00:00:30.000Z"
+     }
+    },
+    {
+     "task_id": "flaky",
+     "parent_task_id": "tests",
+     "project_id": "p1",
+     "title": "Investigate the flaky test",
+     "status": "pending",
+     "control_intent": "active",
+     "stop_required": false,
+     "created_at": "2026-01-01T00:00:21.000Z",
+     "updated_at": "2026-01-01T00:00:21.000Z",
+     "root_task_id": "release",
+     "depth": 2,
+     "ancestry": "complete",
+     "child_count": 0,
+     "blockers": [],
+     "blockers_more": 0,
+     "assignment": {
+      "current": null,
+      "last_ended": null,
+      "count": 0,
+      "previous_agent_ids": []
+     },
+     "agent": null,
+     "waiting_context": null,
+     "responsibility_awaiting": false,
+     "transfer": null,
+     "continuation": null,
+     "delegation": null,
+     "delegations": {
+      "requested": 0,
+      "materialized": 0,
+      "result_ready": 0,
+      "acknowledged": 0,
+      "canceled": 0
+     },
+     "planned": {
+      "unmaterialized": 0,
+      "by_disposition": {}
+     },
+     "plan_revision": null,
+     "rounds": 0,
+     "integration": null
+    }
+   ],
+   "ancestors": [
+    {
+     "task_id": "tests",
+     "parent_task_id": "release",
+     "project_id": "p1",
+     "title": "Fix the tests",
+     "status": "waiting",
+     "control_intent": "active",
+     "stop_required": false,
+     "created_at": "2026-01-01T00:00:16.000Z",
+     "updated_at": "2026-01-01T00:00:16.000Z",
+     "root_task_id": "release",
+     "depth": 1,
+     "ancestry": "complete",
+     "child_count": 1,
+     "blockers": [],
+     "blockers_more": 0,
+     "assignment": {
+      "current": {
+       "assignment_id": "as-tests",
+       "agent_id": "tester",
+       "assigned_at": "2026-01-01T00:00:17.000Z"
+      },
+      "last_ended": null,
+      "count": 1,
+      "previous_agent_ids": []
+     },
+     "agent": {
+      "agent_id": "tester",
+      "role": "current",
+      "status": "waiting",
+      "display_name": "Tester",
+      "display_color": "blue",
+      "agent_type": "claude",
+      "model": "model-x",
+      "effort": "high",
+      "asks_user": true,
+      "provider_condition": null,
+      "autonomous": false,
+      "removed": false,
+      "removal": null
+     },
+     "waiting_context": {
+      "kind": "user",
+      "label": "Waiting for you"
+     },
+     "responsibility_awaiting": false,
+     "transfer": null,
+     "continuation": null,
+     "delegation": {
+      "delegation_id": "d-tests",
+      "parent_task_id": "release",
+      "status": "materialized",
+      "result": null
+     },
+     "delegations": {
+      "requested": 0,
+      "materialized": 0,
+      "result_ready": 0,
+      "acknowledged": 0,
+      "canceled": 0
+     },
+     "planned": {
+      "unmaterialized": 0,
+      "by_disposition": {}
+     },
+     "plan_revision": null,
+     "rounds": 0,
+     "integration": null
+    },
+    {
+     "task_id": "release",
+     "parent_task_id": null,
+     "project_id": "p1",
+     "title": "Ship the release",
+     "status": "in_progress",
+     "control_intent": "active",
+     "stop_required": false,
+     "created_at": "2026-01-01T00:00:01.000Z",
+     "updated_at": "2026-01-01T00:00:01.000Z",
+     "root_task_id": "release",
+     "depth": 0,
+     "ancestry": "complete",
+     "child_count": 2,
+     "blockers": [],
+     "blockers_more": 0,
+     "assignment": {
+      "current": {
+       "assignment_id": "as-lead",
+       "agent_id": "lead",
+       "assigned_at": "2026-01-01T00:00:02.000Z"
+      },
+      "last_ended": null,
+      "count": 1,
+      "previous_agent_ids": []
+     },
+     "agent": {
+      "agent_id": "lead",
+      "role": "current",
+      "status": "running",
+      "display_name": "Lead",
+      "display_color": "blue",
+      "agent_type": "claude",
+      "model": "model-x",
+      "effort": "high",
+      "asks_user": false,
+      "provider_condition": null,
+      "autonomous": true,
+      "removed": false,
+      "removal": null
+     },
+     "waiting_context": null,
+     "responsibility_awaiting": false,
+     "transfer": null,
+     "continuation": {
+      "phase": "reviewing",
+      "mode": "reviewing",
+      "current_assignment": true
+     },
+     "delegation": null,
+     "delegations": {
+      "requested": 2,
+      "materialized": 1,
+      "result_ready": 1,
+      "acknowledged": 0,
+      "canceled": 0
+     },
+     "planned": {
+      "unmaterialized": 2,
+      "by_disposition": {
+       "blocked": 1,
+       "direct": 1
+      }
+     },
+     "plan_revision": 2,
+     "rounds": 2,
+     "integration": null
+    }
+   ],
+   "ancestors_truncated": false,
+   "next_after": "WyIyMDI2LTAxLTAxVDAwOjAwOjIxLjAwMFoiLCJmbGFreSIsbnVsbF0",
+   "total": 12,
+   "root": null
+  },
+  {
+   "tasks": [
+    {
+     "task_id": "tests",
+     "parent_task_id": "release",
+     "project_id": "p1",
+     "title": "Fix the tests",
+     "status": "waiting",
+     "control_intent": "active",
+     "stop_required": false,
+     "created_at": "2026-01-01T00:00:16.000Z",
+     "updated_at": "2026-01-01T00:00:16.000Z",
+     "root_task_id": "release",
+     "depth": 1,
+     "ancestry": "complete",
+     "child_count": 1,
+     "blockers": [],
+     "blockers_more": 0,
+     "assignment": {
+      "current": {
+       "assignment_id": "as-tests",
+       "agent_id": "tester",
+       "assigned_at": "2026-01-01T00:00:17.000Z"
+      },
+      "last_ended": null,
+      "count": 1,
+      "previous_agent_ids": []
+     },
+     "agent": {
+      "agent_id": "tester",
+      "role": "current",
+      "status": "waiting",
+      "display_name": "Tester",
+      "display_color": "blue",
+      "agent_type": "claude",
+      "model": "model-x",
+      "effort": "high",
+      "asks_user": true,
+      "provider_condition": null,
+      "autonomous": false,
+      "removed": false,
+      "removal": null
+     },
+     "waiting_context": {
+      "kind": "user",
+      "label": "Waiting for you"
+     },
+     "responsibility_awaiting": false,
+     "transfer": null,
+     "continuation": null,
+     "delegation": {
+      "delegation_id": "d-tests",
+      "parent_task_id": "release",
+      "status": "materialized",
+      "result": null
+     },
+     "delegations": {
+      "requested": 0,
+      "materialized": 0,
+      "result_ready": 0,
+      "acknowledged": 0,
+      "canceled": 0
+     },
+     "planned": {
+      "unmaterialized": 0,
+      "by_disposition": {}
+     },
+     "plan_revision": null,
+     "rounds": 0,
+     "integration": null
+    },
+    {
+     "task_id": "docs",
+     "parent_task_id": "release",
+     "project_id": "p1",
+     "title": "Write the docs",
+     "status": "completed",
+     "control_intent": "active",
+     "stop_required": false,
+     "created_at": "2026-01-01T00:00:03.000Z",
+     "updated_at": "2026-01-01T00:00:03.000Z",
+     "root_task_id": "release",
+     "depth": 1,
+     "ancestry": "complete",
+     "child_count": 0,
+     "blockers": [],
+     "blockers_more": 0,
+     "assignment": {
+      "current": null,
+      "last_ended": {
+       "assignment_id": "as-docs-2",
+       "agent_id": "docs-new",
+       "assigned_at": "2026-01-01T00:00:07.000Z",
+       "ended_at": "2026-01-01T00:00:08.000Z",
+       "ended_reason": "completed"
+      },
+      "count": 2,
+      "previous_agent_ids": [
+       "docs-new",
+       "docs-old"
+      ]
+     },
+     "agent": {
+      "agent_id": "docs-new",
+      "role": "last",
+      "status": "finished",
+      "display_name": "Second writer",
+      "display_color": "blue",
+      "agent_type": "claude",
+      "model": "model-x",
+      "effort": "high",
+      "asks_user": false,
+      "provider_condition": null,
+      "autonomous": false,
+      "removed": false,
+      "removal": null
+     },
+     "waiting_context": null,
+     "responsibility_awaiting": false,
+     "transfer": null,
+     "continuation": null,
+     "delegation": {
+      "delegation_id": "d-docs",
+      "parent_task_id": "release",
+      "status": "result_ready",
+      "result": {
+       "outcome": "completed",
+       "phase": "delivered",
+       "integration": {
+        "integration_id": "i-docs",
+        "status": "applied",
+        "applied_at": "2026-01-01T00:00:13.000Z"
+       }
+      }
+     },
+     "delegations": {
+      "requested": 0,
+      "materialized": 0,
+      "result_ready": 0,
+      "acknowledged": 0,
+      "canceled": 0
+     },
+     "planned": {
+      "unmaterialized": 0,
+      "by_disposition": {}
+     },
+     "plan_revision": null,
+     "rounds": 0,
+     "integration": {
+      "integration_id": "i-docs",
+      "destination_kind": "task",
+      "status": "applied",
+      "validation_status": "not_run",
+      "created_at": "2026-01-01T00:00:12.000Z",
+      "applied_at": "2026-01-01T00:00:13.000Z"
+     }
+    },
+    {
+     "task_id": "release",
+     "parent_task_id": null,
+     "project_id": "p1",
+     "title": "Ship the release",
+     "status": "in_progress",
+     "control_intent": "active",
+     "stop_required": false,
+     "created_at": "2026-01-01T00:00:01.000Z",
+     "updated_at": "2026-01-01T00:00:01.000Z",
+     "root_task_id": "release",
+     "depth": 0,
+     "ancestry": "complete",
+     "child_count": 2,
+     "blockers": [],
+     "blockers_more": 0,
+     "assignment": {
+      "current": {
+       "assignment_id": "as-lead",
+       "agent_id": "lead",
+       "assigned_at": "2026-01-01T00:00:02.000Z"
+      },
+      "last_ended": null,
+      "count": 1,
+      "previous_agent_ids": []
+     },
+     "agent": {
+      "agent_id": "lead",
+      "role": "current",
+      "status": "running",
+      "display_name": "Lead",
+      "display_color": "blue",
+      "agent_type": "claude",
+      "model": "model-x",
+      "effort": "high",
+      "asks_user": false,
+      "provider_condition": null,
+      "autonomous": true,
+      "removed": false,
+      "removal": null
+     },
+     "waiting_context": null,
+     "responsibility_awaiting": false,
+     "transfer": null,
+     "continuation": {
+      "phase": "reviewing",
+      "mode": "reviewing",
+      "current_assignment": true
+     },
+     "delegation": null,
+     "delegations": {
+      "requested": 2,
+      "materialized": 1,
+      "result_ready": 1,
+      "acknowledged": 0,
+      "canceled": 0
+     },
+     "planned": {
+      "unmaterialized": 2,
+      "by_disposition": {
+       "blocked": 1,
+       "direct": 1
+      }
+     },
+     "plan_revision": 2,
+     "rounds": 2,
+     "integration": null
+    }
+   ],
+   "ancestors": [],
+   "ancestors_truncated": false,
+   "next_after": null,
+   "total": 12,
+   "root": null
+  }
+ ],
+ "root": [
+  {
+   "tasks": [
+    {
+     "task_id": "flaky",
+     "parent_task_id": "tests",
+     "project_id": "p1",
+     "title": "Investigate the flaky test",
+     "status": "pending",
+     "control_intent": "active",
+     "stop_required": false,
+     "created_at": "2026-01-01T00:00:21.000Z",
+     "updated_at": "2026-01-01T00:00:21.000Z",
+     "root_task_id": "release",
+     "depth": 2,
+     "ancestry": "complete",
+     "child_count": 0,
+     "blockers": [],
+     "blockers_more": 0,
+     "assignment": {
+      "current": null,
+      "last_ended": null,
+      "count": 0,
+      "previous_agent_ids": []
+     },
+     "agent": null,
+     "waiting_context": null,
+     "responsibility_awaiting": false,
+     "transfer": null,
+     "continuation": null,
+     "delegation": null,
+     "delegations": {
+      "requested": 0,
+      "materialized": 0,
+      "result_ready": 0,
+      "acknowledged": 0,
+      "canceled": 0
+     },
+     "planned": {
+      "unmaterialized": 0,
+      "by_disposition": {}
+     },
+     "plan_revision": null,
+     "rounds": 0,
+     "integration": null
+    },
+    {
+     "task_id": "tests",
+     "parent_task_id": "release",
+     "project_id": "p1",
+     "title": "Fix the tests",
+     "status": "waiting",
+     "control_intent": "active",
+     "stop_required": false,
+     "created_at": "2026-01-01T00:00:16.000Z",
+     "updated_at": "2026-01-01T00:00:16.000Z",
+     "root_task_id": "release",
+     "depth": 1,
+     "ancestry": "complete",
+     "child_count": 1,
+     "blockers": [],
+     "blockers_more": 0,
+     "assignment": {
+      "current": {
+       "assignment_id": "as-tests",
+       "agent_id": "tester",
+       "assigned_at": "2026-01-01T00:00:17.000Z"
+      },
+      "last_ended": null,
+      "count": 1,
+      "previous_agent_ids": []
+     },
+     "agent": {
+      "agent_id": "tester",
+      "role": "current",
+      "status": "waiting",
+      "display_name": "Tester",
+      "display_color": "blue",
+      "agent_type": "claude",
+      "model": "model-x",
+      "effort": "high",
+      "asks_user": true,
+      "provider_condition": null,
+      "autonomous": false,
+      "removed": false,
+      "removal": null
+     },
+     "waiting_context": {
+      "kind": "user",
+      "label": "Waiting for you"
+     },
+     "responsibility_awaiting": false,
+     "transfer": null,
+     "continuation": null,
+     "delegation": {
+      "delegation_id": "d-tests",
+      "parent_task_id": "release",
+      "status": "materialized",
+      "result": null
+     },
+     "delegations": {
+      "requested": 0,
+      "materialized": 0,
+      "result_ready": 0,
+      "acknowledged": 0,
+      "canceled": 0
+     },
+     "planned": {
+      "unmaterialized": 0,
+      "by_disposition": {}
+     },
+     "plan_revision": null,
+     "rounds": 0,
+     "integration": null
+    }
+   ],
+   "ancestors": [
+    {
+     "task_id": "release",
+     "parent_task_id": null,
+     "project_id": "p1",
+     "title": "Ship the release",
+     "status": "in_progress",
+     "control_intent": "active",
+     "stop_required": false,
+     "created_at": "2026-01-01T00:00:01.000Z",
+     "updated_at": "2026-01-01T00:00:01.000Z",
+     "root_task_id": "release",
+     "depth": 0,
+     "ancestry": "complete",
+     "child_count": 2,
+     "blockers": [],
+     "blockers_more": 0,
+     "assignment": {
+      "current": {
+       "assignment_id": "as-lead",
+       "agent_id": "lead",
+       "assigned_at": "2026-01-01T00:00:02.000Z"
+      },
+      "last_ended": null,
+      "count": 1,
+      "previous_agent_ids": []
+     },
+     "agent": {
+      "agent_id": "lead",
+      "role": "current",
+      "status": "running",
+      "display_name": "Lead",
+      "display_color": "blue",
+      "agent_type": "claude",
+      "model": "model-x",
+      "effort": "high",
+      "asks_user": false,
+      "provider_condition": null,
+      "autonomous": true,
+      "removed": false,
+      "removal": null
+     },
+     "waiting_context": null,
+     "responsibility_awaiting": false,
+     "transfer": null,
+     "continuation": {
+      "phase": "reviewing",
+      "mode": "reviewing",
+      "current_assignment": true
+     },
+     "delegation": null,
+     "delegations": {
+      "requested": 2,
+      "materialized": 1,
+      "result_ready": 1,
+      "acknowledged": 0,
+      "canceled": 0
+     },
+     "planned": {
+      "unmaterialized": 2,
+      "by_disposition": {
+       "blocked": 1,
+       "direct": 1
+      }
+     },
+     "plan_revision": 2,
+     "rounds": 2,
+     "integration": null
+    }
+   ],
+   "ancestors_truncated": false,
+   "next_after": "WyIyMDI2LTAxLTAxVDAwOjAwOjE2LjAwMFoiLCJ0ZXN0cyIsInJlbGVhc2UiXQ",
+   "total": 4,
+   "root": "release"
+  },
+  {
+   "tasks": [
+    {
+     "task_id": "docs",
+     "parent_task_id": "release",
+     "project_id": "p1",
+     "title": "Write the docs",
+     "status": "completed",
+     "control_intent": "active",
+     "stop_required": false,
+     "created_at": "2026-01-01T00:00:03.000Z",
+     "updated_at": "2026-01-01T00:00:03.000Z",
+     "root_task_id": "release",
+     "depth": 1,
+     "ancestry": "complete",
+     "child_count": 0,
+     "blockers": [],
+     "blockers_more": 0,
+     "assignment": {
+      "current": null,
+      "last_ended": {
+       "assignment_id": "as-docs-2",
+       "agent_id": "docs-new",
+       "assigned_at": "2026-01-01T00:00:07.000Z",
+       "ended_at": "2026-01-01T00:00:08.000Z",
+       "ended_reason": "completed"
+      },
+      "count": 2,
+      "previous_agent_ids": [
+       "docs-new",
+       "docs-old"
+      ]
+     },
+     "agent": {
+      "agent_id": "docs-new",
+      "role": "last",
+      "status": "finished",
+      "display_name": "Second writer",
+      "display_color": "blue",
+      "agent_type": "claude",
+      "model": "model-x",
+      "effort": "high",
+      "asks_user": false,
+      "provider_condition": null,
+      "autonomous": false,
+      "removed": false,
+      "removal": null
+     },
+     "waiting_context": null,
+     "responsibility_awaiting": false,
+     "transfer": null,
+     "continuation": null,
+     "delegation": {
+      "delegation_id": "d-docs",
+      "parent_task_id": "release",
+      "status": "result_ready",
+      "result": {
+       "outcome": "completed",
+       "phase": "delivered",
+       "integration": {
+        "integration_id": "i-docs",
+        "status": "applied",
+        "applied_at": "2026-01-01T00:00:13.000Z"
+       }
+      }
+     },
+     "delegations": {
+      "requested": 0,
+      "materialized": 0,
+      "result_ready": 0,
+      "acknowledged": 0,
+      "canceled": 0
+     },
+     "planned": {
+      "unmaterialized": 0,
+      "by_disposition": {}
+     },
+     "plan_revision": null,
+     "rounds": 0,
+     "integration": {
+      "integration_id": "i-docs",
+      "destination_kind": "task",
+      "status": "applied",
+      "validation_status": "not_run",
+      "created_at": "2026-01-01T00:00:12.000Z",
+      "applied_at": "2026-01-01T00:00:13.000Z"
+     }
+    },
+    {
+     "task_id": "release",
+     "parent_task_id": null,
+     "project_id": "p1",
+     "title": "Ship the release",
+     "status": "in_progress",
+     "control_intent": "active",
+     "stop_required": false,
+     "created_at": "2026-01-01T00:00:01.000Z",
+     "updated_at": "2026-01-01T00:00:01.000Z",
+     "root_task_id": "release",
+     "depth": 0,
+     "ancestry": "complete",
+     "child_count": 2,
+     "blockers": [],
+     "blockers_more": 0,
+     "assignment": {
+      "current": {
+       "assignment_id": "as-lead",
+       "agent_id": "lead",
+       "assigned_at": "2026-01-01T00:00:02.000Z"
+      },
+      "last_ended": null,
+      "count": 1,
+      "previous_agent_ids": []
+     },
+     "agent": {
+      "agent_id": "lead",
+      "role": "current",
+      "status": "running",
+      "display_name": "Lead",
+      "display_color": "blue",
+      "agent_type": "claude",
+      "model": "model-x",
+      "effort": "high",
+      "asks_user": false,
+      "provider_condition": null,
+      "autonomous": true,
+      "removed": false,
+      "removal": null
+     },
+     "waiting_context": null,
+     "responsibility_awaiting": false,
+     "transfer": null,
+     "continuation": {
+      "phase": "reviewing",
+      "mode": "reviewing",
+      "current_assignment": true
+     },
+     "delegation": null,
+     "delegations": {
+      "requested": 2,
+      "materialized": 1,
+      "result_ready": 1,
+      "acknowledged": 0,
+      "canceled": 0
+     },
+     "planned": {
+      "unmaterialized": 2,
+      "by_disposition": {
+       "blocked": 1,
+       "direct": 1
+      }
+     },
+     "plan_revision": 2,
+     "rounds": 2,
+     "integration": null
+    }
+   ],
+   "ancestors": [],
+   "ancestors_truncated": false,
+   "next_after": null,
+   "total": 4,
+   "root": "release"
+  }
+ ]
+}

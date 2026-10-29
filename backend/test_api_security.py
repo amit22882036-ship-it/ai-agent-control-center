@@ -59,7 +59,7 @@ GET_ROUTES = {
     '/tasks/{task_id}/auto-allocation',  # Policy and recorded decisions; never allocates.
     '/provider-policy', '/tasks/{task_id}/provider-restrictions',  # Stage 2G permissions (read only).
     '/providers/onboarding', '/provider-operations/{operation_id}', '/providers/notifications',  # No probe, no run.
-    security.TOKEN_PATH, '/health', '/system/process-supervision', '/workspace', '/agents/{agent_id}/activity', '/agents/{agent_id}/hierarchy',
+    security.TOKEN_PATH, '/health', '/system/process-supervision', '/workspace', '/workspace/tasks', '/agents/{agent_id}/activity', '/agents/{agent_id}/hierarchy',
     '/agents', '/agents/{agent_id}', '/projects', '/projects/{project_id}', '/tasks', '/tasks/{task_id}',
     '/tasks/{task_id}/assignments', '/tasks/{task_id}/workspace', '/agents/{agent_id}/output', '/events',
     '/agents/{agent_id}/name-history', '/tasks/{task_id}/integrations', '/integrations/{integration_id}',

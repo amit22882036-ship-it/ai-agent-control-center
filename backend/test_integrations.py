@@ -95,6 +95,46 @@ class IntegrationTests(unittest.TestCase):
         self.assertEqual([self.source_bytes(path) for path in (p, c, manager._project_root)], before)
         self.assertEqual(manager._store.get_integration(result['integration_id'])['status'], 'conflict')
 
+    def test_manual_integration_invalidates_live_views_after_its_outcome_commits(self):
+        # Every outcome is read through a separate connection at publish time, so
+        # the event can never precede the durable state it announces.
+        observed = []
+        def seen(agent_id):
+            observed.append((agent_id, sorted(r['status'] for r in AgentStore(manager._store.path).list_integrations())))
+        self.seed()
+        parent, p = self.root()
+        applied_child, a = self.child(parent)
+        conflict_child, c = self.child(parent)
+        failing_child, f = self.child(parent)
+        self.edit(a, 'a.txt', 'applied work')
+        self.edit(c, 'a.txt', 'conflicting work')
+        self.edit(f, 'b.txt', 'failing work')
+        without_workspace = self.task(parent)
+        with patch.object(manager, '_emit_agent_change', side_effect=seen):
+            self.assertEqual(self.integrate(applied_child)['status'], 'applied')
+            self.assertEqual(observed, [(None, ['applied'])])
+            self.assertEqual(self.integrate(conflict_child)['status'], 'conflict')
+            self.assertEqual(observed[-1], (None, ['applied', 'conflict']))
+            # A failure that recorded its outcome invalidates once, after the record committed.
+            with patch.object(ig, 'build_candidate', side_effect=RuntimeError('boom')), self.assertRaises(RuntimeError):
+                self.integrate(failing_child)
+            self.assertEqual(observed[-1], (None, ['applied', 'conflict', 'failed']))
+            # Refusals that wrote nothing publish nothing.
+            with self.assertRaises(ValueError):
+                self.integrate(without_workspace)
+            with patch.object(service, 'integrate', side_effect=RuntimeError('unavailable')), self.assertRaises(RuntimeError):
+                self.integrate(applied_child)
+        self.assertEqual(len(observed), 3)
+
+    def test_manual_integration_invalidates_when_its_outcome_cannot_be_read(self):
+        self.seed()
+        parent, _ = self.root()
+        child = self.task(parent)
+        published = []
+        with patch.object(manager, '_emit_agent_change', side_effect=published.append),                 patch.object(AgentStore, '_connection', side_effect=sqlite3.OperationalError('locked')),                 patch.object(service, 'integrate', side_effect=RuntimeError('unavailable')), self.assertRaises(RuntimeError):
+            self.integrate(child)
+        self.assertEqual(published, [None])
+
     def test_grandchild_integrates_only_direct_parent(self):
         parent, p = self.root()
         child, c = self.child(parent)

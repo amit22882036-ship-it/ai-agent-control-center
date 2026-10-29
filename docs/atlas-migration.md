@@ -15,7 +15,7 @@ the backend reports.
 | --- | --- | --- |
 | M0 | Baseline audit, existing test results, synthetic fixtures | Done |
 | M1 | Design tokens, local fonts, primitives, application shell, routing, Atlas/classic switch, component gallery | Done |
-| M2 | Canonical Task/Agent model; read-only task projection (B1, separately approved) | Not started |
+| M2 | Canonical Task/Agent model; read-only task projection (B1, separately approved) | Done |
 | M3–M11 | Work list and inspector, agent actions, New Task and Projects, Map, Task pages, Connections and Settings, notifications, accessibility and performance, default switch | Not started |
 
 Legacy removal is a separate, explicitly authorized final step. The native folder picker is a
@@ -49,12 +49,35 @@ change agents yet, and it sends no state-changing request.
   connection through the existing `connectAgentEvents`; there is never a connection per view.
 - **Appearance:** Atlas reads and writes the same appearance preference as the classic dashboard.
 
+## Task model (M2)
+
+Atlas reads Tasks, not Agents. `GET /workspace/tasks` (B1, documented in the
+[dashboard read models](dashboard.md#read-models)) returns Task pages with the ancestors needed to
+place them. `frontend/src/atlas/model/` turns those pages into one normalized store that every Atlas
+view will share:
+
+- `tasks.mjs`: normalization into Tasks, assignments and Agents; merging pages; the Task forest
+  (edges only from `parent_task_id`), with each top-level entry marked as a root, a Task whose
+  parent is not loaded yet (more pages exist), a Task whose existing parent the backend could not
+  include (`parent_unresolved`), a Task whose parent does not exist, or part of a cycle; loaded paths
+  and per-family counts, including children reported but not loaded.
+- `taskStatus.mjs`: one status per Task from one precedence order (attention, canceled,
+  integrated or completed, paused, waiting for a new owner, the backend's waiting reason, reviewing,
+  working, not started, stopped). Integration, recorded results, helpers and planned work are
+  separate views. Nothing is inferred from Agent text, no percentage is shown, "stopped" never
+  means failed and finished work is never called verified.
+- `selection.mjs`: selection and expansion by Task id, kept in the address (`#/work?task=…`).
+- `taskSource.mjs`: reads every page through the shared `apiFetch` client. It opens no event
+  connection; the shell's single connection decides when to read again.
+
+At M2 no view uses the model yet, so the interface is unchanged; M3 connects it to Work.
+
 ## Tests
 
 From `frontend/`:
 
 ```powershell
-npm test               # Node unit tests, including Atlas routing, isolation and fixture contracts
+npm test               # Node unit tests, including Atlas routing, isolation, fixture contracts and the task model
 npm run lint
 npm run build
 npm run test:browser   # builds, then runs the browser tests in Microsoft Edge

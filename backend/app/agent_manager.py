@@ -4313,7 +4313,25 @@ def integrate_task(task_id):
                     record = next((r for r in store.load_agents(output_limit=0) if r['agent_id'] == key), None)
                     if record and record['status'] == 'running':
                         raise ValueError('Integration refuses a Task with an unowned running Agent')
-    return integrate(store, task_id, assert_quiet)
+    def recorded():
+        # Integration writes only this source's journal rows; each write commits on its own.
+        try:
+            with store._connection() as db:
+                row = db.execute('SELECT integration_order,status,updated_at FROM integrations WHERE source_task_id=? '
+                                 'ORDER BY integration_order DESC LIMIT 1', (task_id,)).fetchone()
+                return tuple(row) if row else ()
+        except sqlite3.Error:
+            return None  # Unknown: invalidate rather than risk a stale view.
+
+    before = recorded()
+    try:
+        return integrate(store, task_id, assert_quiet)
+    finally:
+        # One invalidation after the outcome committed, including failures that recorded a state;
+        # a refusal that wrote nothing publishes nothing.
+        after = recorded()
+        if before is None or after is None or before != after:
+            _emit_agent_change(None)
 
 
 def _settle_coordination():

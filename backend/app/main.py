@@ -265,6 +265,18 @@ def workspace_view(limit: int = Query(500, ge=1, le=500), after: int = Query(0, 
     return _task_action(lambda: workspace(manager._task_store(), limit=limit, after=after))
 
 
+@app.get('/workspace/tasks')
+def workspace_tasks_view(limit: int = Query(200, ge=1, le=500), after: str | None = Query(None, max_length=1024),
+                         root: str | None = Query(None, min_length=1, max_length=200)):
+    from .task_projection import CursorError, tasks
+    try:
+        return _task_action(lambda: tasks(manager._task_store(), limit=limit, after=after, root=root))
+    except HTTPException as exc:
+        if isinstance(exc.__cause__, CursorError):
+            raise HTTPException(status_code=400, detail=str(exc.__cause__)) from None
+        raise
+
+
 @app.get('/agents/{agent_id}/activity')
 def agent_activity(agent_id: str):
     from .presentation import activity
