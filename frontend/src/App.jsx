@@ -10,6 +10,7 @@ import ProvidersView from './ProvidersView'
 import useProviderNotices from './useProviderNotices'
 import ResizeHandle from './ResizeHandle'
 import { readLayout, layoutKey } from './panelLayout.mjs'
+import { clearClassicHandoff, peekClassicHandoff } from './atlas/uiMode.mjs'
 import './App.css'
 import './hierarchy.css'
 
@@ -34,7 +35,9 @@ function App() {
   const pagesRef = useRef(1)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
-  const [selectedAgentId, setSelectedAgentId] = useState(null)
+  // Arriving from Atlas with a task selected opens its current agent here (a short-lived, one-shot hand-off).
+  const [selectedAgentId, setSelectedAgentId] = useState(() => peekClassicHandoff())
+  useEffect(() => { clearClassicHandoff() }, [])
   const [listVersion, setListVersion] = useState(0)
   const [detailsRefresh, setDetailsRefresh] = useState(0)
   const [transport, setTransport] = useState('polling')

@@ -120,7 +120,7 @@
   font: 700 max(8px, calc(var(--s) * .2))/1 var(--a-font); color: var(--a-text-2); font-style: normal; }
 /* A removed agent keeps its place in history: no colour label and a dashed outline, while its
    initials keep readable contrast. */
-.atlas .a-avatar--removed { background: var(--a-sunken); color: var(--a-text-3); border: 1.5px dashed var(--a-text-4); }
+.atlas .a-avatar.a-avatar--removed, .atlas .a-avatar.a-avatar--removed[data-color] { background: var(--a-sunken); color: var(--a-text-3); border: 1.5px dashed var(--a-text-4); }
 .atlas .a-bead { display: block; flex: none; }
 .atlas .a-bead-pulse { transform-origin: 8px 8px; animation: atlas-pulse 2.4s var(--a-ease) infinite; }
 @keyframes atlas-pulse { 0% { transform: scale(.55); opacity: .75; } 70% { transform: scale(1.08); opacity: 0; } 100% { opacity: 0; } }

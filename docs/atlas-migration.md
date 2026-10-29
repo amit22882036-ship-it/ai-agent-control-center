@@ -16,7 +16,8 @@ the backend reports.
 | M0 | Baseline audit, existing test results, synthetic fixtures | Done |
 | M1 | Design tokens, local fonts, primitives, application shell, routing, Atlas/classic switch, component gallery | Done |
 | M2 | Canonical Task/Agent model; read-only task projection (B1, separately approved) | Done |
-| M3–M11 | Work list and inspector, agent actions, New Task and Projects, Map, Task pages, Connections and Settings, notifications, accessibility and performance, default switch | Not started |
+| M3 | Work list and read-only inspector | Done |
+| M4–M11 | Agent actions, New Task and Projects, Map, Task pages, Connections and Settings, notifications, accessibility and performance, default switch | Not started |
 
 Legacy removal is a separate, explicitly authorized final step. The native folder picker is a
 separate milestone after the core migration.
@@ -29,15 +30,16 @@ open the dashboard and choose **Atlas preview** in the top bar. Atlas addresses 
 Back button returns to the Atlas page you left. Opening the dashboard without an Atlas address
 always shows the classic dashboard.
 
-At M1 the preview contains the shell, navigation, appearance settings, the workspace totals and a
-design gallery (`#/gallery`, sample content only). Work, Projects, Connections and New task say
-which milestone adds them and link back to the classic dashboard. Atlas does not start, stop or
-change agents yet, and it sends no state-changing request.
+The preview contains the shell, navigation, appearance settings, a design gallery (`#/gallery`,
+sample content only) and, since M3, the Work list with a read-only inspector. Projects,
+Connections and New task say which milestone adds them and link back to the classic dashboard.
+Atlas does not start, stop or change agents yet, and it sends no state-changing request.
 
 ## How Atlas stays isolated
 
 - **Code:** everything lives in `frontend/src/atlas/`. The only classic files touched are
-  `main.jsx` (choosing the interface) and `WorkspaceBar.jsx` (the **Atlas preview** button).
+  `main.jsx` (choosing the interface), `WorkspaceBar.jsx` (the **Atlas preview** button) and,
+  since M3, `App.jsx`, which reads the Atlas hand-off below once when it opens.
 - **Loading:** Atlas is a separate chunk loaded only when someone opens it, so the classic bundle's
   CSS is unchanged.
 - **Styles:** every Atlas rule is scoped to the `.atlas` root and Atlas classes use an `a-` prefix.
@@ -70,7 +72,50 @@ view will share:
 - `taskSource.mjs`: reads every page through the shared `apiFetch` client. It opens no event
   connection; the shell's single connection decides when to read again.
 
-At M2 no view uses the model yet, so the interface is unchanged; M3 connects it to Work.
+## Work list and inspector (M3)
+
+`#/work` shows every task family from `GET /workspace/tasks`, one card per family, grouped into
+**Needs your attention**, **In progress** and **Completed and history** from the status model.
+Hierarchy lines come only from `parent_task_id`; planned work is a count on its lead, never a row.
+Each row shows the task, its current agent or, marked as such, its last one (replaced and removed
+agents included, or "No agent"), what is happening now and an honest time. Completed work says
+whether it was combined into its lead or applied to the project, and that it was not
+independently verified.
+
+- **Find and filter:** All, Needs you, In progress and Done; one project or all; search over the
+  loaded tasks (titles, agent names, tools and models), which opens the path to each match. The
+  project menu lists every registered project from `GET /projects`, including projects with no
+  loaded task, and says so while the list is loading, when none is registered or when it can't be
+  read; loaded tasks never stand in for it. While older pages remain, the section counts are
+  marked as covering the loaded tasks only ("Counts cover the 200 loaded tasks of 1,234"); no
+  page is fetched just to complete a count.
+- **Pages:** the newest 200 tasks load first; **Load older tasks** adds a page and later refreshes
+  keep it. A lead on a page that isn't loaded, a lead that couldn't be loaded and a lead that no
+  longer exists are each said plainly; nothing is attached to a guessed parent.
+- **Keyboard:** the list is one WAI-ARIA tree with one Tab stop. Up and Down move, Right and Left
+  open, close or move to the parent, Home and End jump, Enter selects.
+- **Selection:** the selected task is in the address (`#/work?task=…`, with `filter` and
+  `project`), so Back, Forward and reloads restore it. A task that isn't loaded yet or no longer
+  exists is explained; nothing else is selected in its place. A selection hidden by a filter stays
+  open with a **Show it** action.
+- **Inspector:** Now (state notes, the question asked, responsibility, family, delegated work,
+  planned work, result and integration), Activity (agents on the task and recorded activity),
+  Output (the latest 200 lines) and Details. It reads the existing `GET /tasks/{id}`,
+  `/tasks/{id}/assignments`, `/agents/{id}/activity` and `/agents/{id}/output`. Activity of an
+  agent that has since moved to other work is not shown as this task's. Every action stays in
+  Classic view for now, and the inspector says so.
+- **Opening Classic from a task:** when the selected task has a current agent that is not
+  removed, **Open Classic view** leaves a short-lived (30 second), one-shot record of that agent in
+  this tab's session storage and Classic opens with it selected; Classic clears the record as it
+  reads it. A task with no current agent (its last agent finished, was replaced or was removed)
+  opens Classic without a selection, and the inspector says which will happen. The top bar's
+  **Classic view** never carries a selection.
+- **Live updates:** the shell's single event connection bumps a version; the list re-reads once per
+  burst, reads never overlap, an older answer never replaces a newer one, and a failed read keeps
+  the last list with a notice. Selection, expansion and scroll survive refreshes.
+- **Rendering:** measured in Microsoft Edge with 1,000 tasks fully expanded (about 22,800 DOM
+  nodes): the list appears in under a second including page load, a keyboard step takes about
+  65 ms and selecting a task about 170 ms, so the list is not virtualized.
 
 ## Tests
 
@@ -82,6 +127,9 @@ npm run lint
 npm run build
 npm run test:browser   # builds, then runs the browser tests in Microsoft Edge
 ```
+
+`e2e/atlas-work.spec.mjs` covers the Work list and inspector with the recorded contract and with
+synthetic scenarios in `e2e/scenarios.mjs` that use the endpoint's exact node shape.
 
 The browser tests start no server. Playwright serves the production build and a fixture backend
 through request routing, so no provider or agent can run. They check the classic default, the

@@ -30,7 +30,7 @@ test('Atlas opens only on request, owns the single event connection and changes 
   await page.getByRole('button', { name: 'Atlas preview' }).click()
   await expect(page).toHaveURL(/#\/work$/)
   await expect(page.locator('.atlas h1')).toHaveText('Work')
-  await expect(page.locator('.a-tile').filter({ hasText: 'Need your input' })).toContainText('1')
+  await expect(page.getByRole('treeitem', { name: /^Fix the tests/ })).toBeVisible()
   await expect(page.locator('.a-needs')).toHaveText('1 needs you')
   await expect(page.locator('.a-conn')).toContainText('Live')
   await expect(page).toHaveTitle('Work · Control Center (Atlas preview)')
@@ -39,11 +39,12 @@ test('Atlas opens only on request, owns the single event connection and changes 
     await page.locator('.a-nav').getByRole('link', { name }).click()
     await expect(page.locator('.atlas h1')).toHaveText(name)
   }
-  // While Atlas is on screen it only reads the workspace summary: no state-changing request,
-  // no token request and nothing else.
+  // While Atlas is on screen it only reads: the workspace summary, the task list and project
+  // names. No state-changing request, no token request and nothing else.
   const atlasRequests = log.backend.slice(classicRequests)
   expect(atlasRequests.length).toBeGreaterThan(0)
-  expect(atlasRequests.filter((line) => line !== 'GET /workspace?limit=1&after=0'), atlasRequests.join(' | ')).toEqual([])
+  const reads = /^GET \/(workspace\?limit=1&after=0|workspace\/tasks\?limit=200|projects)$/
+  expect(atlasRequests.filter((line) => !reads.test(line)), atlasRequests.join(' | ')).toEqual([])
   expect(log.backend.filter((line) => UNSAFE.test(line) && !line.startsWith('POST /notifications/')), log.backend.join(' | ')).toEqual([])
   expect(log.external).toEqual([])
 })
@@ -135,7 +136,8 @@ test('an unreachable backend is reported plainly, never as zero', async ({ page 
   await openApp(page, { backend: 'offline', path: '/#/work' })
   await expect(page.locator('.a-conn')).toContainText('Backend unavailable')
   await expect(page.getByText('The Control Center backend isn’t answering')).toBeVisible()
-  expect(await page.locator('.a-tile').count()).toBe(0)
+  await expect(page.getByText('The task list couldn’t be loaded')).toBeVisible()
+  expect(await page.locator('[role="treeitem"]').count()).toBe(0)
 })
 
 for (const width of [1440, 1180, 1024]) {

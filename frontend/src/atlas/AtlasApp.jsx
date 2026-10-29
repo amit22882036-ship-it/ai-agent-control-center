@@ -4,6 +4,7 @@ import './styles/base.css'
 import './styles/components.css'
 import './styles/shell.css'
 import './styles/pages.css'
+import './styles/work.css'
 import TopBar from './shell/TopBar'
 import WorkPage from './pages/WorkPage'
 import PreviewPage from './pages/PreviewPage'
@@ -31,12 +32,18 @@ export default function AtlasApp() {
   }, [])
 
   // A new navigation starts at the top; Back/Forward restores where the page was. Focus moves to
-  // the new page's heading, except on the first load.
+  // the new page's heading, except on the first load. A change that stays on the same page (a
+  // selected task, a filter) keeps focus and scroll where they are.
   useLayoutEffect(() => {
+    const samePage = currentKey.current === key
     currentKey.current = key
     document.title = documentTitle(route)
     const element = main.current
     if (!element) return
+    if (samePage) {
+      navigationRef.current = 'traversal'
+      return
+    }
     const kind = navigationRef.current
     element.scrollTop = kind === 'traversal' ? (scrolls.current.get(key) || 0) : 0
     if (kind !== 'initial') element.querySelector('[data-page-heading]')?.focus({ preventScroll: true })
@@ -44,7 +51,7 @@ export default function AtlasApp() {
   }, [key, route, navigationRef])
 
   let page
-  if (route.name === 'work') page = <WorkPage live={live} />
+  if (route.name === 'work') page = <WorkPage live={live} route={route} navigate={navigate} />
   else if (route.name === 'projects' || route.name === 'connections' || route.name === 'new') page = <PreviewPage key={route.name} kind={route.name} />
   else if (route.name === 'settings') page = <SettingsPage appearance={appearance} live={live} navigate={navigate} />
   else if (route.name === 'gallery') page = <GalleryPage />

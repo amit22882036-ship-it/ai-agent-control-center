@@ -9,7 +9,7 @@ function focusIndex(container, selector, index) {
 }
 
 // A single choice among a few options (radio semantics): one Tab stop, arrow keys move and select.
-export function Segmented({ label, labelledBy, value, options, onChange, size = 'md', className }) {
+export function Segmented({ label, labelledBy, describedBy, value, options, onChange, size = 'md', className }) {
   const root = useRef(null)
   const selected = Math.max(0, options.findIndex((option) => option.value === value))
   function onKeyDown(event, index) {
@@ -21,7 +21,7 @@ export function Segmented({ label, labelledBy, value, options, onChange, size = 
     focusIndex(root.current, '[role="radio"]', next)
   }
   return <div ref={root} className={cx('a-seg', size === 'sm' && 'a-seg--sm', className)} role="radiogroup"
-    aria-label={labelledBy ? undefined : label} aria-labelledby={labelledBy}>
+    aria-label={labelledBy ? undefined : label} aria-labelledby={labelledBy} aria-describedby={describedBy}>
     {options.map((option, index) => <button key={option.value} type="button" role="radio" className="a-seg-item"
       aria-checked={option.value === value} tabIndex={index === selected ? 0 : -1} disabled={option.disabled}
       title={option.title} onClick={() => onChange(option.value)} onKeyDown={(event) => onKeyDown(event, index)}>
