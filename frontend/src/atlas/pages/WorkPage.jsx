@@ -8,17 +8,20 @@ import TaskMap from '../components/work/TaskMap'
 import TaskInspector from '../components/work/TaskInspector'
 import ColorFilter from '../components/work/ColorFilter'
 import { API_BASE } from '../../apiClient.mjs'
-import { useLiveResource, useTaskFeed } from '../hooks'
+import { useLiveResource } from '../hooks'
 import { emptyStore, pathTo } from '../model/tasks.mjs'
 import { reconcile } from '../model/selection.mjs'
-import { COLOR_VALUES, FILTERS, deriveWorkspace, familyCounts, flatRows, inBranch, visibleRows } from '../model/workList.mjs'
+import { COLOR_VALUES, FILTERS, familyCounts, flatRows, inBranch, visibleRows } from '../model/workList.mjs'
 import { mapLayout } from '../model/mapLayout.mjs'
 import { readInspectorWidth, saveInspectorWidth } from '../layout.mjs'
 import { projectDirectory, projectLabel, projectMenu } from '../model/projects.mjs'
 import { exitAtlas } from '../uiMode.mjs'
 import { captureAnchors, playLensTransition } from '../lensTransition'
-import { rememberWork } from '../workContext'
+import { rememberWork, requestReply } from '../workContext'
+import { ATTENTION_KINDS, attentionInView, attentionKind, stepAttention } from '../model/attention.mjs'
+import { StatusBead } from '../components/identity'
 
+const EMPTY = emptyStore()
 const FILTER_VALUES = new Set(FILTERS.map((filter) => filter.value))
 const LENSES = [{ value: 'list', label: 'List', icon: 'list', title: 'List · L' }, { value: 'map', label: 'Map', icon: 'map', title: 'Map · M' }]
 const clip = (text, limit) => (text && text.length > limit ? text.slice(0, limit - 1).trimEnd() + '…' : text)
@@ -31,13 +34,42 @@ function pageKey(event) {
   return !document.querySelector('dialog[open], [role="dialog"], [role="menu"]')
 }
 
+// "Needs you" navigation: where the selected Task is among the Tasks that need the person in this
+// view, Previous and Next (Shift A, A), and Reply (R) when the selected Task asks a question. Counts
+// are of loaded Tasks; questions the backend counts that may be on unloaded pages are said to be.
+function AttentionBar({ ids, selectedId, derived, summary, filtered, complete, onStep, onReply, onLoadMore, loadingMore }) {
+  const unlisted = summary?.unlisted || 0
+  if (!ids.length && !unlisted) return null
+  const index = ids.indexOf(selectedId)
+  const kind = index >= 0 ? attentionKind(derived, selectedId) : null
+  const n = ids.length
+  const where = filtered ? ' in this view' : complete ? '' : ' among loaded tasks'
+  const text = !n ? `Nothing loaded${filtered ? ' in this view' : ''} needs you`
+    : index >= 0 ? `${index + 1} of ${n} that need you${where}` : `${n} ${n === 1 ? 'task needs' : 'tasks need'} you${where}`
+  const alone = n < 2 && index >= 0
+  return <div className="a-attnbar" role="navigation" aria-label="Tasks that need you">
+    <StatusBead state="ask" size={14} decorative />
+    <span className="a-attnbar-text">{text}{kind ? <span className="a-attnbar-kind"> · {ATTENTION_KINDS[kind].label}</span> : null}</span>
+    {n > 0 && <span className="a-attnbar-steps">
+      <Button size="sm" variant="ghost" icon="left" onClick={() => onStep(-1)} disabled={alone}
+        aria-label="Previous task that needs you" title="Previous · Shift A">Previous</Button>
+      <Button size="sm" variant="ghost" onClick={() => onStep(1)} disabled={alone}
+        aria-label={index >= 0 ? 'Next task that needs you' : 'Go to the first task that needs you'} title="Next · A">{index >= 0 ? 'Next' : 'Go'}<Icon name="right" size={14} /></Button>
+    </span>}
+    {kind === 'reply' && <Button size="sm" variant="ask" icon="reply" onClick={() => onReply(selectedId)} title="Reply · R">Reply</Button>}
+    {unlisted > 0 && <span className="a-attnbar-more">
+      <span className="a-fine">{complete ? `The backend counts ${summary.reported} waiting for a reply` : `${unlisted} more waiting for a reply may be on older pages`}</span>
+      {!complete && <Button size="sm" icon="down" onClick={onLoadMore} disabled={loadingMore}>{loadingMore ? 'Loading…' : 'Look on older pages'}</Button>}
+    </span>}
+  </div>
+}
+
 // Work: every task family as a List and as a Map, two views of the same Tasks. Selection, filters,
 // project, colours, focus, the view and the side list live in the address, so Back/Forward and
 // reloads restore them; both views share the open branches and the details panel.
-export default function WorkPage({ live, route, navigate }) {
-  const feed = useTaskFeed(live.version)
-  const store = feed.store || emptyStore()
-  const derived = useMemo(() => deriveWorkspace(store), [store])
+export default function WorkPage({ live, route, navigate, feed, derived, attention }) {
+  // The shell owns the canonical feed and its derived workspace (the attention list uses them too).
+  const store = feed.store || EMPTY
   // Actions check the latest store when they run, not the one drawn when a form opened.
   const storeRef = useRef(store)
   useEffect(() => { storeRef.current = store }, [store])
@@ -114,6 +146,16 @@ export default function WorkPage({ live, route, navigate }) {
   // Selecting a Task outside a focused branch leaves the focus, so the selection is never hidden.
   const select = useCallback((id) => go({ task: id, ...(focus && !inBranch(derived.forest, focus, id) ? { focus: undefined } : {}) }),
     [go, focus, derived])
+  // The Tasks that need the person in this view, in the List's order; A and Shift A move between
+  // them, and moving opens the path to the Task in both views.
+  const attentionIds = useMemo(() => attentionInView(store, derived, { filter, project, query, colors, focus }),
+    [store, derived, filter, project, query, colors, focus])
+  const goAttention = useCallback((direction) => {
+    const id = stepAttention(attentionIds, selectedId, direction)
+    if (id) select(id)
+  }, [attentionIds, selectedId, select])
+  // Reply: select the Task and put the cursor in its answer (the details panel's own form).
+  const replyTo = useCallback((id) => { requestReply(id); select(id) }, [select])
   const toggle = useCallback((id, open) => setOverrides((current) => {
     const next = new Map(current)
     next.set(id, open ?? !expanded.has(id))
@@ -157,11 +199,13 @@ export default function WorkPage({ live, route, navigate }) {
       else if (key === 'm' && lens !== 'map') { event.preventDefault(); switchLens('map') }
       else if (key === 'f' && selectedId && store.tasks[selectedId]) { event.preventDefault(); focusBranch(selectedId) }
       else if (key === 'o' && selectedId && store.tasks[selectedId]) { event.preventDefault(); openTask(selectedId) }
+      else if (key === 'a' && attentionIds.length) { event.preventDefault(); goAttention(event.shiftKey ? -1 : 1) }
+      else if (key === 'r' && selectedId && store.tasks[selectedId] && attentionKind(derived, selectedId) === 'reply') { event.preventDefault(); replyTo(selectedId) }
       else if (event.key === 'Escape' && focusParam) { event.preventDefault(); leaveFocus() }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [lens, switchLens, selectedId, store, focusBranch, focusParam, leaveFocus, openTask])
+  }, [lens, switchLens, selectedId, store, focusBranch, focusParam, leaveFocus, openTask, attentionIds, goAttention, replyTo, derived])
 
   // Pointing at a Task in one view highlights it in the other (the side list beside the Map). The
   // highlight is a class set directly, re-applied after each render so a refresh never drops it.
@@ -192,7 +236,8 @@ export default function WorkPage({ live, route, navigate }) {
     <Button size="sm" onClick={() => { setQuery(''); go({ filter: undefined, project: undefined, colors: undefined, focus: undefined }) }}>Clear filters</Button></p>
   const tree = (compact) => <TaskTree view={view} store={store} derived={derived} projectName={projectName} now={now} selectedId={selectedId}
     focusId={focusId} setFocusId={setFocusId} onSelect={select} onToggle={toggle} onLoadMore={feed.loadMore} loadingMore={feed.loadingMore}
-    empty={empty} compact={compact} onShowInMap={compact ? undefined : showInMap} onOpenTask={compact ? undefined : openTask} />
+    empty={empty} compact={compact} onShowInMap={compact ? undefined : showInMap} onOpenTask={compact ? undefined : openTask}
+    onReply={compact ? undefined : replyTo} />
 
   let content
   if (!ready && feed.phase === 'error') {
@@ -245,6 +290,9 @@ export default function WorkPage({ live, route, navigate }) {
             { label: 'Focus the selected branch', icon: 'focus', hint: 'F', onSelect: () => focusBranch(selectedId) }] : []),
         ]} />
       </div>
+      {ready && <AttentionBar ids={attentionIds} selectedId={selectedId} derived={derived} summary={attention}
+        filtered={Boolean(project || focus || query || colors.size || filter !== 'all')} complete={store.complete} onStep={goAttention} onReply={replyTo}
+        onLoadMore={feed.loadMore} loadingMore={feed.loadingMore} />}
       {(stale || selectedHidden || (query && !store.complete) || focus || (focusParam && ready && !focus)) && <div className="a-work-notices">
         {stale && <Notice tone="warn" role="status" title="Showing the last list received">
           {feed.readAt ? `Received at ${new Date(feed.readAt).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}. ` : ''}

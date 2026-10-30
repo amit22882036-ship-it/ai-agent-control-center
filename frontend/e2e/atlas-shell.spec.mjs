@@ -40,11 +40,11 @@ test('Atlas opens only on request, owns the single event connection and changes 
     await expect(page.locator('.atlas h1')).toHaveText(name)
   }
   // While Atlas is on screen it only reads: the workspace summary, the task list, project names,
-  // the tools' cached state (M8, no probe) and process supervision. No state-changing request, no
+  // the tools' cached state (M8, no probe), provider update notices (M9) and process supervision. No state-changing request, no
   // token request and nothing else.
   const atlasRequests = log.backend.slice(classicRequests)
   expect(atlasRequests.length).toBeGreaterThan(0)
-  const reads = /^GET \/(workspace\?limit=1&after=0|workspace\/tasks\?limit=200|projects|providers\/onboarding|system\/process-supervision)$/
+  const reads = /^GET \/(workspace\?limit=1&after=0|workspace\/tasks\?limit=200|projects|providers\/onboarding|providers\/notifications|system\/process-supervision)$/
   expect(atlasRequests.filter((line) => !reads.test(line)), atlasRequests.join(' | ')).toEqual([])
   expect(log.backend.filter((line) => UNSAFE.test(line) && !line.startsWith('POST /notifications/')), log.backend.join(' | ')).toEqual([])
   expect(log.external).toEqual([])

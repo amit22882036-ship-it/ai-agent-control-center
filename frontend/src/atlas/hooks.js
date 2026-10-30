@@ -180,14 +180,11 @@ export function useActionRunner(onChanged) {
   return { busy: state.busy, result: state.result, run, dismiss }
 }
 
-// Connections (GET /providers/onboarding, the read Classic's AI Providers view uses). On the
-// Connections page it follows every change the shared connection reports; elsewhere it only feeds
-// the navigation's attention mark, so it re-reads at most every 15 seconds (never on a timer of its
-// own: only after a reported change). `reload` reads again after an action, because some provider
-// changes are not announced on the event connection.
+// A version for reads that only some pages follow closely. While `active`, it follows every change
+// the shared connection reports; otherwise it moves at most every 15 seconds, and only after a
+// reported change (never on a timer of its own).
 export const CONNECTIONS_QUIET_MS = 15000
-export function useConnections(live, active) {
-  const [nonce, setNonce] = useState(0)
+function useQuietVersion(live, active) {
   const [followed, setFollowed] = useState(0)
   const last = useRef(0)
   useEffect(() => {
@@ -196,16 +193,39 @@ export function useConnections(live, active) {
     const timer = setTimeout(() => { last.current = Date.now(); setFollowed(live.version) }, wait)
     return () => clearTimeout(timer)
   }, [live.version, active])
+  return followed
+}
+
+// Connections (GET /providers/onboarding, the read Classic's AI Providers view uses). On the
+// Connections page it follows every change the shared connection reports; elsewhere it only feeds
+// the navigation's attention mark. `reload` reads again after an action, because some provider
+// changes are not announced on the event connection.
+export function useConnections(live, active) {
+  const [nonce, setNonce] = useState(0)
+  const followed = useQuietVersion(live, active)
   // Opening the page always reads afresh.
   const resource = useLiveResource(`${API_BASE}/providers/onboarding`, `${followed}:${nonce}:${active ? 'page' : 'nav'}`)
   const reload = useCallback(() => setNonce((value) => value + 1), [])
   return { ...resource, reload }
 }
 
+// Provider update notices (GET /providers/notifications, what Classic's bell shows): what the
+// backend's daily release check recorded, minus versions dismissed or snoozed. The backend
+// announces a check and a dismissal on the event connection, so this follows it like Connections
+// does: closely while the notifications panel or Connections is open, quietly otherwise.
+export function useProviderNotices(live, active) {
+  const [nonce, setNonce] = useState(0)
+  const followed = useQuietVersion(live, active)
+  const resource = useLiveResource(`${API_BASE}/providers/notifications`, `${followed}:${nonce}:${active ? 'open' : 'quiet'}`)
+  const reload = useCallback(() => setNonce((value) => value + 1), [])
+  const notices = Array.isArray(resource.data) ? resource.data : []
+  return { ...resource, notices, reload }
+}
+
 // The Control Center notification preference, shared with Classic view (same stored key and the
-// same rule: it is on only while the browser allows notifications). Atlas shows no browser
-// notifications itself yet; it tells the backend the preference, so the backend's Windows
-// notifications follow it. The backend keeps the preference in memory, so an "on" preference is
+// same rule: it is on only while the browser allows notifications). It is told to the backend, so
+// the backend's Windows notifications follow it; Atlas's own browser notifications follow it too
+// (notifications.js). The backend keeps the preference in memory, so an "on" preference is
 // sent again whenever the backend answers after being unreachable. Nothing is sent for an "off"
 // preference the person did not change here.
 const NOTIFICATION_KEY = 'ai-agent-control-center.notifications'

@@ -5,6 +5,9 @@ import { actionTarget, targetStillCurrent } from '../../model/agentTarget.mjs'
 import { capabilitiesFor } from '../../model/agentCapabilities.mjs'
 import { agentLabel } from '../../model/workList.mjs'
 
+// Unsent text per task, for this page only (never stored on disk).
+const DRAFTS = new Map()
+
 export const CHANGED_TARGET = 'This task’s agent changed. Nothing was sent; review the task and try again.'
 
 // Everything an action needs: the task's current agent (never history), that agent's own read
@@ -22,9 +25,15 @@ export function useAgentScope({ store, taskId, version, getStore, onRefresh }) {
   const onChanged = useCallback(() => { setLocal((value) => value + 1); onRefresh?.() }, [onRefresh])
   const runner = useActionRunner(onChanged)
   // Drafts belong to the task, so a reply being written survives while a replacement agent's
-  // details load; each remembers the agent it was written for.
-  const [drafts, setDrafts] = useState({})
-  const draftStore = { get: (kind) => drafts[kind] || { text: '', for: null }, set: (kind, value) => setDrafts((current) => ({ ...current, [kind]: value })) }
+  // details load, and survives moving to another task and back (kept in memory for this page
+  // only); each remembers the agent it was written for.
+  const [drafts, setDrafts] = useState(() => DRAFTS.get(taskId) || {})
+  const draftStore = { get: (kind) => drafts[kind] || { text: '', for: null }, set: (kind, value) => setDrafts((current) => {
+    const next = { ...current, [kind]: value }
+    if (Object.values(next).some((draft) => draft?.text)) DRAFTS.set(taskId, next)
+    else DRAFTS.delete(taskId)
+    return next
+  }) }
   const nameOf = (id) => (store.agents[id] ? agentLabel(store.agents[id]) : id === detail?.agent_id ? detail.display_name || 'Untitled agent' : 'Agent outside the loaded list')
   const caps = current ? capabilitiesFor(detail) : null
   const guard = () => (targetStillCurrent(getStore(), taskId, target) ? null : CHANGED_TARGET)

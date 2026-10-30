@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import Inspector from '../Inspector'
 import { Avatar, StatusBead } from '../identity'
 import { Button, EmptyState, IconButton, Notice, Skeleton } from '../primitives'
@@ -12,6 +12,7 @@ import { helpersView, plannedView, resultView } from '../../model/taskStatus.mjs
 import { agentLabel, nowView, timeView, whoView } from '../../model/workList.mjs'
 import { pathTo } from '../../model/tasks.mjs'
 import { exitAtlas } from '../../uiMode.mjs'
+import { onReplyRequest } from '../../workContext'
 import { classicHandoffAgent } from '../../model/agentTarget.mjs'
 import { AgentFooterActions, AgentNowPanels, AgentSettingsPanels, AgentStopResult } from '../agent/AgentPanels'
 import { useAgentScope } from '../agent/useAgentScope'
@@ -51,7 +52,7 @@ function StateNotes({ store, derived, id, activity, handoff, controls }) {
     notes.push(<div key="q" className="a-qcard">
       <div className="a-qh"><Icon name="hand" size={15} stroke={2} />Asked you</div>
       {question ? <p className="a-qt a-bidi" dir="auto">{clip(question, 1200)}</p> : <p className="a-fine">Loading the question…</p>}
-      <ClassicHint handoff={handoff}>Replying arrives in Atlas in the next milestone.</ClassicHint>
+      <ClassicHint handoff={handoff}>Reply controls for this agent aren’t available here right now.</ClassicHint>
     </div>)
   }
   if (status.key === 'provider_wait' && !controls?.providerWait) notes.push(<Notice key="p" tone="warn" title={status.label}>
@@ -248,6 +249,8 @@ function DetailsTab({ store, derived, id, projectName }) {
 export default function TaskInspector({ store, derived, taskId, selection, projectName, version, now, width, onResize, onClose, onSelect, onLoadMore,
   getStore, onRefresh, lens = 'list', onShowInMap, onFocusBranch, onOpenTask }) {
   const [tab, setTab] = useState('now')
+  // A reply the person asked for shows the Now tab, where the answer is.
+  useEffect(() => onReplyRequest((id) => { if (id === taskId) setTab('now') }), [taskId])
   const agentScope = useAgentScope({ store, taskId, version, getStore, onRefresh })
   const present = selection === 'present'
   const who = present ? whoView(derived, taskId) : null

@@ -24,6 +24,8 @@ export const KEY_GROUPS = [
     ['Focus on the selected task’s branch', 'F'],
     ['Open the selected task’s page', 'O'],
     ['Leave a focused branch', 'Esc'],
+    ['Next or previous task that needs you', 'A · Shift A'],
+    ['Reply to the selected task’s question', 'R'],
     ['Map: zoom in or out', '+ · −'],
     ['Map: move the view', 'Shift ← → ↑ ↓'],
     ['Map: move between tasks, expand or collapse', '← → ↑ ↓'],

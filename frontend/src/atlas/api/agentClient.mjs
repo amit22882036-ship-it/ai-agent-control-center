@@ -75,6 +75,11 @@ export const agentActions = {
   savePolicy: (payload, options) => send('PUT', '/provider-policy', payload, options),
   // Settings (M8): the notification preference Classic also sends (it is shared with Classic).
   notificationPreference: (enabled, options) => send('POST', '/notifications/preferences', { enabled }, options),
+  // Notifications (M9). The heartbeat is Classic's: it tells the backend that this page is showing
+  // browser notifications, so the backend holds back its Windows notification for the same event.
+  notificationHeartbeat: (options) => send('POST', '/notifications/heartbeat', undefined, options),
+  // Provider update notices, per version, exactly as Classic's bell: 'dismiss' or 'remind_later'.
+  dismissNotice: (provider, version, mode, options) => send('POST', `/providers/${encode(provider)}/notifications/dismiss`, { version, mode }, options),
   // Process ownership.
   refreshDiagnostics: (executionId, options) => send('POST', `/executions/${encode(executionId)}/diagnostics`, undefined, options),
   attest: (executionId, body, options) => send('POST', `/executions/${encode(executionId)}/attestation`, body, options),

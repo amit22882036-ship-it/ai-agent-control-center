@@ -197,8 +197,9 @@ function detail(pathname, search, tasks, projects, agents, providers) {
 // `api` scripts any other backend answer: ({ method, path, search, body }) => { status, body } or
 // undefined to fall through. Every backend request is recorded in `log.requests` with its body.
 // `providers` is the GET /providers/onboarding answer (or a function returning it); null answers 503.
+// `notices` is the GET /providers/notifications answer, the same way.
 export async function openApp(page, { backend = 'online', path = '/', tasks = contract.all, taskPages = null, projects = PROJECTS,
-  agents = {}, api = null, providers = DEFAULT_ONBOARDING } = {}) {
+  agents = {}, api = null, providers = DEFAULT_ONBOARDING, notices = [] } = {}) {
   const log = { backend: [], external: [], requests: [] }
   await page.addInitScript(fakeEventSource)
   await page.route('**/*', async (route) => {
@@ -238,7 +239,12 @@ export async function openApp(page, { backend = 'online', path = '/', tasks = co
       }
       const found = request.method() === 'GET' ? detail(url.pathname, url.search, tasks, projects, agents, providers) : null
       if (found) return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(found) })
-      if (request.method() === 'GET' && url.pathname === '/providers/notifications') return route.fulfill({ status: 200, contentType: 'application/json', body: '[]' })
+      // GET /providers/notifications: `notices` is the list (or a function returning it); null answers 503.
+      if (request.method() === 'GET' && url.pathname === '/providers/notifications') {
+        const list = typeof notices === 'function' ? notices() : notices
+        return list === null ? route.fulfill({ status: 503, contentType: 'application/json', body: '{"detail":"unavailable"}' })
+          : route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(list) })
+      }
       // The classic interface synchronises its notification preference on load (an existing behaviour).
       if (request.method() === 'GET' && url.pathname === '/security/csrf-token') return route.fulfill({ status: 200, contentType: 'application/json', body: '{"csrf_token":"fixture"}' })
       if (request.method() === 'POST' && url.pathname.startsWith('/notifications/')) return route.fulfill({ status: 200, contentType: 'application/json', body: '{}' })

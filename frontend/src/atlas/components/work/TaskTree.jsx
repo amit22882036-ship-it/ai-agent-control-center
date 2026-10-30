@@ -29,7 +29,7 @@ function Who({ who }) {
   </div>
 }
 
-function Row({ row, store, derived, projectName, now, selected, focused, onSelect, onToggle, onFocusRow, compact, onShowInMap, onOpenTask }) {
+function Row({ row, store, derived, projectName, now, selected, focused, onSelect, onToggle, onFocusRow, compact, onShowInMap, onOpenTask, onReply }) {
   const task = store.tasks[row.id]
   const status = derived.status[row.id]
   const who = whoView(derived, row.id)
@@ -74,6 +74,9 @@ function Row({ row, store, derived, projectName, now, selected, focused, onSelec
       </div>
       <div className="a-c-time a-num" title={time.title}>{time.text}</div>
       {(onShowInMap || onOpenTask) && <span className="a-row-quick">
+        {/* A pointer shortcut; with the keyboard, select the row and press R (or use the details panel). */}
+        {onReply && status.key === 'needs_input' && <button type="button" className="a-row-map a-row-reply" tabIndex={-1} aria-hidden="true" title="Reply · R"
+          onClick={(event) => { event.stopPropagation(); onReply(row.id) }}><Icon name="reply" size={14} /><span>Reply</span></button>}
         {onOpenTask && <button type="button" className="a-row-map" tabIndex={-1} aria-hidden="true" title="Open task"
           onClick={(event) => { event.stopPropagation(); onOpenTask(row.id) }}><Icon name="open" size={14} /></button>}
         {onShowInMap && <button type="button" className="a-row-map" tabIndex={-1} aria-hidden="true" title="Show in map"
@@ -87,7 +90,7 @@ function Row({ row, store, derived, projectName, now, selected, focused, onSelec
 // single WAI-ARIA tree with one Tab stop; the arrow keys move, Right/Left open and close
 // branches, Enter selects.
 export default function TaskTree({ view, store, derived, projectName, now, selectedId, focusId, setFocusId, onSelect, onToggle,
-  onLoadMore, loadingMore, empty, compact = false, onShowInMap, onOpenTask }) {
+  onLoadMore, loadingMore, empty, compact = false, onShowInMap, onOpenTask, onReply }) {
   const tree = useRef(null)
   const keyboard = useRef(false)
   const rows = flatRows(view)
@@ -122,7 +125,7 @@ export default function TaskTree({ view, store, derived, projectName, now, selec
       {section.families.map((family) => <div key={family.topId} className="a-tcard" role="none">
         {family.rows.map((row) => <Row key={row.id} row={row} store={store} derived={derived} projectName={projectName} now={now}
           selected={row.id === selectedId} focused={row.id === focusTarget} onSelect={onSelect} onToggle={onToggle} onFocusRow={setFocusId}
-          compact={compact} onShowInMap={onShowInMap} onOpenTask={onOpenTask} />)}
+          compact={compact} onShowInMap={onShowInMap} onOpenTask={onOpenTask} onReply={onReply} />)}
         {family.summary.notLoaded > 0 && !store.complete && <div className="a-tcard-more" role="none">
           {family.summary.notLoaded} more helper{family.summary.notLoaded === 1 ? '' : 's'} on pages that aren’t loaded yet
         </div>}

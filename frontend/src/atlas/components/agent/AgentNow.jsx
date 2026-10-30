@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import Icon from '../Icon'
 import { Button } from '../primitives'
 import { TextArea } from '../controls'
@@ -7,6 +7,7 @@ import { InstructionOptions, ModelChoice } from './models'
 import useModelCatalog from '../../../useModelCatalog'
 import { agentActions, refusalText } from '../../api/agentClient.mjs'
 import { formatHash } from '../../router.mjs'
+import { onReplyRequest, takeReply } from '../../workContext'
 import { chosenConfig, defaultNeedsAttempt, emptyOverride, initialChoice, instructionPlan, instructionReady,
   selectionReady } from '../../../modelPresentation.mjs'
 import { PROVIDER_IDS, accessOptions, blockingText, changePayload, conditionText, preservedText, providerLabel,
@@ -33,6 +34,12 @@ async function sendInstruction(scope, kind, text, override) {
     if (!saved.ok) return { ok: false, message: refusalText(saved, 'The agent defaults could not be changed.') }
   }
   const result = kind === 'reply' ? await agentActions.reply(scope.agentId, text, plan.fields) : await agentActions.redirect(scope.agentId, text, plan.fields)
+  // A lost connection or a server failure leaves the outcome unknown: the text is kept and the
+  // agent's state is read again, so the person can see whether it arrived before sending again
+  // (the backend refuses a second reply once the agent is no longer waiting).
+  if (result.offline || result.status >= 500) {
+    return { ok: null, tone: 'warn', message: `${kind === 'reply' ? 'The reply' : 'The redirect'} may or may not have reached the agent. Your text is kept; check whether the agent is still ${kind === 'reply' ? 'waiting for you' : 'working on the old instruction'} before sending again.` }
+  }
   if (!result.ok) {
     return { ok: false, message: refusalText(result, kind === 'reply' ? 'Unable to send reply. Please try again.' : 'Unable to redirect agent. Please try again.') }
   }
@@ -45,6 +52,18 @@ export function QuestionCard({ scope }) {
   const [override, setOverride] = useState(emptyOverride)
   const busy = Boolean(runner.busy)
   const ready = draft.text.trim() && instructionReady(detail, scope.models.catalog, override)
+  // A reply asked for from a row, the R key or the notifications panel puts the cursor here once.
+  const answer = useRef(null)
+  const taskId = scope.taskId
+  useEffect(() => {
+    const focus = () => {
+      if (!answer.current || !takeReply(taskId)) return
+      answer.current.focus({ preventScroll: true })
+      answer.current.scrollIntoView({ block: 'nearest' })
+    }
+    focus()
+    return onReplyRequest(focus)
+  }, [taskId])
 
   async function reply(event) {
     event.preventDefault()
@@ -72,7 +91,9 @@ export function QuestionCard({ scope }) {
     <div className="a-qh" id={`q-${scope.agentId}`}><Icon name="hand" size={15} stroke={2} />{scope.agentName} asked you</div>
     <p className="a-qt a-bidi" dir="auto">{detail.waiting_question || 'The question text was not recorded.'}</p>
     <form onSubmit={reply}>
-      <TextArea label="Your answer" rows={3} value={draft.text} disabled={busy} required
+      {draft.text && draft.for && draft.for !== scope.agentId && <p className="a-fine a-tone-ask-text" role="status">
+        This task’s agent changed after you started writing. Your text is kept; review it before sending. It goes to {scope.agentName}.</p>}
+      <TextArea ref={answer} label="Your answer" rows={3} value={draft.text} disabled={busy} required
         onChange={(event) => setText(event.target.value, scope.agentId)} />
       {caps.instructionOptions && <InstructionOptions agent={detail} models={scope.models} value={override} onChange={setOverride} disabled={busy} />}
       <div className="a-act-row">

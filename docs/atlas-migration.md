@@ -22,7 +22,8 @@ the backend reports.
 | M6 | Work Map beside the List; project hierarchy previews; family context; design continuity review | Done |
 | M7 | Task pages: request, progress, team as List and Map, result review, Pause/Resume/Cancel | Done |
 | M8 | Connections (full parity with Classic's AI Providers view) and Settings | Done |
-| M9–M11 | Notifications, accessibility and performance, default switch | Not started |
+| M9 | Notifications and attention: the bell, provider update notices, "next that needs you", reply from Work, browser notifications | Implemented, awaiting review |
+| M10–M11 | Accessibility, responsiveness and performance; parity review and default switch | Not started |
 
 Legacy removal is a separate, explicitly authorized final step. The native folder picker is a
 separate milestone after the core migration.
@@ -37,8 +38,8 @@ always shows the classic dashboard.
 
 The preview contains the shell, navigation, appearance settings and a design gallery (`#/gallery`,
 sample content only); Work as a List and as a Map with the task details panel and its agent
-actions (M3, M4, M6); New task and Projects (M5); and a page for every Task (M7). Connections
-still says which milestone adds it and links back to the classic dashboard. Every
+actions (M3, M4, M6); New task and Projects (M5); a page for every Task (M7); Connections and
+Settings (M8); and notifications and attention (M9). Every
 state-changing request goes through `api/agentClient.mjs` with the classic endpoints and payloads.
 
 ## How Atlas stays isolated
@@ -386,7 +387,7 @@ shows no number.
 | Mock described | Yes | "Practice (Mock)". |
 | Provider documentation link | Yes | Advanced (the backend's `docs_url`). |
 | Backend unreachable, last good data kept, Retry | Yes | Mutations disabled with the reason while unreachable or stale, enabled again when it answers. |
-| Update notifications (bell: dismiss, remind later, review update) | Not in M8 | Notifications are M9; until then Classic's bell shows them. |
+| Update notifications (bell: dismiss, remind later, review update) | Yes (M9) | In Atlas's notifications panel; see Notifications and attention (M9). |
 | Polling every 3 s while an operation runs | Different | Atlas follows the event connection (operations publish on start and end, and the connection falls back to polling itself); it adds no timer. |
 
 Mutation safety is the same as M4–M7: one request at a time per page (a second click sends
@@ -441,7 +442,102 @@ it while Atlas is open; an "on" preference is sent again when the backend answer
 unreachable, and nothing is sent for an "off" preference the person did not change here. The page
 explains the browser's site permission and the Windows notification settings it depends on.
 
-## Design continuity review (V2 → Atlas, at M7, updated at M8)
+## Notifications and attention (M9)
+
+Atlas says what needs the person without keeping a list of its own. Everything comes from the
+sources Classic already uses: the canonical Task list (`GET /workspace/tasks`, read by the shell
+once and shared with Work), the workspace summary (`overview.needs_input`, the backend's count of
+agents waiting for a reply), the tools' state (`GET /providers/onboarding`) and the provider update
+notices (`GET /providers/notifications`). It opens no extra event connection and polls nothing: the
+Task list and the notices are read again when the shared connection reports a change (the notices
+closely while the panel or Connections is open, at most every 15 seconds otherwise).
+
+- **Bell (notifications panel).** A small non-modal panel from the top bar: **Needs you** (Tasks
+  waiting for a reply, for a new owner, for inspection, or whose work couldn't be combined, each
+  named in words with the Task's current agent), **Tools** (tools that need attention, linking to
+  Connections), **Tool updates** (Classic's notices) and the notification status with a link to
+  Settings. It is derived from live data each time, so it holds no history and cannot duplicate an
+  item. The bell shows a dot, never a number (amber when something needs the person, grey when
+  only an update is available); its accessible name says what and how many, using the backend's
+  count for questions and saying "among loaded tasks" for anything counted from loaded pages.
+  Escape or a click outside closes it and focus returns to the bell.
+- **Provider update notices.** The same notices, choices and endpoints as Classic's bell: **Review
+  update** opens that tool's setup in Connections (`#/connections?provider=…&section=setup`), where
+  any update is still prepared as a plan and approved explicitly; **Remind me later** and
+  **Dismiss** send `{version, mode}` to `POST /providers/{p}/notifications/dismiss`, so both stay
+  scoped to that version. A stale check says "may be out of date"; a refusal is shown in the
+  backend's words; a lost connection is an unknown outcome and the notices are read again.
+  Atlas never creates a notice and says that updating is optional.
+- **"N need you" and "next that needs you".** The top-bar button shows the backend's workspace
+  count of questions and goes to the next Task waiting for a reply, in the List's order, after the
+  selected one; it keeps the Work view unless a filter would hide that Task (then only the filters
+  are cleared). In Work, a bar above the List and Map shows where the selected Task is among the
+  Tasks that need the person **in this view** (project, focus, filter, colour and search
+  respected), with Previous and Next (Shift A, A) and Reply (R). Each move is a navigation (Back
+  returns), selects the Task by its canonical id, opens the path to it, and keeps List and Map on
+  the same selection. When pages are not all loaded, the bar and the panel say so and offer to look
+  on older pages; the backend's question count is the only workspace-wide count shown.
+- **Reply from Work.** A row waiting for a reply has a Reply shortcut (pointer), the R key and the
+  bar's Reply button do the same with the keyboard, and the panel's Reply opens the Task from
+  anywhere: each selects the Task and puts the cursor in the answer of the details panel, which is
+  the M4 reply form (current agent only, the backend's eligibility, one-time model or effort
+  override, Decide for me, one request at a time, the stale-agent check before sending). Drafts are
+  kept per Task in memory while moving between Tasks. If the Task's agent changes while a reply is
+  written, the text stays, a note says so, and the first Send is refused for review. A lost
+  connection or a server failure now reports that the reply may or may not have arrived and keeps
+  the text (the backend refuses a second reply once the agent is no longer waiting). Focus moves
+  only on an explicit request, never on a refresh.
+
+### Browser and Windows notifications
+
+The preference is Classic's (same stored key, the same rule: on only while the browser allows
+notifications; the browser asks only from the switch). The backend notifies an agent that starts
+waiting for a reply or finishes: it waits 8 seconds and shows a Windows notification only if no page
+has sent `POST /notifications/heartbeat` in the last 6 seconds. Atlas now shows browser
+notifications too, and sends Classic's heartbeat only while it can really show them: the preference
+is on, the browser allows them, showing one has not failed in this page, this is the Atlas tab
+holding the Web Lock `control-center-atlas-notifications`, the backend answers, the Task list is
+current, and every page of Tasks is loaded (otherwise a change on an unloaded page could be missed).
+In every other case no heartbeat is sent, and the backend's Windows notification is the fallback
+when available. So an event is not shown by both; whether a Windows notification actually appears
+depends on Windows settings, Focus assist, the backend being reachable and the notifier itself, and
+the wording never promises it ("Windows notifications are the fallback when available"). While the
+backend isn't answering, Atlas says that nothing can be sent until it returns. Without the Web Locks
+API (an insecure address or an old browser) Atlas tabs can't agree on one of them, so none shows
+browser notifications and none sends the heartbeat.
+
+Which changes are announced follows Classic and the backend (an agent starting to wait for the
+person, an agent finishing), once per transition. Atlas's own rule for identity: the first reading
+is a baseline (nothing is replayed); an agent seen for the first time is announced only when its
+Task was already being watched (a replacement agent, a new assignment) or the Task was created after
+watching began, so loading older pages never replays old states; the same state reported again (a
+repeated event, a reconnect) is not announced. Each notification is tagged by
+`control-center:{agent}:{state}`, so the same event shown by two tabs replaces itself. A click opens
+the Task (never an Agent) in Work, so a stale notification shows whoever holds the Task now, or that
+it no longer exists. New questions are also announced politely to screen readers.
+
+### Differences from Classic
+
+| Classic | Atlas | Why |
+| --- | --- | --- |
+| Bell badge with the number of provider updates | A dot; counts in the accessible name and in the panel | Updates are calm information; questions use the backend's own count. |
+| Bell lists provider updates only | Panel adds what needs the person and tools that need attention | One place for attention, derived from live data, no history. |
+| Browser notification tracker over the polled agent list | Transition tracker over the canonical Task list | Atlas reads Tasks a page at a time; first-seen rules avoid replays. |
+| Heartbeat whenever the page polled in the last 4 seconds | Heartbeat only while every page is loaded, the list is current and this tab holds the lock | Never suppress a Windows notification for an event Atlas could miss. |
+| Each Classic tab shows its own notifications | One Atlas tab shows them (Web Locks); without Web Locks none does; tags make repeats replace each other | Fewer duplicates. A Classic tab and an Atlas tab open together still each show one (Classic is unchanged). |
+| A click selects the Agent | A click opens the Task | The Task is the stable identity; an Agent may have been replaced. |
+
+Limitations, carried to the M11 gate: the Windows notifier cannot open a task (it has no click
+action); a Classic tab and an Atlas tab open at the same time can each show the same event (Classic
+neither takes the lock nor tags its notifications, and Classic is unchanged); a workspace too large
+to load completely gets Windows notifications only. **Failure window:** when the browser fails to
+show a notification, Atlas stops the heartbeat at once, so the backend's 8-second wait usually ends
+with the last heartbeat more than 6 seconds old and the Windows fallback is tried; a failure the
+browser reports more than about 2 seconds after the event can leave that one event shown by neither
+(Classic has the same window). Closing it needs a backend change (for example an explicit
+acknowledgement per event), which is outside the existing contract and needs separate approval.
+
+## Design continuity review (V2 → Atlas, at M7, updated at M8 and M9)
 
 Atlas V2 is the approved direction, not a pixel specification. Status: **A** implemented as
 designed; **B** implemented differently for a reason; **C** added in M6; **D** planned for M7–M11;
@@ -450,7 +546,7 @@ designed; **B** implemented differently for a reason; **C** added in M6; **D** p
 | V2 concept | Status | Notes |
 | --- | --- | --- |
 | Top navigation, appearance switch, Classic switch, New task button | A | |
-| "N need you" in the top bar | A / D | It opens Work; jumping to the next item that needs you is M9. |
+| "N need you" in the top bar | A / C (M9) | It goes to the next Task waiting for a reply; Work has Previous/Next (A, Shift A). |
 | Work List: sections, family cards, threads, columns, keyboard tree | A | M3. |
 | Work Map, List/Map switch, L and M keys | C | |
 | Avatars travelling between List and Map | C | Simplified: at most 70 avatars, skipped with reduced motion. |
@@ -460,7 +556,7 @@ designed; **B** implemented differently for a reason; **C** added in M6; **D** p
 | Focus a branch (F), breadcrumbs, Leave (Esc) | C | Shared by both views; breadcrumbs widen the focus. |
 | Zoom, fit, show everything, overview, drag, wheel, "Jump to" | C | |
 | Hover in one view highlights the other | C | |
-| Row quick actions | C / D | "Open task" and "Show in map" (M6, M7); reply from the row is M9. |
+| Row quick actions | C | "Open task" and "Show in map" (M6, M7); Reply on rows waiting for a reply (M9, also R). |
 | View options: expand all, collapse | C | |
 | View option: hide removed agents | B | Tasks are never hidden because their agent was removed; the colour filter's "No colour" selects them. |
 | Rotating latest output line in each row | F | Would need a stream per agent; Atlas keeps one event connection. The Output tab has the history. |
@@ -475,7 +571,7 @@ designed; **B** implemented differently for a reason; **C** added in M6; **D** p
 | New Task layout and "Before you start" picture | A | M5. |
 | Connections: readiness, usage, billing guidance, nav badge | C (M8) | Five separate readiness facts instead of one badge; the nav mark is a dot with words, never a number. |
 | Settings: keyboard reference, about | C (M8) | Also notifications preference, accessibility, process supervision and diagnostics. The full keyboard review stays M10. |
-| Notifications | D | M9. |
+| Notifications | C (M9) | A panel derived from live data (needs you, tools, updates), no stored inbox; browser notifications coordinated with Windows ones. |
 | Global search (Ctrl K) over tasks and agents | E (open decision) | Work searches the loaded tasks; searching unloaded tasks and agents needs a backend search. A product decision for a future approved milestone, to be settled before M11. |
 | N for New task | D | M10 keyboard review. |
 
@@ -485,7 +581,8 @@ designed; **B** implemented differently for a reason; **C** added in M6; **D** p
   applying to the project, all waiting on backend support (see open product decisions).
 - **M8 Connections and Settings (done):** remaining are the provider update notices from
   Classic's bell (M9) and the full keyboard review (M10).
-- **M9 Notifications:** attention entry points, "next thing that needs you", reply from a row.
+- **M9 Notifications and attention (implemented):** remaining is a durable notification history,
+  which the backend does not keep (not planned), and a click action for Windows notifications.
 - **M10 Accessibility, responsiveness, performance, polish:** a full keyboard pass including N,
   zoomed text beyond 150 %, very large workspaces on slower machines, visual polish against V2.
 - **M11 Parity and default switch:** functional parity review against Classic; Atlas becomes the
@@ -493,7 +590,8 @@ designed; **B** implemented differently for a reason; **C** added in M6; **D** p
 - **Open product decisions:** global search across unloaded tasks and agents (needs a backend
   search); applying work to the project from Atlas (needs the trustworthy integration preview
   described in Task pages (M7)); "Ask for changes" on a Task page; safe access to a task's working
-  copy (opening its private copy needs a local-file action that the browser can't take).
+  copy (opening its private copy needs a local-file action that the browser can't take); native
+  Windows folder selection for Projects (its own milestone after the core migration).
 
 ## Tests
 
@@ -518,7 +616,10 @@ Start again and the colour filter (M5); `e2e/atlas-map.spec.mjs` covers the Map,
 focus, project previews and measured performance with 1,000 tasks (M6).
 `e2e/atlas-connections.spec.mjs` covers Connections and Settings (M8) with synthetic onboarding
 answers from `e2e/providers.mjs`, shaped like the backend's; `tests/atlasConnections.test.mjs`
-covers the Connections and Settings wording and payloads.
+covers the Connections and Settings wording and payloads. `e2e/atlas-notifications.spec.mjs` covers
+the notifications panel, provider update notices, attention navigation, reply from Work, browser
+notifications with the heartbeat and two tabs (M9); `tests/atlasAttention.test.mjs` covers the
+attention model, counts and the notification transition rules.
 
 The browser tests start no server. Playwright serves the production build and a fixture backend
 through request routing, so no provider or agent can run. They check the classic default, the

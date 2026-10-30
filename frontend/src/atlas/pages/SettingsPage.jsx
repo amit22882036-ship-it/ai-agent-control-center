@@ -12,6 +12,7 @@ import { useLiveResource } from '../hooks'
 import { INSPECTOR, readInspectorWidth, saveInspectorWidth } from '../layout.mjs'
 import { KEY_GROUPS, KEY_NOTE, SETTINGS_SECTIONS, diagnosticsText, notificationView, settingsSection, supervisionView } from '../model/settings.mjs'
 import { attentionOf } from '../model/connections.mjs'
+import { deliveryView } from '../model/notify.mjs'
 
 const THEMES = [['automatic', 'monitor', 'auto'], ['light', 'sun', 'light'], ['dark', 'moon', 'dark']]
 
@@ -39,7 +40,7 @@ function ThemeTiles({ mode, onChoose }) {
 
 const media = (query) => (typeof window !== 'undefined' && window.matchMedia ? window.matchMedia(query).matches : false)
 
-export default function SettingsPage({ appearance, live, navigate, route, notifications, connections }) {
+export default function SettingsPage({ appearance, live, navigate, route, notifications, connections, delivery }) {
   const current = settingsSection(route.params) || 'appearance'
   const connection = connectionView(live)
   const supervision = useLiveResource(`${API_BASE}/system/process-supervision`, live.reachable ? 'answering' : 'waiting')
@@ -99,8 +100,11 @@ export default function SettingsPage({ appearance, live, navigate, route, notifi
           <dl className="a-kv a-settings-kv">
             <dt>When</dt><dd>When an agent needs your reply, and when an agent finishes.</dd>
             <dt>Browser permission</dt><dd>{notice.permission}</dd>
-            <dt>While Atlas is open</dt><dd>Alerts arrive as Windows notifications from the Control Center. Atlas doesn’t show browser notifications or keep a
-              notification list yet; those come in a later milestone.</dd>
+            <dt>How they arrive</dt><dd>{deliveryView(notifications, delivery).detail}</dd>
+            <dt>One at a time</dt><dd>While this page shows them, it tells the backend so, and the backend holds back its Windows notification for
+              the same event. Otherwise the backend may try a Windows notification; Windows settings and Focus assist decide whether it appears.
+              Only one Atlas tab shows them. A Classic tab open at the same time shows its own, so the same event can appear twice.</dd>
+            <dt>In Atlas</dt><dd>The bell lists what needs you now, from the live task list; it keeps no history.</dd>
             <dt>Also needed</dt><dd>{notice.prerequisite} Windows Focus assist (Do not disturb) can hide them.</dd>
             <dt>Shared</dt><dd>The same preference as Classic view’s bell; changing it here changes it there.</dd>
           </dl>

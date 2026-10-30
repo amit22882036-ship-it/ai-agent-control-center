@@ -18,3 +18,26 @@ export function lastWork() {
     return {}
   }
 }
+
+// A reply the person asked for (a row's Reply, the R key, the notifications panel or the "need you"
+// button): the Task's answer field takes the cursor once, then the request is forgotten. It is
+// only ever acted on by an explicit request, never by a refresh. In memory only.
+let pendingReply = null
+const listeners = new Set()
+const FRESH_MS = 30000
+export function requestReply(taskId) {
+  pendingReply = taskId ? { taskId, at: Date.now() } : null
+  for (const listener of listeners) listener(taskId)
+}
+export function replyPending(taskId) {
+  return Boolean(pendingReply && pendingReply.taskId === taskId && Date.now() - pendingReply.at <= FRESH_MS)
+}
+export function takeReply(taskId) {
+  if (!replyPending(taskId)) return false
+  pendingReply = null
+  return true
+}
+export function onReplyRequest(listener) {
+  listeners.add(listener)
+  return () => listeners.delete(listener)
+}
