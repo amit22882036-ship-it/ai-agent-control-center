@@ -1,24 +1,38 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { Button, EmptyState, Notice, Skeleton } from '../components/primitives'
 import { Segmented } from '../components/controls'
 import { MenuButton } from '../components/overlays'
 import Icon from '../components/Icon'
 import TaskTree from '../components/work/TaskTree'
+import TaskMap from '../components/work/TaskMap'
 import TaskInspector from '../components/work/TaskInspector'
 import ColorFilter from '../components/work/ColorFilter'
 import { API_BASE } from '../../apiClient.mjs'
 import { useLiveResource, useTaskFeed } from '../hooks'
 import { emptyStore, pathTo } from '../model/tasks.mjs'
 import { reconcile } from '../model/selection.mjs'
-import { COLOR_VALUES, FILTERS, deriveWorkspace, familyCounts, flatRows, visibleRows } from '../model/workList.mjs'
+import { COLOR_VALUES, FILTERS, deriveWorkspace, familyCounts, flatRows, inBranch, visibleRows } from '../model/workList.mjs'
+import { mapLayout } from '../model/mapLayout.mjs'
 import { readInspectorWidth, saveInspectorWidth } from '../layout.mjs'
 import { projectDirectory, projectLabel, projectMenu } from '../model/projects.mjs'
 import { exitAtlas } from '../uiMode.mjs'
+import { captureAnchors, playLensTransition } from '../lensTransition'
 
 const FILTER_VALUES = new Set(FILTERS.map((filter) => filter.value))
+const LENSES = [{ value: 'list', label: 'List', icon: 'list', title: 'List · L' }, { value: 'map', label: 'Map', icon: 'map', title: 'Map · M' }]
+const clip = (text, limit) => (text && text.length > limit ? text.slice(0, limit - 1).trimEnd() + '…' : text)
 
-// Work: every task family as a hierarchical list, with a read-only inspector for the selected task.
-// Selection, filter and project live in the address, so Back/Forward and reloads restore them.
+// A key press meant for the page, not for a field, a menu or a dialog.
+function pageKey(event) {
+  if (event.defaultPrevented || event.ctrlKey || event.metaKey || event.altKey || event.isComposing) return false
+  const target = event.target instanceof Element ? event.target : null
+  if (target?.closest('input, textarea, select, [contenteditable="true"], [role="menu"], [role="dialog"], dialog, .a-inspector')) return false
+  return !document.querySelector('dialog[open], [role="dialog"], [role="menu"]')
+}
+
+// Work: every task family as a List and as a Map, two views of the same Tasks. Selection, filters,
+// project, colours, focus, the view and the side list live in the address, so Back/Forward and
+// reloads restore them; both views share the open branches and the details panel.
 export default function WorkPage({ live, route, navigate }) {
   const feed = useTaskFeed(live.version)
   const store = feed.store || emptyStore()
@@ -31,19 +45,27 @@ export default function WorkPage({ live, route, navigate }) {
   // shared connection's updates, so a project registered meanwhile appears without a reload.
   const projectsResource = useLiveResource(`${API_BASE}/projects`, live.version)
   const directory = useMemo(() => projectDirectory(projectsResource), [projectsResource])
-  const projectName = (id) => projectLabel(directory, id)
-  const params = route.params || {}
+  const projectName = useCallback((id) => projectLabel(directory, id), [directory])
+  const params = useMemo(() => route.params || {}, [route.params])
   const selectedId = typeof params.task === 'string' && params.task ? params.task : null
   const filter = FILTER_VALUES.has(params.filter) ? params.filter : 'all'
   const project = params.project && params.project.length <= 200 ? params.project : null
   const colorParam = typeof params.colors === 'string' ? params.colors : ''
   const colors = useMemo(() => new Set(colorParam.split(',').filter((value) => COLOR_VALUES.includes(value))), [colorParam])
+  const lens = params.lens === 'map' ? 'map' : 'list'
+  const side = lens === 'map' && params.side === '1'
+  const focusParam = typeof params.focus === 'string' && params.focus && params.focus.length <= 200 ? params.focus : null
+  const focus = focusParam && store.tasks[focusParam] ? focusParam : null
   const [query, setQuery] = useState('')
   const [overrides, setOverrides] = useState(() => new Map())
   const [focusId, setFocusId] = useState(null)
   const [width, setWidth] = useState(() => readInspectorWidth())
   const [tick, setTick] = useState(() => Date.now())
   const [revealedFor, setRevealedFor] = useState(null)
+  const [mapRequest, setMapRequest] = useState(null)
+  const cameraRef = useRef(null)
+  const body = useRef(null)
+  const pendingLens = useRef(null)
   useEffect(() => {
     const timer = setInterval(() => setTick(Date.now()), 30000)
     return () => clearInterval(timer)
@@ -74,24 +96,82 @@ export default function WorkPage({ live, route, navigate }) {
     setFocusId(selectedId)
   }
 
-  const view = useMemo(() => visibleRows(store, derived, { expanded, filter, project, query, colors }), [store, derived, expanded, filter, project, query, colors])
+  const view = useMemo(() => visibleRows(store, derived, { expanded, filter, project, query, colors, focus }),
+    [store, derived, expanded, filter, project, query, colors, focus])
+  const layout = useMemo(() => (lens === 'map' ? mapLayout(view, derived, { chips: (id, row) => {
+    const task = store.tasks[id]
+    const loaded = (derived.forest.children[id] || []).length
+    return row.hasChildren || task.planned.unmaterialized > 0 || (!store.complete && (task.childCount ?? 0) > loaded)
+      || (row.depth === 0 && row.parentId === null && derived.byTop[id] && derived.byTop[id].placement !== 'root')
+  } }) : null), [lens, view, derived, store])
   const counts = familyCounts(derived, project)
   const selection = reconcile({ taskId: selectedId, focusId: null, expanded: [] }, store).status
   const shownIds = new Set(flatRows(view).map((row) => row.id))
   const selectedHidden = selection === 'present' && !shownIds.has(selectedId)
 
-  const go = (patch) => navigate('work', { ...params, ...patch })
-  const select = (id) => go({ task: id })
-  const toggle = (id, open) => setOverrides((current) => {
+  const go = useCallback((patch) => navigate('work', { ...params, ...patch }), [navigate, params])
+  // Selecting a Task outside a focused branch leaves the focus, so the selection is never hidden.
+  const select = useCallback((id) => go({ task: id, ...(focus && !inBranch(derived.forest, focus, id) ? { focus: undefined } : {}) }),
+    [go, focus, derived])
+  const toggle = useCallback((id, open) => setOverrides((current) => {
     const next = new Map(current)
     next.set(id, open ?? !expanded.has(id))
     return next
-  })
+  }), [expanded])
+  const setAll = (open) => setOverrides(() => new Map(Object.keys(store.tasks).map((id) => [id, open])))
   const reveal = () => {
     setQuery('')
     const path = pathTo(derived.forest, selectedId)
     setOverrides((current) => { const next = new Map(current); for (const id of path) next.set(id, true); return next })
-    go({ filter: undefined, project: undefined, colors: undefined })
+    go({ filter: undefined, project: undefined, colors: undefined, focus: undefined })
+  }
+  // Switching views keeps everything else; the agents' avatars travel between the two.
+  const switchLens = useCallback((next, patch = {}) => {
+    if (next !== lens) pendingLens.current = { to: next, anchors: captureAnchors(body.current) }
+    go({ lens: next === 'map' ? 'map' : undefined, ...patch })
+  }, [go, lens])
+  const showInMap = useCallback((id) => {
+    setMapRequest((current) => ({ seq: (current?.seq || 0) + 1, id }))
+    switchLens('map', { task: id, ...(focus && !inBranch(derived.forest, focus, id) ? { focus: undefined } : {}) })
+  }, [switchLens, focus, derived])
+  const focusBranch = useCallback((id) => go({ focus: id, task: id }), [go])
+  const leaveFocus = useCallback(() => go({ focus: undefined }), [go])
+
+  useLayoutEffect(() => {
+    const pending = pendingLens.current
+    if (!pending || pending.to !== lens) return
+    pendingLens.current = null
+    playLensTransition(body.current, pending.anchors)
+  }, [lens])
+
+  // L and M switch views, F focuses the selected Task's branch, Escape leaves the focus.
+  useEffect(() => {
+    const onKey = (event) => {
+      if (!pageKey(event)) return
+      const key = event.key.toLowerCase()
+      if (key === 'l' && lens !== 'list') { event.preventDefault(); switchLens('list') }
+      else if (key === 'm' && lens !== 'map') { event.preventDefault(); switchLens('map') }
+      else if (key === 'f' && selectedId && store.tasks[selectedId]) { event.preventDefault(); focusBranch(selectedId) }
+      else if (event.key === 'Escape' && focusParam) { event.preventDefault(); leaveFocus() }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [lens, switchLens, selectedId, store, focusBranch, focusParam, leaveFocus])
+
+  // Pointing at a Task in one view highlights it in the other (the side list beside the Map). The
+  // highlight is a class set directly, re-applied after each render so a refresh never drops it.
+  const hovered = useRef(null)
+  const highlight = useCallback(() => {
+    const root = body.current
+    if (!root) return
+    const id = hovered.current
+    for (const element of root.querySelectorAll('.is-hl')) if (element.dataset.id !== id) element.classList.remove('is-hl')
+    if (id) for (const element of root.querySelectorAll(`[data-id="${CSS.escape(id)}"]`)) element.classList.add('is-hl')
+  }, [])
+  useLayoutEffect(() => { highlight() })
+  const hover = (event) => {
+    hovered.current = event.type === 'mouseleave' || !(event.target instanceof Element) ? null : event.target.closest('[data-id]')?.dataset.id || null
+    highlight()
   }
 
   const ready = feed.phase === 'ready' || (feed.store && feed.readAt)
@@ -100,27 +180,39 @@ export default function WorkPage({ live, route, navigate }) {
   const loadedTasks = Object.values(store.tasks).filter((task) => task.source === 'page').length
   const countNote = partial ? `Counts cover the ${loadedTasks} loaded tasks${store.total !== null ? ` of ${store.total}` : ''}` : null
   const stale = feed.stale || live.reachable === false
+  const crumbs = focus ? pathTo(derived.forest, focus).reverse() : []
 
-  let body
+  const empty = <p className="a-ol-empty">{project && !derived.families.some((family) => family.projectId === project)
+    ? `No loaded tasks in ${projectName(project)}.${store.complete ? '' : ' Older tasks may belong to it.'}` : 'Nothing matches.'}{' '}
+    <Button size="sm" onClick={() => { setQuery(''); go({ filter: undefined, project: undefined, colors: undefined, focus: undefined }) }}>Clear filters</Button></p>
+  const tree = (compact) => <TaskTree view={view} store={store} derived={derived} projectName={projectName} now={now} selectedId={selectedId}
+    focusId={focusId} setFocusId={setFocusId} onSelect={select} onToggle={toggle} onLoadMore={feed.loadMore} loadingMore={feed.loadingMore}
+    empty={empty} compact={compact} onShowInMap={compact ? undefined : showInMap} />
+
+  let content
   if (!ready && feed.phase === 'error') {
-    body = <div className="a-work-state"><EmptyState icon="plug" title="The task list couldn’t be loaded">
+    content = <div className="a-work-state"><EmptyState icon="plug" title="The task list couldn’t be loaded">
       The Control Center backend isn’t answering. This page retries by itself.</EmptyState></div>
   } else if (!ready) {
-    body = <div className="a-work-state"><Skeleton lines={6} label="Loading your tasks" /></div>
+    content = <div className="a-work-state"><Skeleton lines={6} label="Loading your tasks" /></div>
   } else if (!Object.keys(store.tasks).length) {
-    body = <div className="a-work-state"><EmptyState icon="layers" title="No tasks yet"
+    content = <div className="a-work-state"><EmptyState icon="layers" title="No tasks yet"
       actions={<><Button variant="primary" icon="plus" onClick={() => navigate('new')}>New task</Button>
         <Button icon="swap" onClick={() => exitAtlas()}>Open Classic view</Button></>}>
       Tasks you start appear here with their agents and helpers.</EmptyState></div>
+  } else if (lens === 'map') {
+    content = <>
+      <TaskMap layout={layout} view={view} store={store} derived={derived} projectName={projectName} now={now} selectedId={selectedId}
+        onSelect={select} onToggle={toggle} onFocusBranch={focusBranch} focusBranch={focus} side={side}
+        onToggleSide={() => go({ side: side ? undefined : '1' })} cameraRef={cameraRef} request={mapRequest}
+        onLoadMore={feed.loadMore} loadingMore={feed.loadingMore} empty={empty} />
+      {side && <div className="a-side" data-side-list>{tree(true)}</div>}
+    </>
   } else {
-    body = <TaskTree view={view} store={store} derived={derived} projectName={projectName} now={now} selectedId={selectedId}
-      focusId={focusId} setFocusId={setFocusId} onSelect={select} onToggle={toggle} onLoadMore={feed.loadMore} loadingMore={feed.loadingMore}
-      empty={<p className="a-ol-empty">{project && !derived.families.some((family) => family.projectId === project)
-        ? `No loaded tasks in ${projectName(project)}.${store.complete ? '' : ' Older tasks may belong to it.'}` : 'Nothing matches.'}{' '}
-        <Button size="sm" onClick={() => { setQuery(''); go({ filter: undefined, project: undefined, colors: undefined }) }}>Clear filters</Button></p>} />
+    content = tree(false)
   }
 
-  return <div className="a-work">
+  return <div className={`a-work${side ? ' has-side' : ''}`}>
     <div className="a-wmain">
       <h1 className="a-sr" tabIndex={-1} data-page-heading>Work</h1>
       <div className="a-whead">
@@ -140,21 +232,40 @@ export default function WorkPage({ live, route, navigate }) {
           <input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Find in loaded tasks"
             aria-label="Find in loaded tasks" dir="auto" onKeyDown={(event) => { if (event.key === 'Escape' && query) { event.stopPropagation(); setQuery('') } }} />
         </label>
+        <Segmented label="View as" size="sm" className="a-lens" value={lens} onChange={(value) => switchLens(value)} options={LENSES} />
+        <MenuButton label="View options" icon="sliders" items={[
+          { label: 'Expand everything', icon: 'down', onSelect: () => setAll(true) },
+          { label: 'Collapse to task families', icon: 'right', onSelect: () => setAll(false) },
+          ...(selectedId && store.tasks[selectedId] ? [{ separator: true }, { label: 'Focus the selected branch', icon: 'focus', hint: 'F', onSelect: () => focusBranch(selectedId) }] : []),
+        ]} />
       </div>
-      {(stale || selectedHidden || (query && !store.complete)) && <div className="a-work-notices">
+      {(stale || selectedHidden || (query && !store.complete) || focus || (focusParam && ready && !focus)) && <div className="a-work-notices">
         {stale && <Notice tone="warn" role="status" title="Showing the last list received">
           {feed.readAt ? `Received at ${new Date(feed.readAt).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}. ` : ''}
           The backend isn’t answering right now; the list updates by itself when it returns.</Notice>}
+        {focus && <div className="a-focusbar" role="navigation" aria-label="Focused branch">
+          <span className="a-focuspill"><Icon name="focus" size={13} />Focused</span>
+          <button type="button" className="a-link" onClick={leaveFocus}>All work</button>
+          {crumbs.map((id) => <span key={id} className="a-crumb"><span aria-hidden="true">›</span>
+            <button type="button" className="a-link a-bidi" dir="auto" title="Focus this branch instead" onClick={() => focusBranch(id)}>{clip(store.tasks[id].title || 'Untitled task', 32)}</button></span>)}
+          <span className="a-crumb"><span aria-hidden="true">›</span><b className="a-bidi" dir="auto" aria-current="location">{clip(store.tasks[focus].title || 'Untitled task', 48)}</b></span>
+          <span className="a-sp" />
+          <Button size="sm" variant="ghost" icon="close" onClick={leaveFocus} title="Leave focus · Esc">Leave focus</Button>
+        </div>}
+        {focusParam && ready && !focus && <Notice tone="info" title="The focused branch isn’t loaded"
+          actions={<>{!store.complete && <Button size="sm" icon="down" onClick={feed.loadMore}>Load older tasks</Button>}
+            <Button size="sm" onClick={leaveFocus}>Leave focus</Button></>}>
+          {store.complete ? 'That task no longer exists, so all work is shown.' : 'It may be on a page that isn’t loaded yet; all loaded work is shown meanwhile.'}</Notice>}
         {selectedHidden && <Notice tone="info" title="The selected task is hidden by the current view"
           actions={<Button size="sm" onClick={reveal}>Show it</Button>}>Its details stay open on the right.</Notice>}
         {query && !store.complete && <p className="a-fine">Searching the loaded tasks only. Load older tasks to search them too.</p>}
       </div>}
-      <div className="a-wbody">{body}</div>
+      <div className={`a-wbody a-wbody--${lens}`} ref={body} onMouseOver={hover} onMouseLeave={hover}>{content}</div>
     </div>
     {selectedId && ready && <TaskInspector key={selectedId} store={store} derived={derived} taskId={selectedId} selection={selection}
       projectName={projectName} version={live.version} now={now} width={width}
       onResize={(value) => { setWidth(value); saveInspectorWidth(value) }}
       onClose={() => { setFocusId(selectedId); go({ task: undefined }) }} onSelect={select} onLoadMore={feed.loadMore}
-      getStore={getStore} onRefresh={feed.refresh} />}
+      getStore={getStore} onRefresh={feed.refresh} lens={lens} onShowInMap={showInMap} onFocusBranch={focusBranch} />}
   </div>
 }

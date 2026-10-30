@@ -114,7 +114,7 @@
 .atlas .a-find.a-find--page { width: 280px; margin-bottom: 16px; }
 .atlas .a-pgrid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
 .atlas .a-pcard { padding: 18px 18px 16px; display: flex; flex-direction: column; gap: 10px; }
-.atlas .a-pcard h3 { font-size: 17px; font-weight: 700; display: flex; align-items: center; gap: 10px; min-width: 0; overflow-wrap: anywhere; }
+.atlas .a-pcard h2 { font-size: 17px; font-weight: 700; display: flex; align-items: center; gap: 10px; min-width: 0; overflow-wrap: anywhere; }
 .atlas .a-pcard-path { overflow-wrap: anywhere; }
 .atlas .a-pstats { display: flex; gap: 14px; font-size: 13px; color: var(--a-text-2); }
 .atlas .a-pstats b { font-size: 18px; display: block; color: var(--a-text); }

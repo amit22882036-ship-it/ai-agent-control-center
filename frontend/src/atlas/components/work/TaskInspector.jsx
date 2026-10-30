@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import Inspector from '../Inspector'
 import { Avatar, StatusBead } from '../identity'
-import { Button, EmptyState, Notice, Skeleton } from '../primitives'
+import { Button, EmptyState, IconButton, Notice, Skeleton } from '../primitives'
 import { Tabs } from '../controls'
 import Icon from '../Icon'
 import { tabPanelProps } from '../../a11y.mjs'
@@ -10,6 +10,7 @@ import { useLiveResource } from '../../hooks'
 import { TOOLS } from '../../vocabulary.mjs'
 import { helpersView, plannedView, resultView } from '../../model/taskStatus.mjs'
 import { agentLabel, nowView, timeView, whoView } from '../../model/workList.mjs'
+import { pathTo } from '../../model/tasks.mjs'
 import { exitAtlas } from '../../uiMode.mjs'
 import { classicHandoffAgent } from '../../model/agentTarget.mjs'
 import { AgentFooterActions, AgentNowPanels, AgentSettingsPanels, AgentStopResult } from '../agent/AgentPanels'
@@ -70,32 +71,50 @@ function StateNotes({ store, derived, id, activity, handoff, controls }) {
   return notes.length ? <div className="a-blk a-insp-notes">{notes}</div> : null
 }
 
-// The lead above, this task, and up to five helpers below: a small picture of where it sits.
-function Family({ store, derived, id, onSelect }) {
+// The lead above, this task and up to five helpers below, from real Task relationships only: a
+// small picture of where it sits, with each Task's status shape. Choosing one selects it; the
+// whole family opens in the Map.
+function Family({ store, derived, id, onSelect, onShowInMap, lens }) {
+  const { forest } = derived
   const parent = store.tasks[id].parentId && store.tasks[store.tasks[id].parentId] ? store.tasks[id].parentId : null
-  const children = (derived.forest.children[id] || []).slice(0, 5)
-  const more = (derived.forest.children[id] || []).length - children.length
+  const all = forest.children[id] || []
+  const children = all.slice(0, 5)
+  const more = all.length - children.length
+  const above = pathTo(forest, id).length
+  const siblings = parent ? forest.children[parent] || [] : null
   const face = (taskId, size) => {
     const who = whoView(derived, taskId)
-    return who.agent ? <Avatar name={who.name} color={who.agent.color} tool={who.agent.tool} size={size} removed={who.removed} decorative />
-      : <span className="a-avatar-empty" style={{ width: size, height: size }} aria-hidden="true" />
+    const status = derived.status[taskId]
+    return <span className="a-fam-face">
+      {who.agent ? <Avatar name={who.name} color={who.agent.color} tool={who.agent.tool} size={size} removed={who.removed} decorative />
+        : <span className="a-avatar-empty" style={{ width: size, height: size }} aria-hidden="true" />}
+      <span className="a-fam-bead"><StatusBead state={status.bead} size={12} decorative /></span>
+    </span>
   }
-  const node = (taskId, size) => <button key={taskId} type="button" className="a-fam-node" onClick={() => onSelect(taskId)}
+  const node = (taskId, size, role) => <button key={taskId} type="button" className="a-fam-node" onClick={() => onSelect(taskId)}
     title={store.tasks[taskId].title || 'Untitled task'}>
-    {face(taskId, size)}<span className="a-fam-label a-bidi" dir="auto">{store.tasks[taskId].title || 'Untitled task'}</span>
+    {face(taskId, size)}<span className="a-sr">{role}: </span><span className="a-fam-label a-bidi" dir="auto">{store.tasks[taskId].title || 'Untitled task'}</span>
+    <span className="a-sr">, {derived.status[taskId].label}</span>
   </button>
-  return <div className="a-fam" role="group" aria-label="Lead and helpers">
-    {parent && <>{node(parent, 26)}<span className="a-fam-line" aria-hidden="true" /></>}
-    <div className="a-fam-self" aria-current="true" title="This task">{face(id, 36)}</div>
-    {children.length > 0 && <>
-      <span className="a-fam-line" aria-hidden="true" />
-      <div className={`a-fam-kids${children.length > 1 ? ' a-fam-kids--many' : ''}`}>{children.map((child) => node(child, 26))}</div>
-      {more > 0 && <span className="a-fine">and {more} more</span>}
-    </>}
-  </div>
+  const where = [above === 0 ? 'Top of its family' : `Level ${above + 1}${above > 1 ? ` · ${above - 1} more level${above - 1 === 1 ? '' : 's'} above its lead` : ''}`,
+    siblings && siblings.length > 1 ? `helper ${siblings.indexOf(id) + 1} of ${siblings.length} under its lead` : null,
+    all.length ? `${all.length} helper task${all.length === 1 ? '' : 's'} below` : null].filter(Boolean).join(' · ')
+  return <>
+    <div className="a-fam" role="group" aria-label="Lead and helpers">
+      {parent && <>{node(parent, 26, 'Its lead')}<span className="a-fam-line" aria-hidden="true" /></>}
+      <div className="a-fam-self" aria-current="true" title="This task">{face(id, 36)}</div>
+      {children.length > 0 && <>
+        <span className="a-fam-line" aria-hidden="true" />
+        <div className={`a-fam-kids${children.length > 1 ? ' a-fam-kids--many' : ''}`}>{children.map((child) => node(child, 26, 'Helper'))}</div>
+        {more > 0 && <span className="a-fine">and {more} more</span>}
+      </>}
+    </div>
+    <div className="a-fam-foot"><span className="a-fine">{where}</span>
+      <Button size="sm" variant="ghost" icon="map" onClick={() => onShowInMap(id)}>{lens === 'map' ? 'Centre in map' : 'Show in map'}</Button></div>
+  </>
 }
 
-function NowTab({ store, derived, id, projectName, onSelect, task, activity, now, handoff, agent }) {
+function NowTab({ store, derived, id, projectName, onSelect, task, activity, now, handoff, agent, onShowInMap, lens }) {
   const data = store.tasks[id]
   const parent = data.parentId ? store.tasks[data.parentId] : null
   const children = derived.forest.children[id] || []
@@ -121,7 +140,7 @@ function NowTab({ store, derived, id, projectName, onSelect, task, activity, now
       {data.ancestry === 'missing_parent' ? 'The lead task it was delegated from no longer exists.' : 'Its lead task isn’t loaded in this view.'}</Notice>}
     {(parent || children.length > 0) && <section className="a-blk" aria-labelledby={`fam-${id}`}>
       <h3 id={`fam-${id}`}>Family{children.length > 0 && <span className="a-h3-aside">{children.length} helper{children.length === 1 ? '' : 's'}</span>}</h3>
-      <Family store={store} derived={derived} id={id} onSelect={onSelect} />
+      <Family store={store} derived={derived} id={id} onSelect={onSelect} onShowInMap={onShowInMap} lens={lens} />
     </section>}
     {(children.length > 0 || helpers.proposed > 0 || helpers.active > 0) && <section className="a-blk" aria-labelledby={`kids-${id}`}>
       <h3 id={`kids-${id}`}>Delegated work<span className="a-h3-aside">{children.length} helper task{children.length === 1 ? '' : 's'}</span></h3>
@@ -224,7 +243,7 @@ function DetailsTab({ store, derived, id, projectName }) {
 // Read-only details for the selected Task and its current or last Agent. Actions arrive in M4;
 // the footer keeps a way to Classic view for what Atlas does not offer yet.
 export default function TaskInspector({ store, derived, taskId, selection, projectName, version, now, width, onResize, onClose, onSelect, onLoadMore,
-  getStore, onRefresh }) {
+  getStore, onRefresh, lens = 'list', onShowInMap, onFocusBranch }) {
   const [tab, setTab] = useState('now')
   const agentScope = useAgentScope({ store, taskId, version, getStore, onRefresh })
   const present = selection === 'present'
@@ -258,6 +277,10 @@ export default function TaskInspector({ store, derived, taskId, selection, proje
         <h2 className="a-insp-title a-bidi" dir="auto">{who.agent ? who.name : 'No agent'}</h2>
         <div className="a-role">{data.parentId ? 'Helper' : 'Lead'}{who.agent ? ` · ${who.role === 'current' ? who.detail : 'last agent' + (who.removed ? ' · removed' : '')}` : ' · nobody is assigned'}</div>
       </div>
+      <div className="a-ih-acts">
+        <IconButton icon="map" size="sm" label={lens === 'map' ? 'Centre this task in the map' : 'Show this task in the map'} onClick={() => onShowInMap(taskId)} />
+        <IconButton icon="focus" size="sm" label="Focus this branch (F)" onClick={() => onFocusBranch(taskId)} />
+      </div>
     </div>
     <div className={`a-ih-state a-tone-${status.tone}`}><StatusBead state={status.bead} decorative />{status.label}
       <span className="a-muted"> · {nowLine.second || time.text}</span></div>
@@ -271,7 +294,8 @@ export default function TaskInspector({ store, derived, taskId, selection, proje
         Open in Classic</Button></>}>
     <div {...tabPanelProps(idBase, tab)} className="a-insp-panel">
       <AgentStopResult agent={agentScope} />
-      {tab === 'now' && <NowTab store={store} derived={derived} id={taskId} projectName={projectName} onSelect={onSelect} task={task} activity={activity.data} now={now} handoff={handoff} agent={agentScope} />}
+      {tab === 'now' && <NowTab store={store} derived={derived} id={taskId} projectName={projectName} onSelect={onSelect} task={task} activity={activity.data} now={now}
+        handoff={handoff} agent={agentScope} onShowInMap={onShowInMap} lens={lens} />}
       {tab === 'activity' && <ActivityTab store={store} derived={derived} id={taskId} activity={activity} assignments={assignments} />}
       {tab === 'output' && (agentScope.agentId ? <OutputHistory key={agentScope.agentId} agentId={agentScope.agentId} version={version}
         historical={agentScope.target.kind !== 'current'} /> : <EmptyState icon="layers" title="No output yet">No agent has worked on this task.</EmptyState>)}

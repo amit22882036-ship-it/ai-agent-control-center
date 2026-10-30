@@ -29,7 +29,7 @@ function Who({ who }) {
   </div>
 }
 
-function Row({ row, store, derived, projectName, now, selected, focused, onSelect, onToggle, onFocusRow }) {
+function Row({ row, store, derived, projectName, now, selected, focused, onSelect, onToggle, onFocusRow, compact, onShowInMap }) {
   const task = store.tasks[row.id]
   const status = derived.status[row.id]
   const who = whoView(derived, row.id)
@@ -66,12 +66,16 @@ function Row({ row, store, derived, projectName, now, selected, focused, onSelec
       </span>
       {hiddenAttention && <span className="a-attn-dot" title="Something in this branch needs you" />}
     </div>
-    <Who who={who} />
-    <div className="a-c-now">
-      <span className={`a-l a-tone-${current.tone}`}>{current.line}</span>
-      {current.second && <span className="a-l2">{current.second}</span>}
-    </div>
-    <div className="a-c-time a-num" title={time.title}>{time.text}</div>
+    {!compact && <>
+      <Who who={who} />
+      <div className="a-c-now">
+        <span className={`a-l a-tone-${current.tone}`}>{current.line}</span>
+        {current.second && <span className="a-l2">{current.second}</span>}
+      </div>
+      <div className="a-c-time a-num" title={time.title}>{time.text}</div>
+      {onShowInMap && <button type="button" className="a-row-map" tabIndex={-1} aria-hidden="true" title="Show in map"
+        onClick={(event) => { event.stopPropagation(); onShowInMap(row.id) }}><Icon name="map" size={14} /></button>}
+    </>}
   </div>
 }
 
@@ -79,7 +83,7 @@ function Row({ row, store, derived, projectName, now, selected, focused, onSelec
 // single WAI-ARIA tree with one Tab stop; the arrow keys move, Right/Left open and close
 // branches, Enter selects.
 export default function TaskTree({ view, store, derived, projectName, now, selectedId, focusId, setFocusId, onSelect, onToggle,
-  onLoadMore, loadingMore, empty }) {
+  onLoadMore, loadingMore, empty, compact = false, onShowInMap }) {
   const tree = useRef(null)
   const keyboard = useRef(false)
   const rows = flatRows(view)
@@ -103,8 +107,9 @@ export default function TaskTree({ view, store, derived, projectName, now, selec
     if (action.select) onSelect(action.select)
   }
 
-  return <div className="a-outline" ref={tree} role="tree" aria-label="Work hierarchy" aria-multiselectable="false" onKeyDown={onKeyDown}>
-    <div className="a-ol-cols" aria-hidden="true"><span>Task</span><span>Agent</span><span>Now</span><span className="a-ol-time">Time</span></div>
+  return <div className={`a-outline${compact ? ' a-outline--compact' : ''}`} ref={tree} role="tree" aria-label={compact ? 'Work hierarchy beside the map' : 'Work hierarchy'}
+    aria-multiselectable="false" onKeyDown={onKeyDown}>
+    {!compact && <div className="a-ol-cols" aria-hidden="true"><span>Task</span><span>Agent</span><span>Now</span><span className="a-ol-time">Time</span></div>}
     {view.sections.map((section) => <div key={section.key} role="none">
       <div className={`a-ol-sec${section.key === 'needs' ? ' a-ol-sec--needs' : ''}`} role="none">
         {section.key === 'needs' && <StatusBead state="ask" size={14} decorative />}
@@ -112,7 +117,8 @@ export default function TaskTree({ view, store, derived, projectName, now, selec
       </div>
       {section.families.map((family) => <div key={family.topId} className="a-tcard" role="none">
         {family.rows.map((row) => <Row key={row.id} row={row} store={store} derived={derived} projectName={projectName} now={now}
-          selected={row.id === selectedId} focused={row.id === focusTarget} onSelect={onSelect} onToggle={onToggle} onFocusRow={setFocusId} />)}
+          selected={row.id === selectedId} focused={row.id === focusTarget} onSelect={onSelect} onToggle={onToggle} onFocusRow={setFocusId}
+          compact={compact} onShowInMap={onShowInMap} />)}
         {family.summary.notLoaded > 0 && !store.complete && <div className="a-tcard-more" role="none">
           {family.summary.notLoaded} more helper{family.summary.notLoaded === 1 ? '' : 's'} on pages that aren’t loaded yet
         </div>}
@@ -120,7 +126,8 @@ export default function TaskTree({ view, store, derived, projectName, now, selec
     </div>)}
     {!rows.length && empty}
     {!store.complete && <div className="a-ol-more" role="none">
-      <span className="a-fine">Showing {Object.values(store.tasks).filter((task) => task.source === 'page').length} of {store.total ?? 'all'} tasks, newest first.</span>
+      <span className="a-fine">{compact ? `${Object.values(store.tasks).filter((task) => task.source === 'page').length} of ${store.total ?? 'all'} loaded`
+        : `Showing ${Object.values(store.tasks).filter((task) => task.source === 'page').length} of ${store.total ?? 'all'} tasks, newest first.`}</span>
       <Button size="sm" icon="down" onClick={onLoadMore} disabled={loadingMore}>{loadingMore ? 'Loading…' : 'Load older tasks'}</Button>
     </div>}
   </div>

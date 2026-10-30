@@ -106,7 +106,9 @@ export function rowColor(derived, id) {
   return agent.color || 'neutral'
 }
 
-export function visibleRows(store, derived, { expanded = new Set(), filter = 'all', project = null, query = '', colors = null } = {}) {
+// `focus` (a loaded Task id) narrows the view to that Task's branch: it becomes the only family,
+// at depth 0, whatever its section or project, and search and colour still apply inside it.
+export function visibleRows(store, derived, { expanded = new Set(), filter = 'all', project = null, query = '', colors = null, focus = null } = {}) {
   const q = query.trim().toLowerCase()
   const colorSet = colors && colors.size ? colors : null
   const narrowing = Boolean(q || colorSet)
@@ -122,13 +124,7 @@ export function visibleRows(store, derived, { expanded = new Set(), filter = 'al
       while (parent && !seen.has(parent)) { keep.add(parent); seen.add(parent); parent = forest.parent[parent] }
     }
   }
-  const sections = SECTIONS.map((section) => ({ ...section, families: [] }))
-  const byKey = Object.fromEntries(sections.map((section) => [section.key, section]))
-  let shown = 0
-  for (const family of derived.families) {
-    if (project && family.projectId !== project) continue
-    if (!inFilter(family, filter)) continue
-    if (narrowing && !keep.has(family.topId)) continue
+  const familyRows = (topId) => {
     const rows = []
     const walk = (id, depth, guides, last, parentId) => {
       const children = (forest.children[id] || []).filter((child) => !narrowing || keep.has(child))
@@ -138,15 +134,76 @@ export function visibleRows(store, derived, { expanded = new Set(), filter = 'al
       if (!open) return
       children.forEach((child, index) => walk(child, depth + 1, depth > 0 ? [...guides, !last] : [], index === children.length - 1, id))
     }
-    walk(family.topId, 0, [], true, null)
+    walk(topId, 0, [], true, null)
     // aria-setsize / aria-posinset among siblings that are shown.
     const siblings = {}
-    for (const row of rows) (siblings[row.parentId ?? `top:${family.topId}`] ||= []).push(row)
+    for (const row of rows) (siblings[row.parentId ?? `top:${topId}`] ||= []).push(row)
     for (const list of Object.values(siblings)) list.forEach((row, index) => { row.setSize = list.length; row.position = index + 1 })
+    return rows
+  }
+  if (focus && store.tasks[focus]) {
+    const family = derived.byTop[forest.rootOf[focus]]
+    if (narrowing && !keep.has(focus)) return { sections: [], shown: 0, searching: narrowing, focus }
+    const rows = familyRows(focus)
+    const branch = { ...family, topId: focus, members: rows.map((row) => row.id), placement: focus === family.topId ? family.placement : 'root',
+      summary: familySummary(store, forest, focus), rows, focused: true }
+    return { sections: [{ key: 'focus', label: 'Focused branch', families: [branch] }], shown: rows.length, searching: narrowing, focus }
+  }
+  const sections = SECTIONS.map((section) => ({ ...section, families: [] }))
+  const byKey = Object.fromEntries(sections.map((section) => [section.key, section]))
+  let shown = 0
+  for (const family of derived.families) {
+    if (project && family.projectId !== project) continue
+    if (!inFilter(family, filter)) continue
+    if (narrowing && !keep.has(family.topId)) continue
+    const rows = familyRows(family.topId)
     shown += rows.length
     byKey[family.section].families.push({ ...family, rows })
   }
-  return { sections: sections.filter((section) => section.families.length), shown, searching: narrowing }
+  return { sections: sections.filter((section) => section.families.length), shown, searching: narrowing, focus: null }
+}
+
+// Counts for one project among the loaded Tasks. Every count is of individual Tasks (families are
+// counted only as `families`), from each Task's own project and status:
+//   open      not finished (anything but completed, integrated, canceled or stopped)
+//   needsYou  waiting for the person (a question, a new owner, an integration problem)
+//   working   a current Agent that is actually running on a Task that is running or reviewing
+//   waiting   waiting for helpers, the provider or something unreported (not the person)
+//   blocked   blocked, or needing inspection before anything continues
+const WAITING_KEYS = new Set(['waiting_helpers', 'provider_wait', 'waiting'])
+const BLOCKED_KEYS = new Set(['blocked', 'recovery'])
+export function projectStats(store, derived, projectId) {
+  const out = { tasks: 0, families: 0, open: 0, needsYou: 0, working: 0, waiting: 0, blocked: 0 }
+  out.families = derived.families.filter((family) => family.projectId === projectId).length
+  for (const id of Object.keys(store.tasks)) {
+    if (store.tasks[id].projectId !== projectId) continue
+    out.tasks += 1
+    const status = derived.status[id]
+    if (!ENDED.has(status.key)) out.open += 1
+    if (status.attention || derived.integration[id]?.attention) out.needsYou += 1
+    const agent = derived.agents[id].current
+    if (agent && !agent.unknown && agent.status === 'running' && (status.key === 'running' || status.key === 'reviewing')) out.working += 1
+    else if (WAITING_KEYS.has(status.key)) out.waiting += 1
+    else if (BLOCKED_KEYS.has(status.key)) out.blocked += 1
+  }
+  return out
+}
+
+// Whether `id` is `top` or lies inside its loaded branch.
+export function inBranch(forest, top, id) {
+  let node = id
+  const seen = new Set()
+  while (node && !seen.has(node)) {
+    if (node === top) return true
+    seen.add(node)
+    node = forest.parent[node]
+  }
+  return false
+}
+
+// Every loaded Task below `id` (not counting it).
+export function descendantCount(forest, id) {
+  return descendants(forest, id).length - 1
 }
 
 // Rows in visual order, for keyboard navigation.

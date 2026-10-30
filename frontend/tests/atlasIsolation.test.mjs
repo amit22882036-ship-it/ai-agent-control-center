@@ -28,7 +28,8 @@ function cssRules(text) {
       let j = open + 1
       while (depth && j < end) { if (source[j] === '{') depth++; else if (source[j] === '}') depth--; j++ }
       const body = source.slice(open + 1, j - 1)
-      if (/^@(media|supports)\b/.test(prelude)) walk(open + 1, j - 1)
+      // Conditional groups (media, support and container queries) hold ordinary rules: check those.
+      if (/^@(media|supports|container)\b/.test(prelude)) walk(open + 1, j - 1)
       else if (prelude.startsWith('@font-face')) result.push({ kind: 'font-face', body })
       else if (prelude.startsWith('@keyframes')) result.push({ kind: 'keyframes', name: prelude.split(/\s+/)[1] })
       else result.push({ kind: 'rule', selectors: prelude.split(',').map((selector) => selector.trim()) })

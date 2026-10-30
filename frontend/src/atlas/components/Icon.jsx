@@ -36,6 +36,10 @@ const PATHS = {
   plug: 'M9 7V3M15 7V3M7 7h10v4a5 5 0 0 1-10 0zM12 16v5',
   swap: 'M7 7h12l-3-3M17 17H5l3 3',
   keyboard: 'M3.5 6.5h17v11h-17zM7 10h.01M10 10h.01M13 10h.01M16 10h.01M8 14h8',
+  zin: 'M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14zM20 20l-4-4M8 11h6M11 8v6',
+  zout: 'M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14zM20 20l-4-4M8 11h6',
+  fit: 'M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5',
+  sidebar: 'M4 5h16v14H4zM9 5v14',
 }
 
 export default function Icon({ name, size = 16, stroke = 1.8, ...props }) {

@@ -18,8 +18,9 @@ the backend reports.
 | M2 | Canonical Task/Agent model; read-only task projection (B1, separately approved) | Done |
 | M3 | Work list and read-only inspector | Done |
 | M4 | Agent actions and management in the inspector | Done |
-| M5 | New Task and Projects; Add a helper; Start again; Work colour filter | Implemented, awaiting review |
-| M6–M11 | Map, Task pages, Connections and Settings, notifications, accessibility and performance, default switch | Not started |
+| M5 | New Task and Projects; Add a helper; Start again; Work colour filter | Done |
+| M6 | Work Map beside the List; project hierarchy previews; family context; design continuity review | Implemented, awaiting review |
+| M7–M11 | Task pages, Connections and Settings, notifications, accessibility and performance, default switch | Not started |
 
 Legacy removal is a separate, explicitly authorized final step. The native folder picker is a
 separate milestone after the core migration.
@@ -32,10 +33,11 @@ open the dashboard and choose **Atlas preview** in the top bar. Atlas addresses 
 Back button returns to the Atlas page you left. Opening the dashboard without an Atlas address
 always shows the classic dashboard.
 
-The preview contains the shell, navigation, appearance settings, a design gallery (`#/gallery`,
-sample content only) and, since M3, the Work list with a read-only inspector. Projects,
-Connections and New task say which milestone adds them and link back to the classic dashboard.
-Atlas does not start, stop or change agents yet, and it sends no state-changing request.
+The preview contains the shell, navigation, appearance settings and a design gallery (`#/gallery`,
+sample content only); Work as a List and as a Map with the task details panel and its agent
+actions (M3, M4, M6); New task and Projects (M5). Connections still says which milestone adds it
+and links back to the classic dashboard. Every state-changing request goes through
+`api/agentClient.mjs` with the classic endpoints and payloads.
 
 ## How Atlas stays isolated
 
@@ -197,6 +199,110 @@ canceled task, nor for one waiting for a new owner (that goes through the respon
 which the backend requires). Work's colour filter (`colors` in the address) selects several agent
 colours, and "No colour" covers tasks without an agent and tasks whose agent was removed.
 
+## Work Map (M6)
+
+Work shows the same Tasks two ways, switched with **List / Map** in the Work header (or the L and
+M keys): the List, structured and compact, and the Map, the same hierarchy drawn as a picture.
+Both read one store, one set of visible rows (`visibleRows`) and one set of open branches, so they
+always contain the same Tasks; the Map's layout (`model/mapLayout.mjs`) is a pure function of
+those rows. The selection, filters, project, colours, focus, the view (`lens=map`) and the list
+beside the Map (`side=1`) live in the address, so Back/Forward and reloads restore them; the
+camera is the Map's own state and is not put in the address.
+
+- **What is drawn.** One node per Task; threads only from `parent_task_id`. A family whose lead
+  is not loaded, missing or in a recorded cycle gets no thread above it and says why. Each node
+  shows the current agent (or the last one, labelled; a removed agent dashed; no agent as an
+  empty outline), the status shape and words, and notes for closed branches ("+3"), helpers on
+  pages not loaded yet, and work the lead planned that is not a Task yet ("2 planned"). Planned
+  work is never drawn as a node.
+- **Layout.** A lead sits centred over its helpers; when all of a lead's shown helpers are true
+  leaves they stack as a short list under a shared thread. Families are grouped in bands that
+  follow the List's sections (needs you, in progress, completed) and wrap into rows; inside a band
+  they run oldest to newest, so a new family is added at the end.
+- **Navigation.** Click selects (the same details panel and agent controls as the List);
+  double-click or F focuses the branch, Escape leaves it. Drag pans, the wheel zooms around the
+  pointer; zoom buttons, "Fit the selected task's family" and "Show everything" sit at the bottom
+  left, with an overview of the whole map at the bottom right. "Jump to" lists the families. The
+  Map is a tree for assistive technology: arrows follow the drawing (up to the lead, down to the
+  first helper, left and right between Tasks at the same level), Enter selects, Space opens or
+  closes a branch, plus and minus zoom and Shift with an arrow pans.
+- **The list beside the Map.** "Show list" adds the compact List on the left; both stay
+  selected and highlighted together. Below 1180 px the side list and the details panel get
+  narrower instead of squeezing the map, and the camera keeps the selection in the uncovered part.
+- **Stability.** A refresh never re-fits the map: the selected Task stays where it was on screen
+  even when its family moves between bands. A new selection is brought into view only when it is
+  off screen. The List/Map switch moves each visible avatar from one view to the other (at most
+  70); with reduced motion everything changes at once and the working animations stop.
+- **Partial data.** The Map says how many tasks are loaded and offers "Load older tasks"; missing
+  and unloaded parents are explained on the node, never connected. Above 300 shown Tasks only
+  the ones near the view are drawn (the selected and keyboard-focused Task always are).
+- **Elsewhere.** List rows offer "Show in map" on pointer hover; the details panel has "Show this
+  task in the map" and "Focus this branch", and its family picture shows the lead, the Task and up
+  to five helpers with their status shapes, the Task's level and position, and "Show in map".
+  Project cards draw each project's hierarchy in miniature from the loaded tasks only, within
+  fixed bounds whatever the family size (six families, 36 tasks, six helpers under one lead, four
+  levels; `model/projectPreview.mjs`). Helpers left out are counted beside their lead ("+394") and
+  the card says how many tasks the picture shows. The card's counts are of individual tasks: open
+  tasks, agents working (a running agent on a working task, not merely a current assignment), and
+  tasks that need you, with waiting and blocked tasks and the task and family totals underneath.
+
+Measured in Edge on the development machine (`atlas-map.spec.mjs`, 1,000 synthetic tasks in 50
+families, 1440 × 900, four runs): switching to the Map 651–768 ms including the test driver; 176
+of 1,000 nodes drawn (3,420 elements in the map); selecting a node 87–97 ms; a wheel zoom step
+settles within two frames (median 32–33 ms); collapsing all families 58–323 ms. The unit test
+requires the layout of 1,000 tasks to take under 250 ms, and a project preview of a family with
+1,000 helpers under 50 ms. These are runs on one machine, not guarantees.
+
+## Design continuity review (V2 → Atlas, at M6)
+
+Atlas V2 is the approved direction, not a pixel specification. Status: **A** implemented as
+designed; **B** implemented differently for a reason; **C** added in M6; **D** planned for M7–M11;
+**E** worth keeping but not yet in a milestone; **F** not supported by the real system.
+
+| V2 concept | Status | Notes |
+| --- | --- | --- |
+| Top navigation, appearance switch, Classic switch, New task button | A | |
+| "N need you" in the top bar | A / D | It opens Work; jumping to the next item that needs you is M9. |
+| Work List: sections, family cards, threads, columns, keyboard tree | A | M3. |
+| Work Map, List/Map switch, L and M keys | C | |
+| Avatars travelling between List and Map | C | Simplified: at most 70 avatars, skipped with reduced motion. |
+| Compact list beside the Map | C / B | Overlays the map; narrower panels below 1180 px rather than three squeezed columns. |
+| Delegation-only threads, stacked leaf helpers, status rings and badges, thread styles | C | Closed branches keep their node form so siblings never rearrange. |
+| One endless row of families | B | Bands by section that wrap: readable with many families, stable when tasks are added. |
+| Focus a branch (F), breadcrumbs, Leave (Esc) | C | Shared by both views; breadcrumbs widen the focus. |
+| Zoom, fit, show everything, overview, drag, wheel, "Jump to" | C | |
+| Hover in one view highlights the other | C | |
+| Row quick actions | C / D | "Show in map" now; reply from the row is M9; "Open" (Task page) is M7. |
+| View options: expand all, collapse | C | |
+| View option: hide removed agents | B | Tasks are never hidden because their agent was removed; the colour filter's "No colour" selects them. |
+| Rotating latest output line in each row | F | Would need a stream per agent; Atlas keeps one event connection. The Output tab has the history. |
+| Inspector: header, tabs, footer actions, resize | A | M3/M4. |
+| Inspector: focus branch, show in map, family picture | C | The family picture now has status shapes, position and "Show in map". |
+| Inspector: "More actions" menu | B | The same actions live in the tabs and the footer. |
+| Task page: request, progress, result and verification, apply, "Who's on it" List/Map | D | M7. |
+| Projects: cards with hierarchy pictures and counts | C | From the loaded tasks only, bounded, and saying what is left out; counts are of tasks. |
+| Projects: add a project | A / F | Typed path (M5). The native folder picker is its own milestone; dropping a folder is not possible in a browser. |
+| New Task layout and "Before you start" picture | A | M5. |
+| Connections: readiness, usage, billing guidance, nav badge | D | M8. |
+| Settings: keyboard reference, about | D | M8/M10. |
+| Notifications | D | M9. |
+| Global search (Ctrl K) over tasks and agents | E | Work searches the loaded tasks; searching everything needs a backend search to stay honest. |
+| N for New task | D | M10 keyboard review. |
+
+### Checklist for later milestones
+
+- **M7 Task pages:** Task lifecycle controls (pause, cancel, with impact preview); result and
+  integration review with what was and was not verified; "Who's on it" with a List/Map of the
+  Task's own team built on the Map layout; "Open" from List rows and the details panel.
+- **M8 Connections and Settings:** provider readiness and usage, external billing guidance
+  without claiming knowledge of account settings, the Connections badge, the keyboard reference.
+- **M9 Notifications:** attention entry points, "next thing that needs you", reply from a row.
+- **M10 Accessibility, responsiveness, performance, polish:** a full keyboard pass including N,
+  zoomed text beyond 150 %, very large workspaces on slower machines, visual polish against V2.
+- **M11 Parity and default switch:** functional parity review against Classic; Atlas becomes the
+  default only after approval; Classic removed only after explicit approval.
+- **Unassigned:** global search beyond the loaded pages (needs a backend search).
+
 ## Tests
 
 From `frontend/`:
@@ -213,7 +319,8 @@ synthetic scenarios in `e2e/scenarios.mjs` that use the endpoint's exact node sh
 `e2e/atlas-actions.spec.mjs` and `e2e/atlas-manage.spec.mjs` cover agent actions (M4);
 `e2e/strict-runner.spec.mjs` runs the action runner under React StrictMode in a development build;
 `e2e/atlas-create.spec.mjs` and `e2e/atlas-start.spec.mjs` cover New Task, Projects, Add a helper,
-Start again and the colour filter (M5).
+Start again and the colour filter (M5); `e2e/atlas-map.spec.mjs` covers the Map, the side list,
+focus, project previews and measured performance with 1,000 tasks (M6).
 
 The browser tests start no server. Playwright serves the production build and a fixture backend
 through request routing, so no provider or agent can run. They check the classic default, the
