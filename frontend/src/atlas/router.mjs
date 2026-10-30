@@ -1,3 +1,5 @@
+import { TOOLS } from './vocabulary.mjs'
+
 // Atlas routes live in the URL hash ("#/settings?section=appearance") so that the browser's Back
 // and Forward buttons, reloads and bookmarks work without a server-side router or a dependency.
 export const ROUTES = {
@@ -37,11 +39,14 @@ export function formatHash(name, params = {}) {
 export function routeKey(route) {
   if (route.name === 'not-found') return `not-found:${route.requested}`
   if (route.name === 'task') return `task:${route.params?.id || ''}`
+  // Each tool's Connections page is its own page too; a section within it is not.
+  if (route.name === 'connections') return `connections:${connectionTool(route) || ''}`
   return route.name
 }
 
 export function documentTitle(route) {
-  const title = route.name === 'not-found' ? 'Page not found' : ROUTES[route.name].title
+  const tool = connectionTool(route)
+  const title = route.name === 'not-found' ? 'Page not found' : tool ? `${TOOLS[tool].label} · Connections` : ROUTES[route.name].title
   return `${title} · Control Center (Atlas preview)`
 }
 
@@ -49,4 +54,10 @@ export function documentTitle(route) {
 export function navSection(route) {
   if (route.name === 'new' || route.name === 'task') return 'work'
   return ROUTES[route.name]?.nav ? route.name : null
+}
+
+// The tool a Connections page shows, when its address names a real one.
+export function connectionTool(route) {
+  const tool = route?.name === 'connections' ? route.params?.provider : null
+  return ['claude', 'codex', 'gemini'].includes(tool) ? tool : null
 }

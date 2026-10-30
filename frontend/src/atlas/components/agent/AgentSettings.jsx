@@ -9,6 +9,7 @@ import { API_BASE } from '../../../apiClient.mjs'
 import { agentActions, refusalText } from '../../api/agentClient.mjs'
 import { chosenConfig, defaultsPayload, executionFacts, initialChoice, selectionReady } from '../../../modelPresentation.mjs'
 import { providerLabel } from '../../../providerPresentation.mjs'
+import { formatHash } from '../../router.mjs'
 import { displayColor, displayColors, nameHistoryTime } from '../../../agentIdentity.mjs'
 
 const encode = encodeURIComponent
@@ -41,6 +42,8 @@ export function DefaultsSection({ scope }) {
       {facts.map(([label, text]) => <div key={label} className="a-kv-row"><dt>{label}</dt><dd>{text}</dd></div>)}
     </dl>
     {facts.length > 0 && <p className="a-fine">From the latest execution. Values the provider does not report are never assumed.</p>}
+    {detail.agent_type !== 'mock' && <p className="a-fine">{providerLabel(detail.agent_type)}’s sign-in, usage, models and billing:{' '}
+      <a href={formatHash('connections', { provider: detail.agent_type })}>open it in Connections</a>.</p>}
     {scope.caps.defaults && <Disclosure summary="Change this agent’s defaults" className="a-disclosure--card">
       <form onSubmit={save}>
         <p className="a-fine">Applies from this agent’s next instruction; a running execution is never changed and other agents keep their own settings.</p>

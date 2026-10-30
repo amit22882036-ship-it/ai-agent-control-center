@@ -179,3 +179,84 @@ export function useActionRunner(onChanged) {
   const dismiss = useCallback(() => setState((current) => ({ ...current, result: null })), [])
   return { busy: state.busy, result: state.result, run, dismiss }
 }
+
+// Connections (GET /providers/onboarding, the read Classic's AI Providers view uses). On the
+// Connections page it follows every change the shared connection reports; elsewhere it only feeds
+// the navigation's attention mark, so it re-reads at most every 15 seconds (never on a timer of its
+// own: only after a reported change). `reload` reads again after an action, because some provider
+// changes are not announced on the event connection.
+export const CONNECTIONS_QUIET_MS = 15000
+export function useConnections(live, active) {
+  const [nonce, setNonce] = useState(0)
+  const [followed, setFollowed] = useState(0)
+  const last = useRef(0)
+  useEffect(() => {
+    if (live.version === 0) return undefined
+    const wait = active ? 0 : Math.max(0, last.current + CONNECTIONS_QUIET_MS - Date.now())
+    const timer = setTimeout(() => { last.current = Date.now(); setFollowed(live.version) }, wait)
+    return () => clearTimeout(timer)
+  }, [live.version, active])
+  // Opening the page always reads afresh.
+  const resource = useLiveResource(`${API_BASE}/providers/onboarding`, `${followed}:${nonce}:${active ? 'page' : 'nav'}`)
+  const reload = useCallback(() => setNonce((value) => value + 1), [])
+  return { ...resource, reload }
+}
+
+// The Control Center notification preference, shared with Classic view (same stored key and the
+// same rule: it is on only while the browser allows notifications). Atlas shows no browser
+// notifications itself yet; it tells the backend the preference, so the backend's Windows
+// notifications follow it. The backend keeps the preference in memory, so an "on" preference is
+// sent again whenever the backend answers after being unreachable. Nothing is sent for an "off"
+// preference the person did not change here.
+const NOTIFICATION_KEY = 'ai-agent-control-center.notifications'
+function storedNotifications() {
+  try { return localStorage.getItem(NOTIFICATION_KEY) === 'enabled' } catch { return false }
+}
+const browserPermission = () => (typeof Notification === 'undefined' ? 'unsupported' : Notification.permission)
+
+export function useNotificationPreference(reachable, send) {
+  const supported = typeof Notification !== 'undefined'
+  const [state, setState] = useState(() => ({ enabled: storedNotifications() && browserPermission() === 'granted',
+    permission: browserPermission(), requesting: false, message: '', synced: null, changed: false }))
+  useEffect(() => {
+    const refresh = () => setState((current) => {
+      const permission = browserPermission()
+      const enabled = current.enabled && permission === 'granted'
+      return permission === current.permission && enabled === current.enabled ? current : { ...current, permission, enabled, changed: current.changed || enabled !== current.enabled }
+    })
+    const sync = (event) => { if (event.key === NOTIFICATION_KEY) setState((current) => ({ ...current, enabled: event.newValue === 'enabled' && browserPermission() === 'granted' })) }
+    window.addEventListener('focus', refresh)
+    window.addEventListener('storage', sync)
+    return () => { window.removeEventListener('focus', refresh); window.removeEventListener('storage', sync) }
+  }, [])
+  useEffect(() => {
+    if (reachable !== true || (!state.enabled && !state.changed)) return undefined
+    let live = true
+    send(state.enabled).then((result) => {
+      if (!live) return
+      setState((current) => ({ ...current, synced: result.ok ? 'ok' : result.offline ? 'offline' : 'refused' }))
+    })
+    return () => { live = false }
+  }, [reachable, state.enabled, state.changed, send])
+
+  const save = (enabled, message = '') => {
+    try { localStorage.setItem(NOTIFICATION_KEY, enabled ? 'enabled' : 'disabled') } catch {
+      message = 'Your preference could not be saved; it applies to this page only.'
+    }
+    setState((current) => ({ ...current, enabled, changed: true, requesting: false, message, permission: browserPermission(), synced: null }))
+  }
+  async function toggle() {
+    if (!supported || state.requesting) return
+    if (state.enabled) { save(false); return }
+    setState((current) => ({ ...current, requesting: true, message: '' }))
+    try {
+      // The browser asks only from this explicit click, never on its own.
+      const result = Notification.permission === 'default' ? await Notification.requestPermission() : Notification.permission
+      if (result === 'granted') save(true)
+      else save(false, result === 'denied' ? '' : 'Permission was not granted. You can try again when ready.')
+    } catch {
+      save(false, 'The browser could not ask for permission. Check this site’s notification settings.')
+    }
+  }
+  return { ...state, supported, toggle }
+}

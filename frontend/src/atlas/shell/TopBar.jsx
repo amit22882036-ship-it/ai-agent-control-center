@@ -4,6 +4,7 @@ import { StatusBead } from '../components/identity'
 import { NAV_ROUTES, ROUTES, formatHash, navSection } from '../router.mjs'
 import { connectionView, needsYouCount, needsYouLabel } from '../status.mjs'
 import { THEME_LABELS, nextTheme } from '../vocabulary.mjs'
+import { attentionOf, attentionText } from '../model/connections.mjs'
 
 const THEME_ICONS = { automatic: 'monitor', light: 'sun', dark: 'moon' }
 
@@ -17,16 +18,19 @@ function BrandMark() {
 
 // Route links are real anchors (so they can be opened in a new tab); `markPush` tells the shell a
 // click is a new navigation, which starts the page at the top.
-export default function TopBar({ route, live, appearance, markPush, onClassic }) {
+export default function TopBar({ route, live, appearance, markPush, onClassic, connections }) {
   const section = navSection(route)
   const needs = needsYouCount(live.overview)
   const connection = connectionView(live)
   const next = nextTheme(appearance.mode)
+  // A mark, not a number: which tools need attention is said in words (title and screen readers).
+  const attention = attentionText(attentionOf(connections?.data))
   return <header className="a-topbar">
     <a className="a-brand" href={formatHash('work')} onClick={markPush}><BrandMark />Control Center<span className="a-brand-tag">Atlas preview</span></a>
     <nav className="a-nav" aria-label="Main">
       {NAV_ROUTES.map((name) => <a key={name} className="a-nav-link" href={formatHash(name)} onClick={markPush}
-        aria-current={section === name ? 'page' : undefined}>{ROUTES[name].title}</a>)}
+        aria-current={section === name ? 'page' : undefined} title={name === 'connections' && attention ? attention : undefined}>{ROUTES[name].title}
+        {name === 'connections' && attention && <><i className="a-nav-mark" aria-hidden="true" /><span className="a-sr">. {attention}</span></>}</a>)}
     </nav>
     <span className="a-sp" />
     {needs > 0 && <a className="a-needs" href={formatHash('work')} onClick={markPush}>

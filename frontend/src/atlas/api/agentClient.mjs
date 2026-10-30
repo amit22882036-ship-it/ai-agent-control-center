@@ -60,6 +60,21 @@ export const agentActions = {
   pauseTask: (taskId, options) => send('POST', `${task(taskId)}/pause`, undefined, options),
   resumeTask: (taskId, options) => send('POST', `${task(taskId)}/resume`, undefined, options),
   cancelTask: (taskId, options) => send('POST', `${task(taskId)}/cancel`, undefined, options),
+  // Connections (M8): the same endpoints and payloads as Classic's AI Providers view. Setup runs
+  // only from a reviewed plan (plan_id + digest, used once); checks and catalog refreshes are
+  // non-billable local reads; settings payloads come from model/connections.mjs (billingView).
+  checkProvider: (provider, options) => send('POST', `/providers/${encode(provider)}/check`, undefined, options),
+  checkUpdates: (options) => send('POST', '/providers/updates/check', undefined, options),
+  planOperation: (provider, request, options) => send('POST', `/providers/${encode(provider)}/operations/plan`, request, options),
+  startOperation: (provider, approval, options) => send('POST', `/providers/${encode(provider)}/operations`, approval, options),
+  cancelOperation: (operationId, options) => send('POST', `/provider-operations/${encode(operationId)}/cancel`, undefined, options),
+  resolveOperation: (operationId, options) => send('POST', `/provider-operations/${encode(operationId)}/resolve`, { confirm_ended: true }, options),
+  providerSettings: (provider, payload, options) => send('PUT', `/providers/${encode(provider)}/settings`, payload, options),
+  clearUsageLimit: (provider, options) => send('POST', `/providers/${encode(provider)}/usage/allow`, undefined, options),
+  refreshUsage: (provider, options) => send('POST', `/providers/${encode(provider)}/usage/refresh`, undefined, options),
+  savePolicy: (payload, options) => send('PUT', '/provider-policy', payload, options),
+  // Settings (M8): the notification preference Classic also sends (it is shared with Classic).
+  notificationPreference: (enabled, options) => send('POST', '/notifications/preferences', { enabled }, options),
   // Process ownership.
   refreshDiagnostics: (executionId, options) => send('POST', `/executions/${encode(executionId)}/diagnostics`, undefined, options),
   attest: (executionId, body, options) => send('POST', `/executions/${encode(executionId)}/attestation`, body, options),

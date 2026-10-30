@@ -9,17 +9,19 @@ import './styles/agent.css'
 import './styles/create.css'
 import './styles/map.css'
 import './styles/task.css'
+import './styles/connections.css'
 import TopBar from './shell/TopBar'
 import WorkPage from './pages/WorkPage'
-import PreviewPage from './pages/PreviewPage'
+import ConnectionsPage from './pages/ConnectionsPage'
 import NewTaskPage from './pages/NewTaskPage'
 import ProjectsPage from './pages/ProjectsPage'
 import TaskPage from './pages/TaskPage'
 import SettingsPage from './pages/SettingsPage'
 import GalleryPage from './pages/GalleryPage'
 import NotFoundPage from './pages/NotFoundPage'
-import { useAppearance, useAtlasRoute, useLiveStatus } from './hooks'
+import { useAppearance, useAtlasRoute, useConnections, useLiveStatus, useNotificationPreference } from './hooks'
 import { documentTitle, routeKey } from './router.mjs'
+import { agentActions } from './api/agentClient.mjs'
 import { exitAtlas } from './uiMode.mjs'
 
 // The Atlas preview shell (milestone M1). It is loaded only after the person opts in, and it
@@ -28,6 +30,9 @@ export default function AtlasApp() {
   const { route, navigate, markPush, navigationRef } = useAtlasRoute()
   const appearance = useAppearance()
   const live = useLiveStatus()
+  // Read once for the whole shell: the Connections page shows it, the navigation marks attention.
+  const connections = useConnections(live, route.name === 'connections')
+  const notifications = useNotificationPreference(live.reachable, agentActions.notificationPreference)
   const main = useRef(null)
   const scrolls = useRef(new Map())
   const currentKey = useRef(null)
@@ -62,15 +67,16 @@ export default function AtlasApp() {
   else if (route.name === 'new') page = <NewTaskPage live={live} navigate={navigate} route={route} />
   else if (route.name === 'projects') page = <ProjectsPage live={live} navigate={navigate} />
   else if (route.name === 'task') page = <TaskPage key={route.params?.id || 'none'} live={live} navigate={navigate} route={route} />
-  else if (route.name === 'connections') page = <PreviewPage key={route.name} kind={route.name} />
-  else if (route.name === 'settings') page = <SettingsPage appearance={appearance} live={live} navigate={navigate} />
+  else if (route.name === 'connections') page = <ConnectionsPage key={key} live={live} connections={connections} route={route} navigate={navigate} />
+  else if (route.name === 'settings') page = <SettingsPage appearance={appearance} live={live} navigate={navigate} route={route}
+    notifications={notifications} connections={connections} />
   else if (route.name === 'gallery') page = <GalleryPage />
   else page = <NotFoundPage requested={route.requested} navigate={navigate} />
 
   return <div className="atlas">
     <div className="a-app">
       <button type="button" className="a-skip" onClick={() => main.current?.focus()}>Skip to content</button>
-      <TopBar route={route} live={live} appearance={appearance} markPush={markPush} onClassic={() => exitAtlas()} />
+      <TopBar route={route} live={live} appearance={appearance} markPush={markPush} onClassic={() => exitAtlas()} connections={connections} />
       <main ref={main} className="a-main" tabIndex={-1}
         onScroll={() => { if (currentKey.current) scrolls.current.set(currentKey.current, main.current.scrollTop) }}>
         {page}

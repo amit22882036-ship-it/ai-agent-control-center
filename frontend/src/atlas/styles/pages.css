@@ -1,4 +1,4 @@
-/* Atlas M1 pages: Work summary, previews of later screens, Settings and the design gallery. */
+/* Atlas pages: Work summary, Settings and the design gallery. */
 .atlas .a-stack { display: grid; gap: 18px; }
 
 /* Work summary */
@@ -12,13 +12,6 @@
 .atlas .a-tile--ask { background: var(--a-ask-soft); border-color: var(--a-ask-line); }
 .atlas .a-tile--ask .a-tile-value { color: var(--a-ask); }
 
-/* Previews of later screens */
-.atlas .a-preview { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(280px, 1fr); gap: 18px; align-items: start; }
-.atlas .a-preview-list { display: grid; gap: 10px; }
-.atlas .a-preview-item { display: grid; grid-template-columns: 28px minmax(0, 1fr); gap: 10px; line-height: 1.5; color: var(--a-text-2); }
-.atlas .a-preview-item b { display: block; color: var(--a-text); font-weight: 600; }
-.atlas .a-preview-num { width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; background: var(--a-sunken); color: var(--a-text-2); font-weight: 700; font-size: 12px; }
-
 /* Settings */
 .atlas .a-settings { display: grid; grid-template-columns: 200px minmax(0, 1fr); gap: 28px; align-items: start; }
 .atlas .a-settings-index { position: sticky; top: 0; display: grid; gap: 2px; }
@@ -28,10 +21,12 @@
 .atlas .a-section + .a-section { margin-top: 18px; }
 .atlas .a-section-desc { padding: 0 18px; margin-top: -2px; font-size: 13px; color: var(--a-text-3); }
 .atlas .a-rows { border: 1px solid var(--a-line); border-radius: 12px; overflow: hidden; }
-.atlas .a-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 14px; align-items: center; padding: 12px 14px; background: var(--a-surface); }
-.atlas .a-row + .a-row { border-top: 1px solid var(--a-line-3); }
-.atlas .a-row b { display: block; font-weight: 600; }
-.atlas .a-row small { display: block; font-size: 12.5px; color: var(--a-text-3); margin-top: 1px; line-height: 1.45; }
+/* Settings rows. Scoped to .a-rows: Work's task rows use the .a-row name too (work.css). */
+.atlas .a-rows .a-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 14px; align-items: center; min-height: 0; padding: 12px 14px;
+  background: var(--a-surface); cursor: auto; }
+.atlas .a-rows .a-row + .a-row { border-top: 1px solid var(--a-line-3); }
+.atlas .a-rows .a-row b { display: block; font-weight: 600; }
+.atlas .a-rows .a-row small { display: block; font-size: 12.5px; color: var(--a-text-3); margin-top: 1px; line-height: 1.45; }
 .atlas .a-themes { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
 .atlas .a-theme { display: block; padding: 10px; border-radius: 14px; border: 1.5px solid var(--a-line); background: var(--a-surface); text-align: left; }
 .atlas .a-theme:hover:not(:disabled) { border-color: var(--a-line-2); }
@@ -75,9 +70,6 @@
 .atlas .a-frame-demo { height: 360px; }
 .atlas .a-frame-demo .a-workframe { height: 100%; }
 
-@media (max-width: 1180px) {
-  .atlas .a-preview { grid-template-columns: 1fr; }
-}
 @media (max-width: 1040px) {
   .atlas .a-settings, .atlas .a-gallery { grid-template-columns: 160px minmax(0, 1fr); gap: 20px; }
 }
@@ -89,7 +81,6 @@
 /* Small layout helpers used by the pages and the gallery. */
 .atlas .a-section-lead { margin-bottom: 12px; }
 .atlas .a-tiles-note { margin-top: 10px; }
-.atlas .a-preview-classic { margin-bottom: 14px; line-height: 1.55; color: var(--a-text-2); }
 .atlas .a-gallery-body { margin-top: 18px; }
 .atlas .a-fine .a-icon { display: inline-block; vertical-align: -2px; }
 .atlas .a-demo-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px 18px; align-items: start; }

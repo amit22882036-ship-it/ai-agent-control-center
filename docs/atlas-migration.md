@@ -20,8 +20,9 @@ the backend reports.
 | M4 | Agent actions and management in the inspector | Done |
 | M5 | New Task and Projects; Add a helper; Start again; Work colour filter | Done |
 | M6 | Work Map beside the List; project hierarchy previews; family context; design continuity review | Done |
-| M7 | Task pages: request, progress, team as List and Map, result review, Pause/Resume/Cancel | Implemented, awaiting review |
-| M8–M11 | Connections and Settings, notifications, accessibility and performance, default switch | Not started |
+| M7 | Task pages: request, progress, team as List and Map, result review, Pause/Resume/Cancel | Done |
+| M8 | Connections (full parity with Classic's AI Providers view) and Settings | Done |
+| M9–M11 | Notifications, accessibility and performance, default switch | Not started |
 
 Legacy removal is a separate, explicitly authorized final step. The native folder picker is a
 separate milestone after the core migration.
@@ -327,7 +328,120 @@ deep chains, 1,561 tasks in its branch, 1440 × 900, two runs): the Task page re
 including the test driver; switching its team to the Map 207–561 ms (17 nodes drawn near the
 view); opening a Task nine levels deep 16–54 ms. Runs on one machine, not a guarantee.
 
-## Design continuity review (V2 → Atlas, at M7)
+## Connections and Settings (M8)
+
+**Connections** (`#/connections`) holds everything Classic's AI Providers view does, for Claude
+Code, Codex and Gemini CLI, with the same endpoints, payloads and rules (it reuses
+`onboardingPresentation`, `providerPresentation`, `modelPresentation` and `useModelCatalog`; every
+change goes through `api/agentClient.mjs`). Each tool has its own page (`#/connections?provider=claude`,
+with `&section=setup|usage|billing|models|ready|advanced`), so Back and Forward work and other pages
+can link to it. One read, `GET /providers/onboarding`, serves the page and the navigation: on the
+page it follows every change the event connection reports; elsewhere it re-reads at most every 15
+seconds after a reported change, for the attention mark only. It never polls on its own and never
+probes a tool: checks run only from Check all or Check again.
+
+Each tool answers three questions:
+
+- **Is it ready for tasks?** Installed, signed in, turned on, allowed for tasks and ready are five
+  separate facts, each marked yes, no or not known. The tool's one condition comes from a closed
+  set: Ready for tasks, Setup running, Requires attention, Usage-limited, Temporarily unavailable,
+  Not allowed for tasks, Turned off / Not set up, Not checked yet. A tool the person has not turned
+  on or allowed is "not in use", never an error.
+- **What usage is known?** Only what the tool reported: meters with their used percentage (a bar
+  only when a percentage was reported), the provider's own reset time or "Reset time not reported",
+  recorded limits, and when each reading was observed (stale readings say so). Remaining usage and
+  cost are always "Not available"; nothing is estimated.
+- **Where could paid use occur?** The place in the person's own account where it is checked, with
+  official links (see Billing guidance sources). The Control Center can't read or change those
+  settings and says so. The billing confirmation or acknowledgment is the person's own statement,
+  shown separately from the route the last check verified.
+
+The navigation marks Connections with a dot when a tool needs attention (an unverified setup
+operation, a usage limit, an outage, or a blocker on a tool that is turned on or allowed) or the
+saved default can't be used. It names the tools in words for screen readers and its tooltip; it
+shows no number.
+
+### Parity with Classic's AI Providers view
+
+| Classic function | Atlas | Notes |
+| --- | --- | --- |
+| Discovery, installation state, method, version, "also found elsewhere" | Yes | Tool page, Installation and sign-in; location and npm in Advanced. |
+| Update status and Check for updates | Yes | Overview header; reads release information, installs nothing. |
+| Install, Update, Sign in, Sign out (with channel) | Yes | Prepared as a plan, shown in full, approved once by plan id and digest; a manual-only plan shows its steps and has no Run button. |
+| Running operation and Cancel | Yes | |
+| Operation whose end is not verified, and "Confirm it ended" | Yes | Blocks new setup until confirmed; refused by the backend while processes run. |
+| Latest operation result | Yes | |
+| Active work that delays updates and sign-in | Yes | Agent names isolated for right-to-left text. |
+| Check all, Check again | Yes | Local, non-billable checks only. |
+| Next step and every other blocker | Yes | From `nextStep`, unchanged. |
+| Enable and Disable ("turned on") | Yes | Claude Code and Gemini CLI turn on only with the billing confirmation (`{enabled: true, billing_confirmed: true}`); Codex turns on separately and records its acknowledgment separately (`{billing_confirmed: true}`). Turning on never allows a tool for tasks. |
+| Billing confirmation / acknowledgment text | Yes | The backend's own text, as in Classic. |
+| Usage summary, meters, staleness, recorded limits | Yes | |
+| Refresh usage (Claude Code) | Yes | Resumes no agent. |
+| Clear recorded limit | Yes | Behind a confirmation that repeats the backend's rule. |
+| Model catalog, freshness, account verification, refresh | Yes | Each model with the effort levels it lists itself; Gemini CLI has no reasoning control. |
+| Allowed providers (Permissions) | Yes | Sent with the loaded revision; every widening and narrowing is listed before saving; a conflict keeps the draft and offers "Discard and load the newer version". |
+| Default provider, model and effort for new tasks | Yes | Says that defaults never change running agents. |
+| Saved default that can't be used | Yes | Shown, never replaced; also an attention reason. |
+| Mock described | Yes | "Practice (Mock)". |
+| Provider documentation link | Yes | Advanced (the backend's `docs_url`). |
+| Backend unreachable, last good data kept, Retry | Yes | Mutations disabled with the reason while unreachable or stale, enabled again when it answers. |
+| Update notifications (bell: dismiss, remind later, review update) | Not in M8 | Notifications are M9; until then Classic's bell shows them. |
+| Polling every 3 s while an operation runs | Different | Atlas follows the event connection (operations publish on start and end, and the connection falls back to polling itself); it adds no timer. |
+
+Mutation safety is the same as M4–M7: one request at a time per page (a second click sends
+nothing), a lost connection or a 500/503 is reported as an unknown outcome and read again, never
+retried; refusals are shown in the backend's words prefixed by "Nothing was changed"; an approval
+is cleared as soon as it is sent.
+
+### Billing guidance sources
+
+Checked on 2026-10-30 against the providers' official pages (`src/providerGuidance.mjs`, outside
+`src/atlas` because Atlas code holds no remote addresses; these are links the person opens, never
+requests the app makes):
+
+- **Claude Code:** Claude Help Center, "Manage usage credits for paid Claude plans"
+  (article 12429409): an individual account setting on paid plans, Settings › Usage › Usage credits,
+  turned on or off there, with spend limits and auto-reload; the article now says "usage credits"
+  (its address still says "extra usage"). "Use Claude Code with your Pro or Max plan" (article
+  11145838): Console billing belongs to API credits. Settings page `claude.ai/settings/usage`.
+- **Codex:** OpenAI's pricing page (`learn.chatgpt.com/docs/pricing`): Plus and Pro users who reach
+  their limit can buy credits; prices depend on the plan or agreement; limits are in the usage
+  dashboard (`chatgpt.com/codex/settings/usage`, linked from that page). The page does not mention
+  auto top-up. OpenAI Help article 12642688 ("Using credits for flexible usage") describes auto
+  top-up for eligible accounts but refuses automated reading, so the guidance only says the help
+  center describes it and that it depends on the account and its settings.
+- **Gemini CLI:** Google's transition announcement (Google Developers Blog, May 19, 2026) and
+  "Gemini Code Assist consumer accounts" (Google for Developers): since June 18, 2026 Gemini CLI no
+  longer serves free, Google AI Pro or Google AI Ultra individual accounts, which move to Antigravity
+  CLI; Gemini Code Assist Standard and Enterprise licenses keep access (on their own schedule), and
+  Gemini CLI remains available with paid Gemini API keys. "Gemini CLI: Quotas and pricing"
+  (`geminicli.com`): daily request limits per license, `/stats model` for usage, API keys and
+  Vertex AI pay per use. The Connections page keeps this provider availability apart from the
+  Control Center's own rule, unchanged in the backend: only the Google sign-in (`oauth-personal`) is
+  accepted, API keys and Vertex AI are refused even though Gemini CLI supports them, and Antigravity
+  CLI is not a Control Center tool. A notice on the Gemini CLI page and in its sign-in review says
+  so. The quotas page does not mention the `overageStrategy` setting; that advice remains only in the
+  backend's own setup note, shown as such.
+
+### Settings
+
+`#/settings?section=…` (Back and Forward move between sections): Appearance (Automatic, Light, Dark;
+shared with Classic), Interface (return to Classic, reset the details panel width, open
+Connections), Notifications, Keyboard (everywhere, Work, New task), Accessibility (reduced motion,
+contrast, right-to-left text, screen readers, as the system reports them), About and diagnostics
+(backend and live updates, process supervision from `GET /system/process-supervision`, tools, and
+"Copy diagnostics": states only, never task text, paths or names).
+
+Notifications use Classic's preference (the same stored key and rule: on only while the browser
+allows notifications; the browser asks only from the switch). Atlas shows no browser notifications
+and keeps no notification list yet (M9). It tells the backend the preference
+(`POST /notifications/preferences`, as Classic does), so the backend's Windows notifications follow
+it while Atlas is open; an "on" preference is sent again when the backend answers after being
+unreachable, and nothing is sent for an "off" preference the person did not change here. The page
+explains the browser's site permission and the Windows notification settings it depends on.
+
+## Design continuity review (V2 → Atlas, at M7, updated at M8)
 
 Atlas V2 is the approved direction, not a pixel specification. Status: **A** implemented as
 designed; **B** implemented differently for a reason; **C** added in M6; **D** planned for M7–M11;
@@ -359,8 +473,8 @@ designed; **B** implemented differently for a reason; **C** added in M6; **D** p
 | Projects: cards with hierarchy pictures and counts | C | From the loaded tasks only, bounded, and saying what is left out; counts are of tasks. |
 | Projects: add a project | A / F | Typed path (M5). The native folder picker is its own milestone; dropping a folder is not possible in a browser. |
 | New Task layout and "Before you start" picture | A | M5. |
-| Connections: readiness, usage, billing guidance, nav badge | D | M8. |
-| Settings: keyboard reference, about | D | M8/M10. |
+| Connections: readiness, usage, billing guidance, nav badge | C (M8) | Five separate readiness facts instead of one badge; the nav mark is a dot with words, never a number. |
+| Settings: keyboard reference, about | C (M8) | Also notifications preference, accessibility, process supervision and diagnostics. The full keyboard review stays M10. |
 | Notifications | D | M9. |
 | Global search (Ctrl K) over tasks and agents | E (open decision) | Work searches the loaded tasks; searching unloaded tasks and agents needs a backend search. A product decision for a future approved milestone, to be settled before M11. |
 | N for New task | D | M10 keyboard review. |
@@ -369,16 +483,17 @@ designed; **B** implemented differently for a reason; **C** added in M6; **D** p
 
 - **M7 Task pages (done):** remaining from V2 are "Ask for changes", opening the task's copy and
   applying to the project, all waiting on backend support (see open product decisions).
-- **M8 Connections and Settings:** provider readiness and usage, external billing guidance
-  without claiming knowledge of account settings, the Connections badge, the keyboard reference.
+- **M8 Connections and Settings (done):** remaining are the provider update notices from
+  Classic's bell (M9) and the full keyboard review (M10).
 - **M9 Notifications:** attention entry points, "next thing that needs you", reply from a row.
 - **M10 Accessibility, responsiveness, performance, polish:** a full keyboard pass including N,
   zoomed text beyond 150 %, very large workspaces on slower machines, visual polish against V2.
 - **M11 Parity and default switch:** functional parity review against Classic; Atlas becomes the
   default only after approval; Classic removed only after explicit approval.
 - **Open product decisions:** global search across unloaded tasks and agents (needs a backend
-  search); applying work to the project from Atlas (needs the integration preview described in
-  Task pages (M7)); "Ask for changes" and opening a task's private copy from a Task page.
+  search); applying work to the project from Atlas (needs the trustworthy integration preview
+  described in Task pages (M7)); "Ask for changes" on a Task page; safe access to a task's working
+  copy (opening its private copy needs a local-file action that the browser can't take).
 
 ## Tests
 
@@ -401,6 +516,9 @@ and fails when they drift, and `tests/atlasTaskPage.test.mjs` reads them.
 `e2e/atlas-create.spec.mjs` and `e2e/atlas-start.spec.mjs` cover New Task, Projects, Add a helper,
 Start again and the colour filter (M5); `e2e/atlas-map.spec.mjs` covers the Map, the side list,
 focus, project previews and measured performance with 1,000 tasks (M6).
+`e2e/atlas-connections.spec.mjs` covers Connections and Settings (M8) with synthetic onboarding
+answers from `e2e/providers.mjs`, shaped like the backend's; `tests/atlasConnections.test.mjs`
+covers the Connections and Settings wording and payloads.
 
 The browser tests start no server. Playwright serves the production build and a fixture backend
 through request routing, so no provider or agent can run. They check the classic default, the

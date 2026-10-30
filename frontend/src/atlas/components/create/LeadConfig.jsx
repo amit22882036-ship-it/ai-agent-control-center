@@ -7,6 +7,7 @@ import { GROUP_LABELS, OTHER_MODEL, effortChoices, freshness, groupModels, model
 import { providerLabel } from '../../../providerPresentation.mjs'
 import { LEAD_TOOLS, toolState } from '../../model/newTask.mjs'
 import { TOOLS } from '../../vocabulary.mjs'
+import { formatHash } from '../../router.mjs'
 
 const TOOL_COLOR = { claude: 'blue', codex: 'green', gemini: 'yellow', mock: 'neutral' }
 
@@ -22,9 +23,12 @@ function Choice({ label, value, options, onChange, disabled }) {
 }
 
 // The tools a lead (or a new agent) can run on: permission first, then readiness, as reported.
+// Setting a tool up happens in Connections, opened in a new tab so what is typed here is kept.
 export function ToolCards({ value, onChange, policy, statuses, disabled, tools = LEAD_TOOLS, label = 'Lead agent’s tool' }) {
   const id = useId()
-  return <div className="a-tools" role="radiogroup" aria-label={label}>
+  const chosen = value && value !== 'mock' ? toolState(value, policy, statuses) : null
+  const connections = chosen && !chosen.usable ? formatHash('connections', { provider: value }) : formatHash('connections')
+  return <><div className="a-tools" role="radiogroup" aria-label={label}>
     {tools.map((provider) => {
       const state = toolState(provider, policy, statuses)
       return <label key={provider} className={`a-tool${value === provider ? ' is-on' : ''}${state.allowed ? '' : ' is-off'}`}>
@@ -36,6 +40,9 @@ export function ToolCards({ value, onChange, policy, statuses, disabled, tools =
       </label>
     })}
   </div>
+  <p className="a-fine a-tools-more">{chosen && !chosen.usable ? `${providerLabel(value)} isn’t ready. ` : 'Install, sign in to or allow a tool in Connections. '}
+    <a href={connections} target="_blank" rel="noopener">{chosen && !chosen.usable ? `Set up ${providerLabel(value)} in Connections` : 'Open Connections'}</a>
+    {' '}(opens a new tab, so this stays as it is)</p></>
 }
 
 // Model, effort and file access for one agent, from its provider's catalog. Unavailable models

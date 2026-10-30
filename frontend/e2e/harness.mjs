@@ -3,6 +3,7 @@
 import { readFile } from 'node:fs/promises'
 import { extname } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { DEFAULT_ONBOARDING } from './providers.mjs'
 
 const dist = fileURLToPath(new URL('../dist/', import.meta.url))
 const workspace = JSON.parse(await readFile(new URL('../tests/fixtures/workspace-sample.json', import.meta.url), 'utf8'))
@@ -99,7 +100,7 @@ export function controlImpact(tasks, taskId, action) {
 }
 
 // Read-only detail responses for the inspector, shaped like the backend's (synthetic content).
-function detail(pathname, search, tasks, projects, agents) {
+function detail(pathname, search, tasks, projects, agents, providers) {
   const nodes = [...tasks.tasks, ...tasks.ancestors]
   const byId = Object.fromEntries(nodes.map((node) => [node.task_id, node]))
   let match = /^\/tasks\/([^/]+)$/.exec(pathname)
@@ -179,6 +180,8 @@ function detail(pathname, search, tasks, projects, agents) {
   }
   if (pathname === '/projects') return projects === null ? null : { projects }
   if (pathname === '/executions/unresolved') return { executions: [] }
+  if (pathname === '/providers/onboarding') return typeof providers === 'function' ? providers() : providers
+  if (pathname === '/system/process-supervision') return { status: 'supervised' }
   if (pathname === '/provider-policy') return { allowed: ['claude', 'codex', 'gemini'], default_provider: null }
   match = /^\/providers\/([a-z]+)\/models$/.exec(pathname)
   if (match) return catalog(match[1])
@@ -193,8 +196,9 @@ function detail(pathname, search, tasks, projects, agents) {
 
 // `api` scripts any other backend answer: ({ method, path, search, body }) => { status, body } or
 // undefined to fall through. Every backend request is recorded in `log.requests` with its body.
+// `providers` is the GET /providers/onboarding answer (or a function returning it); null answers 503.
 export async function openApp(page, { backend = 'online', path = '/', tasks = contract.all, taskPages = null, projects = PROJECTS,
-  agents = {}, api = null } = {}) {
+  agents = {}, api = null, providers = DEFAULT_ONBOARDING } = {}) {
   const log = { backend: [], external: [], requests: [] }
   await page.addInitScript(fakeEventSource)
   await page.route('**/*', async (route) => {
@@ -229,7 +233,10 @@ export async function openApp(page, { backend = 'online', path = '/', tasks = co
       if (request.method() === 'GET' && url.pathname === '/projects' && projects === null) {
         return route.fulfill({ status: 503, contentType: 'application/json', body: '{"detail":"unavailable"}' })
       }
-      const found = request.method() === 'GET' ? detail(url.pathname, url.search, tasks, projects, agents) : null
+      if (request.method() === 'GET' && url.pathname === '/providers/onboarding' && providers === null) {
+        return route.fulfill({ status: 503, contentType: 'application/json', body: '{"detail":"unavailable"}' })
+      }
+      const found = request.method() === 'GET' ? detail(url.pathname, url.search, tasks, projects, agents, providers) : null
       if (found) return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(found) })
       if (request.method() === 'GET' && url.pathname === '/providers/notifications') return route.fulfill({ status: 200, contentType: 'application/json', body: '[]' })
       // The classic interface synchronises its notification preference on load (an existing behaviour).
@@ -245,7 +252,7 @@ export async function openApp(page, { backend = 'online', path = '/', tasks = co
         return route.fulfill({ status: answer.status, contentType: 'application/json', body: JSON.stringify(answer.body) })
       }
       // An action the test did not script succeeds plainly; tests that check refusals script them.
-      if (request.method() !== 'GET' && /^\/(agents|tasks|agent-removals|executions|providers)\//.test(url.pathname)) {
+      if (request.method() !== 'GET' && /^\/(agents|tasks|agent-removals|executions|providers|provider-operations|provider-policy)(\/|$)/.test(url.pathname)) {
         return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true, status: 'running' }) })
       }
       return route.fulfill({ status: 404, contentType: 'application/json', body: '{"detail":"not in fixture"}' })

@@ -6,6 +6,7 @@ import { ActionResult, Check, Disclosure, PlainSelect } from './fields'
 import { InstructionOptions, ModelChoice } from './models'
 import useModelCatalog from '../../../useModelCatalog'
 import { agentActions, refusalText } from '../../api/agentClient.mjs'
+import { formatHash } from '../../router.mjs'
 import { chosenConfig, defaultNeedsAttempt, emptyOverride, initialChoice, instructionPlan, instructionReady,
   selectionReady } from '../../../modelPresentation.mjs'
 import { PROVIDER_IDS, accessOptions, blockingText, changePayload, conditionText, preservedText, providerLabel,
@@ -186,6 +187,8 @@ export function ProviderWaitCard({ scope }) {
         onClick={() => call('refresh-usage', () => agentActions.refreshClaudeUsage(), 'Usage refreshed from Claude Code.')}>
         {runner.busy === 'refresh-usage' ? 'Refreshing…' : 'Refresh usage'}</Button>}
     </div>
+    {(condition?.provider || detail.agent_type) !== 'mock' && <p className="a-fine">Usage, limits and sign-in of {providerLabel(condition?.provider || detail.agent_type)}:{' '}
+      <a href={formatHash('connections', { provider: condition?.provider || detail.agent_type, section: 'usage' })}>open it in Connections</a>.</p>}
     <ActionResult result={runner.result} keys={['resume', 'refresh-usage']} />
   </section>
 }
