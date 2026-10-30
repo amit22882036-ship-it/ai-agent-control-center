@@ -216,3 +216,19 @@ test('a read that fails before anything loaded is an error, not an empty workspa
   assert.equal(feed.state.stale, true)
   feed.dispose()
 })
+
+test('the colour filter matches the agent each row shows; removed agents and agent-less tasks show no colour', async () => {
+  const { rowColor } = await import('../src/atlas/model/workList.mjs')
+  assert.equal(rowColor(derived, 'tests'), 'blue') // current agent
+  assert.equal(rowColor(derived, 'docs'), 'blue') // last agent, not removed
+  assert.equal(rowColor(derived, 'orphaned-work'), 'none') // its last agent was removed
+  assert.equal(rowColor(derived, 'flaky'), 'none') // no agent
+  const none = flatRows(visibleRows(store, derived, { colors: new Set(['none']) }))
+  assert.ok(none.some((row) => row.id === 'orphaned-work' && row.match))
+  assert.ok(none.some((row) => row.id === 'flaky' && row.match))
+  // The path to a match is kept for context but not marked as a match.
+  assert.deepEqual(none.filter((row) => ['release', 'tests'].includes(row.id)).map((row) => row.match), [false, false])
+  assert.equal(flatRows(visibleRows(store, derived, { colors: new Set(['pink']) })).length, 0)
+  const both = flatRows(visibleRows(store, derived, { colors: new Set(['blue']), query: 'tests' }))
+  assert.deepEqual(both.filter((row) => row.match).map((row) => row.id), ['tests'])
+})

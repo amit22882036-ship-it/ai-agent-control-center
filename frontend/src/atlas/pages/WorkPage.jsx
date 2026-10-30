@@ -5,11 +5,12 @@ import { MenuButton } from '../components/overlays'
 import Icon from '../components/Icon'
 import TaskTree from '../components/work/TaskTree'
 import TaskInspector from '../components/work/TaskInspector'
+import ColorFilter from '../components/work/ColorFilter'
 import { API_BASE } from '../../apiClient.mjs'
 import { useLiveResource, useTaskFeed } from '../hooks'
 import { emptyStore, pathTo } from '../model/tasks.mjs'
 import { reconcile } from '../model/selection.mjs'
-import { FILTERS, deriveWorkspace, familyCounts, flatRows, visibleRows } from '../model/workList.mjs'
+import { COLOR_VALUES, FILTERS, deriveWorkspace, familyCounts, flatRows, visibleRows } from '../model/workList.mjs'
 import { readInspectorWidth, saveInspectorWidth } from '../layout.mjs'
 import { projectDirectory, projectLabel, projectMenu } from '../model/projects.mjs'
 import { exitAtlas } from '../uiMode.mjs'
@@ -35,6 +36,8 @@ export default function WorkPage({ live, route, navigate }) {
   const selectedId = typeof params.task === 'string' && params.task ? params.task : null
   const filter = FILTER_VALUES.has(params.filter) ? params.filter : 'all'
   const project = params.project && params.project.length <= 200 ? params.project : null
+  const colorParam = typeof params.colors === 'string' ? params.colors : ''
+  const colors = useMemo(() => new Set(colorParam.split(',').filter((value) => COLOR_VALUES.includes(value))), [colorParam])
   const [query, setQuery] = useState('')
   const [overrides, setOverrides] = useState(() => new Map())
   const [focusId, setFocusId] = useState(null)
@@ -71,7 +74,7 @@ export default function WorkPage({ live, route, navigate }) {
     setFocusId(selectedId)
   }
 
-  const view = useMemo(() => visibleRows(store, derived, { expanded, filter, project, query }), [store, derived, expanded, filter, project, query])
+  const view = useMemo(() => visibleRows(store, derived, { expanded, filter, project, query, colors }), [store, derived, expanded, filter, project, query, colors])
   const counts = familyCounts(derived, project)
   const selection = reconcile({ taskId: selectedId, focusId: null, expanded: [] }, store).status
   const shownIds = new Set(flatRows(view).map((row) => row.id))
@@ -88,7 +91,7 @@ export default function WorkPage({ live, route, navigate }) {
     setQuery('')
     const path = pathTo(derived.forest, selectedId)
     setOverrides((current) => { const next = new Map(current); for (const id of path) next.set(id, true); return next })
-    go({ filter: undefined, project: undefined })
+    go({ filter: undefined, project: undefined, colors: undefined })
   }
 
   const ready = feed.phase === 'ready' || (feed.store && feed.readAt)
@@ -106,14 +109,15 @@ export default function WorkPage({ live, route, navigate }) {
     body = <div className="a-work-state"><Skeleton lines={6} label="Loading your tasks" /></div>
   } else if (!Object.keys(store.tasks).length) {
     body = <div className="a-work-state"><EmptyState icon="layers" title="No tasks yet"
-      actions={<Button variant="primary" icon="swap" onClick={() => exitAtlas()}>Start a task in Classic view</Button>}>
-      Tasks you start appear here with their agents and helpers. Starting a task from Atlas comes in a later milestone.</EmptyState></div>
+      actions={<><Button variant="primary" icon="plus" onClick={() => navigate('new')}>New task</Button>
+        <Button icon="swap" onClick={() => exitAtlas()}>Open Classic view</Button></>}>
+      Tasks you start appear here with their agents and helpers.</EmptyState></div>
   } else {
     body = <TaskTree view={view} store={store} derived={derived} projectName={projectName} now={now} selectedId={selectedId}
       focusId={focusId} setFocusId={setFocusId} onSelect={select} onToggle={toggle} onLoadMore={feed.loadMore} loadingMore={feed.loadingMore}
       empty={<p className="a-ol-empty">{project && !derived.families.some((family) => family.projectId === project)
         ? `No loaded tasks in ${projectName(project)}.${store.complete ? '' : ' Older tasks may belong to it.'}` : 'Nothing matches.'}{' '}
-        <Button size="sm" onClick={() => { setQuery(''); go({ filter: undefined, project: undefined }) }}>Clear filters</Button></p>} />
+        <Button size="sm" onClick={() => { setQuery(''); go({ filter: undefined, project: undefined, colors: undefined }) }}>Clear filters</Button></p>} />
   }
 
   return <div className="a-work">
@@ -130,6 +134,7 @@ export default function WorkPage({ live, route, navigate }) {
         {countNote && <span id="work-count-note" className="a-count-note" title={`${countNote}. Load older tasks to include them.`}>
           <Icon name="info" size={13} />{countNote}</span>}
         <span className="a-sp" />
+        <ColorFilter selected={colors} onChange={(next) => go({ colors: [...next].join(',') || undefined })} />
         <label className="a-find">
           <Icon name="search" size={14} />
           <input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Find in loaded tasks"

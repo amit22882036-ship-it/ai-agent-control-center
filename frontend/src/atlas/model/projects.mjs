@@ -8,7 +8,8 @@ export function projectDirectory(resource) {
   const list = Array.isArray(resource?.data?.projects) ? resource.data.projects.filter(isProject) : null
   if (list) {
     const projects = list
-      .map((item) => ({ id: item.project_id, name: typeof item.name === 'string' && item.name.trim() ? item.name.trim() : 'Untitled project' }))
+      .map((item) => ({ id: item.project_id, name: typeof item.name === 'string' && item.name.trim() ? item.name.trim() : 'Untitled project',
+        path: typeof item.root_path === 'string' ? item.root_path : '' }))
       .sort((a, b) => a.name.localeCompare(b.name) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
     // A failed later read keeps the last list; `stale` says so.
     return { state: projects.length ? 'ready' : 'empty', projects, byId: Object.fromEntries(projects.map((p) => [p.id, p.name])),

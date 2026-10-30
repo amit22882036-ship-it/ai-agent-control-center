@@ -35,5 +35,5 @@ export function useAgentScope({ store, taskId, version, getStore, onRefresh }) {
   }
   const scope = caps ? { taskId, agentId: target.agentId, detail, caps, models, runner, guard, drafts: draftStore,
     agentName: detail.display_name || nameOf(target.agentId) } : null
-  return { target, agentId, detail, detailResource, scope, runner, nameOf, guardIdentity, version: detailVersion }
+  return { target, agentId, detail, detailResource, scope, runner, nameOf, guardIdentity, version: detailVersion, refresh: onChanged }
 }

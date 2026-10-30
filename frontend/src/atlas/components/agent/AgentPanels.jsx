@@ -1,4 +1,6 @@
-import { Skeleton } from '../primitives'
+import { useState } from 'react'
+import { Button, Skeleton } from '../primitives'
+import { AgentStartDialog } from '../create/AgentStart'
 import { ActionResult } from './fields'
 import { ProviderChange, ProviderWaitCard, QuestionCard, RedirectCard } from './AgentNow'
 import { DecisionsSection, DefaultsSection, IdentitySection, TechnicalSection } from './AgentSettings'
@@ -39,6 +41,13 @@ export function AgentNowPanels({ agent, store, taskId, now }) {
   if (task.responsibilityAwaiting || lastRemoved) {
     panels.push(<ResponsibilityPanel key="resp" taskId={taskId} runner={runner} version={version} nameOf={nameOf} />)
   }
+  // Starting agents: a helper under the current agent, or a new assignment on a task that has no
+  // current agent and is not waiting for a new owner (that goes through the transfer above).
+  const canStartAgain = target.kind !== 'current' && !task.responsibilityAwaiting && !lastRemoved
+    && !['completed', 'canceled'].includes(task.lifecycle) && task.controlIntent !== 'canceled'
+  if ((scope && !scope.caps.removal) || canStartAgain) {
+    panels.push(<StartPanel key="start" agent={agent} taskId={taskId} title={task.title} mode={scope && !scope.caps.removal ? 'helper' : 'again'} />)
+  }
   return panels.length ? <div className="a-blk a-agent-now">{panels}</div> : null
 }
 
@@ -64,6 +73,27 @@ export function AgentSettingsPanels({ agent, taskId }) {
     <TechnicalSection detail={detail} taskId={taskId} />
     {!scope.caps.removal && <RemovalEntry scope={scope} />}
   </>
+}
+
+function StartPanel({ agent, taskId, title, mode }) {
+  const [open, setOpen] = useState(false)
+  const [done, setDone] = useState(null)
+  const name = mode === 'helper' ? agent.scope.agentName : title || 'this task'
+  return <section className="a-blk" aria-labelledby={`start-${taskId}`}>
+    <h3 id={`start-${taskId}`}>{mode === 'helper' ? 'Helpers' : 'Nobody is working on this task'}</h3>
+    <div className="a-setting-row">
+      <div><small>{mode === 'helper' ? 'Give part of this work to a new helper agent, on a new task under this one.'
+        : 'Start a new agent on this task. It does not resume an earlier agent’s session.'}</small></div>
+      <Button size="sm" icon="plus" onClick={() => { setDone(null); setOpen(true) }}>{mode === 'helper' ? 'Add a helper…' : 'Start a new agent…'}</Button>
+    </div>
+    {done && <div className="a-result a-result--ok" role="status"><div>{done}</div></div>}
+    {open && <AgentStartDialog mode={mode} open onClose={() => setOpen(false)} parentAgentId={agent.scope?.agentId} parentName={name} taskId={taskId}
+      version={agent.version} onStarted={() => {
+        setOpen(false)
+        setDone(mode === 'helper' ? 'Helper started. Its task appears under this one.' : 'A new agent started on this task.')
+        agent.refresh()
+      }} />}
+  </section>
 }
 
 // Outcomes of actions whose controls close or move when they succeed (Stop from the footer, a

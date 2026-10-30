@@ -49,6 +49,12 @@ export const agentActions = {
   removeAutoPolicy: (taskId, revision, options) => send('DELETE', `${task(taskId)}/auto-allocation?expected_revision=${encode(revision)}`, undefined, options),
   saveRestriction: (taskId, payload, options) => send('PUT', `${task(taskId)}/provider-restrictions`, payload, options),
   removeRestriction: (taskId, revision, options) => send('DELETE', `${task(taskId)}/provider-restrictions?expected_revision=${encode(revision)}`, undefined, options),
+  // Creation (M5). Payloads come from autonomousCreation.creationPayload, as in the classic form.
+  checkProviders: (options) => send('POST', '/providers/check', undefined, options),
+  startRoot: (payload, options) => send('POST', '/agents/start', payload, options),
+  startChild: (parentId, payload, options) => send('POST', `${agent(parentId)}/children/start`, payload, options),
+  startTaskAgent: (taskId, payload, options) => send('POST', `${task(taskId)}/start-agent`, payload, options),
+  registerProject: (name, rootPath, options) => send('POST', '/projects', { name, root_path: rootPath }, options),
   // Process ownership.
   refreshDiagnostics: (executionId, options) => send('POST', `/executions/${encode(executionId)}/diagnostics`, undefined, options),
   attest: (executionId, body, options) => send('POST', `/executions/${encode(executionId)}/attestation`, body, options),

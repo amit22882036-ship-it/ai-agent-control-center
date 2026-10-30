@@ -94,6 +94,7 @@ function detail(pathname, search, tasks, projects, agents) {
   }
   if (pathname === '/projects') return projects === null ? null : { projects }
   if (pathname === '/executions/unresolved') return { executions: [] }
+  if (pathname === '/provider-policy') return { allowed: ['claude', 'codex', 'gemini'], default_provider: null }
   match = /^\/providers\/([a-z]+)\/models$/.exec(pathname)
   if (match) return catalog(match[1])
   match = /^\/agents\/([^/]+)$/.exec(pathname)
@@ -131,6 +132,7 @@ export async function openApp(page, { backend = 'online', path = '/', tasks = co
       log.requests.push(entry)
       if (backend === 'offline') return route.fulfill({ status: 503, contentType: 'application/json', body: '{"detail":"unavailable"}' })
       const scripted = api ? await api(entry) : undefined
+      if (scripted?.abort) return route.abort('connectionreset') // the request may or may not have reached the backend
       if (scripted) return route.fulfill({ status: scripted.status || 200, contentType: 'application/json', body: JSON.stringify(scripted.body ?? {}) })
       if (request.method() === 'GET' && url.pathname === '/workspace') return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(workspace) })
       if (request.method() === 'GET' && url.pathname === '/workspace/tasks') {
@@ -147,6 +149,10 @@ export async function openApp(page, { backend = 'online', path = '/', tasks = co
       // The classic interface synchronises its notification preference on load (an existing behaviour).
       if (request.method() === 'GET' && url.pathname === '/security/csrf-token') return route.fulfill({ status: 200, contentType: 'application/json', body: '{"csrf_token":"fixture"}' })
       if (request.method() === 'POST' && url.pathname.startsWith('/notifications/')) return route.fulfill({ status: 200, contentType: 'application/json', body: '{}' })
+      if (request.method() === 'POST' && url.pathname === '/providers/check') {
+        return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ providers: ['claude', 'codex', 'gemini']
+          .map((provider) => ({ provider, state: { state: 'ready' } })) }) })
+      }
       // An action the test did not script succeeds plainly; tests that check refusals script them.
       if (request.method() !== 'GET' && /^\/(agents|tasks|agent-removals|executions|providers)\//.test(url.pathname)) {
         return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true, status: 'running' }) })

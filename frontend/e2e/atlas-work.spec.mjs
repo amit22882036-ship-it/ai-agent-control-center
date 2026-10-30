@@ -220,7 +220,8 @@ test('live changes refresh the list once per burst, reads never overlap, and the
 test('an empty workspace and a backend that stops answering are explained plainly', async ({ page }) => {
   await page.clock.setFixedTime(NOW)
   await openApp(page, { path: '/#/work', tasks: { tasks: [], ancestors: [], ancestors_truncated: false, next_after: null, total: 0, root: null } })
-  await expect(page.getByRole('button', { name: 'Start a task in Classic view' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'New task' }).last()).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Open Classic view' })).toBeVisible()
   await expect(page.getByText('No tasks yet')).toBeVisible()
   await page.unroute('**/*')
   let fail = false

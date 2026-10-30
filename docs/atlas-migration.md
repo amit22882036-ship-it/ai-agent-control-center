@@ -18,7 +18,8 @@ the backend reports.
 | M2 | Canonical Task/Agent model; read-only task projection (B1, separately approved) | Done |
 | M3 | Work list and read-only inspector | Done |
 | M4 | Agent actions and management in the inspector | Done |
-| M5–M11 | New Task and Projects, Map, Task pages, Connections and Settings, notifications, accessibility and performance, default switch | Not started |
+| M5 | New Task and Projects; Add a helper; Start again; Work colour filter | Implemented, awaiting review |
+| M6–M11 | Map, Task pages, Connections and Settings, notifications, accessibility and performance, default switch | Not started |
 
 Legacy removal is a separate, explicitly authorized final step. The native folder picker is a
 separate milestone after the core migration.
@@ -157,6 +158,45 @@ M6), task Pause and Cancel with their impact preview (Task page, M7; Classic has
 either), AI Providers setup (M8) and notifications (M9). Classic's agent list colour filter is not
 yet in Atlas.
 
+## New Task, Projects and starting agents (M5)
+
+New Task (`#/new`, `pages/NewTaskPage.jsx`) follows the Atlas V2 layout: the description,
+project, lead tool, model, effort, file access and helpers on the left; a sticky "Before you
+start" card with a picture, a plain summary, the usage note and Start on the right. It reuses the
+classic rules rather than restating them (`model/newTask.mjs` over `autonomousCreation`,
+`modelPresentation`, `providerPresentation`, `onboardingPresentation` and
+`allocationPresentation`): a project is required; a provider that is not allowed or not ready can't
+be chosen; models come from the provider's catalog and an unverified model needs an explicit
+attempt; effort is offered only where the model lists it; the saved default provider applies once
+and is never silently swapped; helpers exist only for a Claude Code or Codex lead, with two
+policies ("Follow the lead's choices", "Also allow automatic choice"). Helpers start switched
+off in Atlas, because more agents can mean more usage across provider accounts; this is Atlas's own
+initial choice, Classic keeps its default, and nothing is remembered between tasks. The page does not imply that
+helpers inherit the lead's model or effort and does not claim to know provider overage settings.
+
+Starting sends the classic `POST /agents/start` payload once (a second click or Ctrl+Enter during
+the request sends nothing), after reading the provider permissions again. Ctrl+Enter works only
+from the New Task page itself, never while a dialog, popover or menu is open or from the header. A refusal is shown in the
+backend's words. A dropped connection is reported as an unknown outcome and the draft is kept;
+another start then needs an explicit "Start it anyway". Success is claimed only after the backend
+returns the agent; Atlas then reads the agent's task and opens it in Work, or says the task started
+but could not be opened.
+
+Projects (`#/projects`) lists, searches and refreshes registered projects, opens a project's work or
+a new task in it, and registers a project by a typed folder path (`POST /projects`), showing the
+backend's validation errors. If a registration request fails in transit, its outcome is reported as
+unknown: the typed values are kept, nothing is sent again by itself, and "Check the projects list"
+reads the list again and says whether the folder is now registered before another attempt. There is no folder browser, drag and drop or file-system API; the
+native folder picker remains a separate milestone.
+
+From the inspector, "Add a helper…" starts a manual child agent under the current agent
+(`POST /agents/{id}/children/start`, not autonomous), and "Start a new agent…" starts a new
+assignment on a task that has no current agent (`POST /tasks/{id}/start-agent`). Starting again
+does not resume an earlier agent or create another task, and it is not offered for a completed or
+canceled task, nor for one waiting for a new owner (that goes through the responsibility transfer,
+which the backend requires). Work's colour filter (`colors` in the address) selects several agent
+colours, and "No colour" covers tasks without an agent and tasks whose agent was removed.
+
 ## Tests
 
 From `frontend/`:
@@ -170,6 +210,10 @@ npm run test:browser   # builds, then runs the browser tests in Microsoft Edge
 
 `e2e/atlas-work.spec.mjs` covers the Work list and inspector with the recorded contract and with
 synthetic scenarios in `e2e/scenarios.mjs` that use the endpoint's exact node shape.
+`e2e/atlas-actions.spec.mjs` and `e2e/atlas-manage.spec.mjs` cover agent actions (M4);
+`e2e/strict-runner.spec.mjs` runs the action runner under React StrictMode in a development build;
+`e2e/atlas-create.spec.mjs` and `e2e/atlas-start.spec.mjs` cover New Task, Projects, Add a helper,
+Start again and the colour filter (M5).
 
 The browser tests start no server. Playwright serves the production build and a fixture backend
 through request routing, so no provider or agent can run. They check the classic default, the

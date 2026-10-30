@@ -2,7 +2,7 @@
 // return, and the future Map reads the same derived workspace, so both always agree.
 import { buildForest, familySummary, taskAgents } from './tasks.mjs'
 import { helpersView, integrationView, plannedView, resultView, taskStatus } from './taskStatus.mjs'
-import { TOOLS } from '../vocabulary.mjs'
+import { AGENT_COLORS, TOOLS } from '../vocabulary.mjs'
 
 export const SECTIONS = [
   { key: 'needs', label: 'Needs your attention' },
@@ -95,13 +95,27 @@ function inFilter(family, filter) {
 // The rows to show. `expanded` holds Task ids; while searching, matches and their loaded path are
 // shown expanded. Rows carry tree guides: `guides[i]` says whether a vertical thread continues
 // at that ancestor level.
-export function visibleRows(store, derived, { expanded = new Set(), filter = 'all', project = null, query = '' } = {}) {
+// Colour filter values: the agent colour labels, and 'none' for rows that show no colour label.
+export const COLOR_VALUES = [...AGENT_COLORS, 'none']
+
+// The colour label a row shows: its current agent's, or its last agent's. A removed agent shows no
+// colour label, and neither does a task without an agent; both count as 'none'.
+export function rowColor(derived, id) {
+  const agent = derived.agents[id]?.current || derived.agents[id]?.last
+  if (!agent || agent.unknown || agent.removed) return 'none'
+  return agent.color || 'neutral'
+}
+
+export function visibleRows(store, derived, { expanded = new Set(), filter = 'all', project = null, query = '', colors = null } = {}) {
   const q = query.trim().toLowerCase()
+  const colorSet = colors && colors.size ? colors : null
+  const narrowing = Boolean(q || colorSet)
+  const matches = (id) => (!q || searchText(store, derived, id).includes(q)) && (!colorSet || colorSet.has(rowColor(derived, id)))
   const { forest } = derived
   const keep = new Set()
-  if (q) {
+  if (narrowing) {
     for (const id of Object.keys(store.tasks)) {
-      if (!searchText(store, derived, id).includes(q)) continue
+      if (!matches(id)) continue
       keep.add(id)
       let parent = forest.parent[id]
       const seen = new Set([id])
@@ -114,13 +128,13 @@ export function visibleRows(store, derived, { expanded = new Set(), filter = 'al
   for (const family of derived.families) {
     if (project && family.projectId !== project) continue
     if (!inFilter(family, filter)) continue
-    if (q && !keep.has(family.topId)) continue
+    if (narrowing && !keep.has(family.topId)) continue
     const rows = []
     const walk = (id, depth, guides, last, parentId) => {
-      const children = (forest.children[id] || []).filter((child) => !q || keep.has(child))
-      const open = children.length > 0 && (q ? true : expanded.has(id))
+      const children = (forest.children[id] || []).filter((child) => !narrowing || keep.has(child))
+      const open = children.length > 0 && (narrowing ? true : expanded.has(id))
       rows.push({ id, depth, guides, last, parentId, hasChildren: children.length > 0, expanded: open,
-        match: q ? searchText(store, derived, id).includes(q) : false, setSize: 0, position: 0 })
+        match: narrowing ? matches(id) : false, setSize: 0, position: 0 })
       if (!open) return
       children.forEach((child, index) => walk(child, depth + 1, depth > 0 ? [...guides, !last] : [], index === children.length - 1, id))
     }
@@ -132,7 +146,7 @@ export function visibleRows(store, derived, { expanded = new Set(), filter = 'al
     shown += rows.length
     byKey[family.section].families.push({ ...family, rows })
   }
-  return { sections: sections.filter((section) => section.families.length), shown, searching: Boolean(q) }
+  return { sections: sections.filter((section) => section.families.length), shown, searching: narrowing }
 }
 
 // Rows in visual order, for keyboard navigation.
