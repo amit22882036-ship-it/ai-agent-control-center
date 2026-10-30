@@ -13,6 +13,7 @@ import { projectDirectory } from '../model/projects.mjs'
 import { TEMPLATES, addTemplate, draftView, emptyDraft, newTaskPayload } from '../model/newTask.mjs'
 import { initialChoice } from '../../modelPresentation.mjs'
 import { defaultChoice, defaultText, submissionProblem } from '../../onboardingPresentation.mjs'
+import { overlayOpen } from '../keys.mjs'
 
 // The task an agent was started for (GET /agents/{id} reports it), to open it in Work.
 async function taskOf(agentId) {
@@ -25,13 +26,30 @@ async function taskOf(agentId) {
 
 // New task (approved Atlas V2 layout): configuration on the left, a sticky "Before you start" card
 // with the summary and Start on the right. Creation uses POST /agents/start with the classic payload.
+// An unfinished New task survives leaving the page (Back to Work, N, a Connections link) for the
+// rest of this page session: the description and every choice the person made (project, tool,
+// model and effort, access, helpers and allocation), but not a saved default applied for them. It
+// is kept in memory only (never on disk), survives a failed or uncertain start, and is forgotten
+// once the task starts or with Start over. A project named in the address wins.
+let kept = null
+
 export default function NewTaskPage({ live, navigate, route }) {
-  const [draft, setDraft] = useState(() => ({ ...emptyDraft(), projectId: route?.params?.project || null }))
+  const [restored] = useState(() => {
+    if (kept === false) kept = null
+    return Boolean(kept)
+  })
+  const routeProject = route?.params?.project || null
+  const [draft, setDraft] = useState(() => (restored ? { ...kept.draft, projectId: routeProject || kept.draft.projectId }
+    : { ...emptyDraft(), projectId: routeProject }))
+  // Whether the person changed anything themself; a saved default applied for them doesn't count.
+  const [edited, setEdited] = useState(restored)
   const [starting, setStarting] = useState(false)
   const [outcome, setOutcome] = useState(null)
   const [projectsVersion, setProjectsVersion] = useState(0)
-  const [appliedDefault, setAppliedDefault] = useState(null)
-  const [touched, setTouched] = useState(false) // a tool the person picked is never replaced by a default
+  const [appliedDefault, setAppliedDefault] = useState(() => (restored ? kept.appliedDefault : null))
+  const [touched, setTouched] = useState(() => (restored ? kept.touched : false)) // a tool the person picked is never replaced by a default
+  const [showRestored, setShowRestored] = useState(restored)
+  useEffect(() => { if (kept !== false) kept = edited ? { draft, touched, appliedDefault } : null }, [draft, touched, appliedDefault, edited])
   const startingRef = useRef(false)
   // After a start whose outcome is unknown, another start needs an explicit "start it anyway".
   const [uncertain, setUncertain] = useState(false)
@@ -41,7 +59,10 @@ export default function NewTaskPage({ live, navigate, route }) {
   const real = draft.provider !== 'mock'
   const models = useModelCatalog(real ? draft.provider : null)
   const view = draftView(draft, { policy: context.policy, statuses: context.statuses, catalog: models.catalog, projects: projectsResource.data?.projects || [] })
-  const update = (patch) => setDraft((current) => ({ ...current, ...patch }))
+  const update = (patch) => { setEdited(true); setDraft((current) => ({ ...current, ...patch })) }
+  const startOver = () => {
+    setDraft({ ...emptyDraft(), projectId: routeProject }); setTouched(false); setAppliedDefault(null); setEdited(false); setShowRestored(false)
+  }
 
   // The saved default applies once, as saved: an unusable default is selected and explained, never swapped.
   const policy = context.policy
@@ -79,9 +100,14 @@ export default function NewTaskPage({ live, navigate, route }) {
       }
       const agentId = result.data?.agent_id
       const taskId = agentId ? await taskOf(agentId) : null
+      // Started: the draft is done. `false` stops this page from keeping it again as it leaves.
+      kept = false
       if (taskId) { navigate('work', { task: taskId }); return }
+      kept = null
       setOutcome({ tone: 'ok', text: 'The task started, but it could not be opened automatically. It appears in Work.', work: true })
       setDraft(emptyDraft())
+      setEdited(false)
+      setTouched(false)
     } finally {
       startingRef.current = false
       setStarting(false)
@@ -116,6 +142,8 @@ export default function NewTaskPage({ live, navigate, route }) {
       <div className="a-nt-main">
         <div className="a-write">
           <label className="a-sr" htmlFor="nt-text">What should be done?</label>
+          {showRestored && <p className="a-fine a-nt-restored" role="status">Your unfinished task is as you left it.{' '}
+            <button type="button" className="a-link" disabled={starting} onClick={startOver}>Start over</button></p>}
           <textarea id="nt-text" dir="auto" value={draft.text} disabled={starting} maxLength={100000}
             placeholder="For example: Fix the flaky timeout in test_exporter.py and explain the cause." onChange={(event) => update({ text: event.target.value })} />
           <div className="a-starts"><span>Start from:</span>
@@ -146,7 +174,7 @@ export default function NewTaskPage({ live, navigate, route }) {
 // An overlay anywhere on screen, or focus outside the page (the header, a toast), blocks the shortcut.
 function shortcutBlocked(target, page) {
   if (!page) return true
-  if (document.querySelector('dialog[open], [role="dialog"], [role="menu"], [role="listbox"]')) return true
+  if (overlayOpen()) return true
   const element = target instanceof Element ? target : null
   if (!element || element === document.body || element === document.documentElement) return false
   return !page.contains(element)

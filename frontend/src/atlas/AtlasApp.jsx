@@ -27,6 +27,7 @@ import { deriveWorkspace } from './model/workList.mjs'
 import { attentionInView, attentionItems, attentionSummary, stepAttention } from './model/attention.mjs'
 import { attentionOf } from './model/connections.mjs'
 import { lastWork, requestReply } from './workContext'
+import { pageShortcut } from './keys.mjs'
 import { documentTitle, routeKey } from './router.mjs'
 import { agentActions } from './api/agentClient.mjs'
 import { exitAtlas } from './uiMode.mjs'
@@ -108,6 +109,18 @@ export default function AtlasApp() {
     if (kind !== 'initial') element.querySelector('[data-page-heading]')?.focus({ preventScroll: true })
     navigationRef.current = 'traversal'
   }, [key, route, navigationRef])
+
+  // N opens New task from any page (not while typing, nor with a menu, dialog or panel open).
+  useEffect(() => {
+    const onKey = (event) => {
+      if (event.key.toLowerCase() !== 'n' || event.shiftKey || route.name === 'new' || !pageShortcut(event)) return
+      event.preventDefault()
+      markPush()
+      navigate('new')
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [route.name, navigate, markPush])
 
   let page
   if (route.name === 'work') page = <WorkPage live={live} route={route} navigate={navigate} feed={feed} derived={derived} attention={summary} />

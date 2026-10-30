@@ -11,6 +11,7 @@ export function settingsSection(params) {
 
 export const KEY_GROUPS = [
   ['Everywhere', [
+    ['New task', 'N'],
     ['Move between controls', 'Tab · Shift Tab'],
     ['Activate a button or link', 'Enter · Space'],
     ['Move within tabs, choices and menus', '← → ↑ ↓'],
@@ -35,7 +36,7 @@ export const KEY_GROUPS = [
     ['Start the task', 'Ctrl Enter'],
   ]],
 ]
-export const KEY_NOTE = 'Single-letter keys work only when no text field has focus, and never with Ctrl, Alt or ⌘.'
+export const KEY_NOTE = 'Single-letter keys work only when no text field, menu, dialog or panel has focus or is open, and never with Ctrl, Alt or ⌘.'
 
 // The notification preference with the browser's permission and the operating system's part.
 export function notificationView({ supported, permission, enabled, synced, message }) {

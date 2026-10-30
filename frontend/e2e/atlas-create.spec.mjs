@@ -269,3 +269,70 @@ test('New task fits 1440, 1180 and 1024 without overflow, keeps keyboard access,
     await page.unroute('**/*')
   }
 })
+
+test('a configuration-only draft survives leaving New task, a failed start keeps it, and a successful start clears it', async ({ page }) => {
+  let answer = 'refuse'
+  const log = await openNew(page, { api: ({ method, path }) => {
+    if (method !== 'POST' || path !== '/agents/start') return undefined
+    if (answer === 'refuse') return { status: 409, body: { detail: 'Claude Code is not ready.' } }
+    if (answer === 'unknown') return { abort: true }
+    return { body: { agent_id: 'quoter', status: 'running' } }
+  } })
+  // Choices only, no description yet.
+  await chooseProject(page, 'Docs site')
+  await page.getByRole('radio', { name: /Claude Code/ }).check()
+  await page.getByLabel('Model', { exact: true }).selectOption('Opus 4.8')
+  await page.getByRole('radio', { name: 'High' }).check()
+  await page.getByRole('radio', { name: 'Can edit' }).check()
+  await page.getByRole('switch', { name: 'Let the lead bring in helpers' }).click()
+  await page.getByRole('radio', { name: /Also allow automatic choice/ }).check()
+  await page.getByRole('checkbox', { name: /Codex/ }).check()
+  await page.locator('.a-nav').getByRole('link', { name: 'Connections' }).click()
+  await expect(page.locator('.atlas h1')).toHaveText('Connections')
+  await page.locator('body').press('n')
+  await expect(page.getByRole('status').filter({ hasText: 'Your unfinished task is as you left it.' })).toBeVisible()
+  await expect(page.getByRole('button', { name: /Project/ }).first()).toContainText('Docs site')
+  await expect(page.getByRole('radio', { name: /Claude Code/ })).toBeChecked()
+  await expect(page.getByLabel('Model', { exact: true })).toHaveValue('Opus 4.8')
+  await expect(page.getByRole('radio', { name: 'High' })).toBeChecked()
+  await expect(page.getByRole('radio', { name: 'Can edit' })).toBeChecked()
+  await expect(page.getByRole('switch', { name: 'Let the lead bring in helpers' })).toHaveAttribute('aria-checked', 'true')
+  await expect(page.getByRole('checkbox', { name: /Codex/ })).toBeChecked()
+  // A refused start and an unknown outcome both keep the draft.
+  await page.getByLabel('What should be done?').fill('Fix the flaky timeout.')
+  await page.getByRole('button', { name: 'Start task' }).click()
+  await expect(page.getByRole('alert').filter({ hasText: 'Claude Code is not ready.' }).first()).toBeVisible()
+  answer = 'unknown'
+  await page.getByRole('button', { name: 'Start task' }).click()
+  await expect(page.getByRole('status').filter({ hasText: 'may or may not have started' })).toBeVisible()
+  await page.getByRole('button', { name: 'Back to Work' }).click()
+  await page.locator('body').press('n')
+  await expect(page.getByLabel('What should be done?')).toHaveValue('Fix the flaky timeout.')
+  await expect(page.getByRole('radio', { name: /Claude Code/ })).toBeChecked()
+  // A successful start clears it: the next New task starts from clean defaults.
+  answer = 'ok'
+  await page.getByRole('button', { name: 'Start task' }).click()
+  await expect(page).toHaveURL(/#\/work\?task=quoted$/)
+  expect(posts(log, '/agents/start')).toHaveLength(3)
+  await page.locator('body').press('n')
+  await expect(page.getByLabel('What should be done?')).toHaveValue('')
+  await expect(page.getByRole('status').filter({ hasText: 'Your unfinished task is as you left it.' })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: /Project/ }).first()).toContainText('Choose a project')
+})
+
+test('a project named in the address wins over a kept draft, and Start over clears every choice', async ({ page }) => {
+  await openNew(page)
+  await chooseProject(page, 'Docs site')
+  await page.getByRole('radio', { name: /Codex/ }).check()
+  await page.evaluate(() => { window.location.hash = '#/work' })
+  await expect(page.locator('.a-whead')).toBeVisible()
+  await page.evaluate(() => { window.location.hash = '#/new?project=p1' })
+  await expect(page.getByRole('button', { name: /Project/ }).first()).toContainText('Release planning')
+  await expect(page.getByRole('radio', { name: /Codex/ })).toBeChecked()
+  await page.getByRole('button', { name: 'Start over' }).click()
+  await expect(page.getByRole('radio', { name: /Codex/ })).not.toBeChecked()
+  await expect(page.getByRole('button', { name: /Project/ }).first()).toContainText('Release planning')
+  await page.evaluate(() => { window.location.hash = '#/work' })
+  await page.evaluate(() => { window.location.hash = '#/new' })
+  await expect(page.getByRole('status').filter({ hasText: 'Your unfinished task is as you left it.' })).toHaveCount(0)
+})

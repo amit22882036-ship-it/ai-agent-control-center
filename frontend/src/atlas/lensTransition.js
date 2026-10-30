@@ -16,11 +16,27 @@ function anchorOf(element) {
 
 const onScreen = (rect) => rect.bottom > -40 && rect.top < window.innerHeight + 40 && rect.right > -40 && rect.left < window.innerWidth + 40
 
+// The Task elements worth measuring: in the List, only the rows of family cards that are on screen
+// (a card is measured once; the rows of cards out of view are never touched, because measuring
+// them would force the layout that `content-visibility` skips: seconds with 5,000 tasks). The Map
+// draws only what is near the view already.
+function* candidates(root) {
+  const cards = root.querySelectorAll('.a-outline .a-tcard')
+  if (cards.length) {
+    for (const card of cards) {
+      if (!onScreen(card.getBoundingClientRect())) continue
+      yield* card.querySelectorAll('[data-id]')
+    }
+    return
+  }
+  yield* root.querySelectorAll('[data-id]')
+}
+
 // Where each Task's avatar is now, by Task id (only those on screen).
 export function captureAnchors(root) {
   const out = new Map()
   if (!root) return out
-  for (const element of root.querySelectorAll('[data-id]')) {
+  for (const element of candidates(root)) {
     if (out.size >= LIMIT * 2) break
     const anchor = anchorOf(element)
     if (!anchor) continue
@@ -45,7 +61,7 @@ export function playLensTransition(root, from) {
   host.appendChild(layer)
   const animations = []
   let count = 0
-  for (const element of root.querySelectorAll('[data-id]')) {
+  for (const element of candidates(root)) {
     if (count >= LIMIT) break
     const source = from.get(element.dataset.id)
     const target = anchorOf(element)

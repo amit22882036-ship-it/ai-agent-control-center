@@ -170,7 +170,7 @@
 }
 @media (max-width: 1100px) {
   /* The floating details panel leaves the Work header (filters, search, List/Map) uncovered. */
-  .atlas .a-work > .a-inspector { top: 57px; }
+  .atlas .a-work > .a-inspector { top: var(--a-work-head, 57px); }
   .atlas .a-work:has(> .a-inspector) .a-mappane .a-mini { display: none; }
   .atlas .a-work:has(> .a-inspector) .a-mappane .a-mpartial { right: calc(min(var(--a-inspector-w, 404px), 360px) + 16px); }
 }

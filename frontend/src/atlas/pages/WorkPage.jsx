@@ -18,6 +18,7 @@ import { projectDirectory, projectLabel, projectMenu } from '../model/projects.m
 import { exitAtlas } from '../uiMode.mjs'
 import { captureAnchors, playLensTransition } from '../lensTransition'
 import { rememberWork, requestReply } from '../workContext'
+import { pageShortcut } from '../keys.mjs'
 import { ATTENTION_KINDS, attentionInView, attentionKind, stepAttention } from '../model/attention.mjs'
 import { StatusBead } from '../components/identity'
 
@@ -26,13 +27,8 @@ const FILTER_VALUES = new Set(FILTERS.map((filter) => filter.value))
 const LENSES = [{ value: 'list', label: 'List', icon: 'list', title: 'List · L' }, { value: 'map', label: 'Map', icon: 'map', title: 'Map · M' }]
 const clip = (text, limit) => (text && text.length > limit ? text.slice(0, limit - 1).trimEnd() + '…' : text)
 
-// A key press meant for the page, not for a field, a menu or a dialog.
-function pageKey(event) {
-  if (event.defaultPrevented || event.ctrlKey || event.metaKey || event.altKey || event.isComposing) return false
-  const target = event.target instanceof Element ? event.target : null
-  if (target?.closest('input, textarea, select, [contenteditable="true"], [role="menu"], [role="dialog"], dialog, .a-inspector')) return false
-  return !document.querySelector('dialog[open], [role="dialog"], [role="menu"]')
-}
+// A key press meant for the page: not in a field, a menu, a dialog or the details panel.
+const pageKey = (event) => pageShortcut(event, { exclude: '.a-inspector' })
 
 // "Needs you" navigation: where the selected Task is among the Tasks that need the person in this
 // view, Previous and Next (Shift A, A), and Reply (R) when the selected Task asks a question. Counts
@@ -52,11 +48,11 @@ function AttentionBar({ ids, selectedId, derived, summary, filtered, complete, o
     <span className="a-attnbar-text">{text}{kind ? <span className="a-attnbar-kind"> · {ATTENTION_KINDS[kind].label}</span> : null}</span>
     {n > 0 && <span className="a-attnbar-steps">
       <Button size="sm" variant="ghost" icon="left" onClick={() => onStep(-1)} disabled={alone}
-        aria-label="Previous task that needs you" title="Previous · Shift A">Previous</Button>
+        aria-label="Previous task that needs you" title="Previous · Shift A" aria-keyshortcuts="Shift+A">Previous</Button>
       <Button size="sm" variant="ghost" onClick={() => onStep(1)} disabled={alone}
-        aria-label={index >= 0 ? 'Next task that needs you' : 'Go to the first task that needs you'} title="Next · A">{index >= 0 ? 'Next' : 'Go'}<Icon name="right" size={14} /></Button>
+        aria-label={index >= 0 ? 'Next task that needs you' : 'Go to the first task that needs you'} title="Next · A" aria-keyshortcuts="A">{index >= 0 ? 'Next' : 'Go'}<Icon name="right" size={14} /></Button>
     </span>}
-    {kind === 'reply' && <Button size="sm" variant="ask" icon="reply" onClick={() => onReply(selectedId)} title="Reply · R">Reply</Button>}
+    {kind === 'reply' && <Button size="sm" variant="ask" icon="reply" onClick={() => onReply(selectedId)} title="Reply · R" aria-keyshortcuts="R">Reply</Button>}
     {unlisted > 0 && <span className="a-attnbar-more">
       <span className="a-fine">{complete ? `The backend counts ${summary.reported} waiting for a reply` : `${unlisted} more waiting for a reply may be on older pages`}</span>
       {!complete && <Button size="sm" icon="down" onClick={onLoadMore} disabled={loadingMore}>{loadingMore ? 'Loading…' : 'Look on older pages'}</Button>}
@@ -98,6 +94,7 @@ export default function WorkPage({ live, route, navigate, feed, derived, attenti
   const [mapRequest, setMapRequest] = useState(null)
   const cameraRef = useRef(null)
   const body = useRef(null)
+  const workRef = useRef(null)
   const pendingLens = useRef(null)
   useEffect(() => {
     const timer = setInterval(() => setTick(Date.now()), 30000)
@@ -223,6 +220,24 @@ export default function WorkPage({ live, route, navigate, feed, derived, attenti
     highlight()
   }
 
+  // In narrow windows the details panel floats over the list; it starts below the header, the
+  // attention bar and any notices (which wrap onto more lines as the window narrows), so it never
+  // covers their controls. Measured, because their height depends on the window and the text size.
+  useLayoutEffect(() => {
+    const work = workRef.current
+    const wbody = body.current
+    if (!work || !wbody) return undefined
+    const place = () => {
+      const top = Math.max(0, Math.round(wbody.getBoundingClientRect().top - work.getBoundingClientRect().top))
+      if (work.style.getPropertyValue('--a-work-head') !== `${top}px`) work.style.setProperty('--a-work-head', `${top}px`)
+    }
+    place()
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(place)
+    observer?.observe(wbody.parentElement)
+    observer?.observe(wbody)
+    return () => observer?.disconnect()
+  })
+
   const ready = feed.phase === 'ready' || (feed.store && feed.readAt)
   // While older pages remain, the section counts describe the loaded tasks only.
   const partial = ready && !store.complete
@@ -262,7 +277,7 @@ export default function WorkPage({ live, route, navigate, feed, derived, attenti
     content = tree(false)
   }
 
-  return <div className={`a-work${side ? ' has-side' : ''}`}>
+  return <div className={`a-work${side ? ' has-side' : ''}`} ref={workRef}>
     <div className="a-wmain">
       <h1 className="a-sr" tabIndex={-1} data-page-heading>Work</h1>
       <div className="a-whead">

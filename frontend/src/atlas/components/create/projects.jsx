@@ -97,6 +97,9 @@ export function ProjectPicker({ directory, value, onChange, onRegistered, disabl
   const [query, setQuery] = useState('')
   const [adding, setAdding] = useState(false)
   const root = useRef(null)
+  const trigger = useRef(null)
+  // Closing with Escape or by choosing returns focus to the field's button.
+  const close = () => { setOpen(false); setQuery(''); trigger.current?.focus() }
   useEffect(() => {
     if (!open) return undefined
     const outside = (event) => { if (!root.current?.contains(event.target)) setOpen(false) }
@@ -107,9 +110,9 @@ export function ProjectPicker({ directory, value, onChange, onRegistered, disabl
   const chosen = projects.find((project) => project.id === value) || null
   const q = query.trim().toLowerCase()
   const shown = projects.filter((project) => !q || project.name.toLowerCase().includes(q) || (project.path || '').toLowerCase().includes(q))
-  return <div className="a-pjfield" ref={root} onKeyDown={(event) => { if (event.key === 'Escape' && open) { event.stopPropagation(); setOpen(false) } }}>
+  return <div className="a-pjfield" ref={root} onKeyDown={(event) => { if (event.key === 'Escape' && open) { event.stopPropagation(); close() } }}>
     <span className="a-field-label" id={`${id}-label`}>Project</span>
-    <button type="button" id={`${id}-button`} className="a-pj" aria-haspopup="dialog" aria-expanded={open} aria-labelledby={`${id}-label ${id}-button`}
+    <button ref={trigger} type="button" id={`${id}-button`} className="a-pj" aria-haspopup="dialog" aria-expanded={open} aria-labelledby={`${id}-label ${id}-button`}
       disabled={disabled} onClick={() => setOpen((current) => !current)}>
       <span className="a-pji a-pji--lg"><Icon name="folder" size={18} /></span>
       {chosen ? <span className="a-pjt"><b className="a-bidi" dir="auto">{chosen.name}</b><small className="a-mono">{chosen.path}</small></span>
@@ -124,7 +127,7 @@ export function ProjectPicker({ directory, value, onChange, onRegistered, disabl
       {directory.state === 'unavailable' && <p className="a-fine a-pjnote">Projects couldn’t be loaded. <button type="button" className="a-link" onClick={onRefresh}>Try again</button></p>}
       {directory.state === 'empty' && <p className="a-fine a-pjnote">No projects registered yet.</p>}
       {shown.map((project) => <button key={project.id} type="button" className="a-pjo" aria-pressed={project.id === value}
-        onClick={() => { onChange(project.id); setOpen(false); setQuery('') }}>
+        onClick={() => { onChange(project.id); close() }}>
         <span className="a-pji"><Icon name="folder" size={15} /></span>
         <span className="a-pjt"><b className="a-bidi" dir="auto">{project.name}</b><small className="a-mono">{project.path}</small></span>
         {project.id === value && <Icon name="check" size={15} stroke={2.4} />}

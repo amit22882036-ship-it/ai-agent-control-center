@@ -132,6 +132,16 @@
   .atlas .a-nt2 { grid-template-columns: minmax(0, 1fr) 280px; }
   .atlas .a-acards { grid-template-columns: 1fr; }
 }
+/* Narrow windows or large text: the "Before you start" card follows the form instead of floating
+   beside it (where it covered the description), and cards take the full width. */
+@media (max-width: 760px) {
+  .atlas .a-nt2 { grid-template-columns: minmax(0, 1fr); }
+  .atlas .a-nt2 .a-nt-side { position: static; }
+  .atlas .a-pgrid { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 600px) {
+  .atlas .a-leadcfg, .atlas .a-tools { grid-template-columns: minmax(0, 1fr); }
+}
 
 /* Work colour filter */
 .atlas .a-colorfilter .a-btn { gap: 6px; }
@@ -153,3 +163,4 @@
 .atlas [data-color="red"].a-swatch-dot--sm, .atlas .a-colorfilter-dots i[data-color="red"] { background: var(--a-agent-red); }
 .atlas [data-color="pink"].a-swatch-dot--sm, .atlas .a-colorfilter-dots i[data-color="pink"] { background: var(--a-agent-pink); }
 .atlas [data-color="none"].a-swatch-dot--sm, .atlas .a-colorfilter-dots i[data-color="none"] { background: var(--a-sunken); border-style: dashed; }
+.atlas .a-nt-restored { margin: 0 0 8px; }

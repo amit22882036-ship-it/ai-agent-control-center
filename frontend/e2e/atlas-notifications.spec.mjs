@@ -116,11 +116,14 @@ test('a lost connection while dismissing is an unknown outcome, and unreadable n
 
 test('"need you" goes to the next question, keeping the Work view unless it would hide it', async ({ page }) => {
   await open(page, 'settings')
+  await expect(page.locator('.a-bell')).toHaveAccessibleName(/1 waiting for your reply/)
+  await expect(page.locator('.a-bell')).not.toHaveAccessibleName(/isn’t known yet/)
   await page.getByRole('button', { name: '1 needs you. Go to the next one' }).click()
   await expect(page).toHaveURL(/#\/work\?task=quoted$/)
   await expect(answer(page)).toBeFocused()
   // From a Work view that hides it (the Done filter), the filter is cleared and nothing else.
   await open(page, 'work?filter=done&lens=map')
+  await expect(page.locator('.a-mappane')).toBeVisible()  // The task list has been read.
   await page.getByRole('button', { name: '1 needs you. Go to the next one' }).click()
   await expect(page).toHaveURL(/#\/work\?lens=map&task=quoted$/)
 })

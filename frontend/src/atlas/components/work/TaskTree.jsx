@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { memo, useEffect, useRef } from 'react'
 import Icon from '../Icon'
 import { Avatar, StatusBead } from '../identity'
 import { Button } from '../primitives'
@@ -29,7 +29,9 @@ function Who({ who }) {
   </div>
 }
 
-function Row({ row, store, derived, projectName, now, selected, focused, onSelect, onToggle, onFocusRow, compact, onShowInMap, onOpenTask, onReply }) {
+// A row re-renders only when its own props change (its row, the store, selection, focus), so an
+// update elsewhere in the shell (the bell, a count, a provider read) never redraws thousands of rows.
+const Row = memo(function Row({ row, store, derived, projectName, now, selected, focused, onSelect, onToggle, onFocusRow, compact, onShowInMap, onOpenTask, onReply }) {
   const task = store.tasks[row.id]
   const status = derived.status[row.id]
   const who = whoView(derived, row.id)
@@ -84,7 +86,7 @@ function Row({ row, store, derived, projectName, now, selected, focused, onSelec
       </span>}
     </>}
   </div>
-}
+})
 
 // The hierarchical Work list: one card per task family, grouped by what needs doing. It is a
 // single WAI-ARIA tree with one Tab stop; the arrow keys move, Right/Left open and close

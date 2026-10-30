@@ -9,8 +9,11 @@ const name = (value) => (value === 'none' ? 'No colour' : value[0].toUpperCase()
 export default function ColorFilter({ selected, onChange }) {
   const [open, setOpen] = useState(false)
   const root = useRef(null)
+  const trigger = useRef(null)
+  // Opening moves focus into the panel; Escape closes it and returns focus to its button.
   useEffect(() => {
     if (!open) return undefined
+    root.current?.querySelector('.a-colorpop button, .a-colorpop input')?.focus()
     const outside = (event) => { if (!root.current?.contains(event.target)) setOpen(false) }
     document.addEventListener('pointerdown', outside)
     return () => document.removeEventListener('pointerdown', outside)
@@ -23,8 +26,8 @@ export default function ColorFilter({ selected, onChange }) {
     else next.add(value)
     onChange(next)
   }
-  return <div className="a-menu-wrap a-colorfilter" ref={root} onKeyDown={(event) => { if (event.key === 'Escape' && open) { event.stopPropagation(); setOpen(false) } }}>
-    <button type="button" className="a-btn a-btn--secondary a-btn--sm" aria-haspopup="dialog" aria-expanded={open}
+  return <div className="a-menu-wrap a-colorfilter" ref={root} onKeyDown={(event) => { if (event.key === 'Escape' && open) { event.stopPropagation(); setOpen(false); trigger.current?.focus() } }}>
+    <button ref={trigger} type="button" className="a-btn a-btn--secondary a-btn--sm" aria-haspopup="dialog" aria-expanded={open}
       title={chosen.length ? `Agent colours: ${chosen.map(name).join(', ')}` : 'Agent colours: any'} onClick={() => setOpen((value) => !value)}>
       {chosen.length > 0 && <span className="a-colorfilter-dots" aria-hidden="true">{chosen.slice(0, 3).map((value) => <i key={value} data-color={value} />)}</span>}
       {label}<Icon name="down" size={13} stroke={2.2} />

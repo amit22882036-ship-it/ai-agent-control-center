@@ -1,6 +1,6 @@
 import { useCallback, useRef, useState } from 'react'
 import Icon from '../components/Icon'
-import { IconButton } from '../components/primitives'
+import { IconButton, Kbd } from '../components/primitives'
 import { StatusBead } from '../components/identity'
 import { NAV_ROUTES, ROUTES, formatHash, navSection } from '../router.mjs'
 import { connectionView, needsYouLabel } from '../status.mjs'
@@ -37,7 +37,7 @@ export default function TopBar({ route, live, appearance, markPush, onClassic, c
   const urgent = summary.loaded > 0 || (summary.reported ?? 0) > 0 || panel.tools.length > 0
   const calm = !urgent && panel.notices.notices.length > 0
   return <header className="a-topbar">
-    <a className="a-brand" href={formatHash('work')} onClick={markPush}><BrandMark />Control Center<span className="a-brand-tag">Atlas preview</span></a>
+    <a className="a-brand" href={formatHash('work')} onClick={markPush}><BrandMark /><span className="a-brand-name">Control Center</span><span className="a-brand-tag">Atlas preview</span></a>
     <nav className="a-nav" aria-label="Main">
       {NAV_ROUTES.map((name) => <a key={name} className="a-nav-link" href={formatHash(name)} onClick={markPush}
         aria-current={section === name ? 'page' : undefined} title={name === 'connections' && attention ? attention : undefined}>{ROUTES[name].title}
@@ -46,7 +46,8 @@ export default function TopBar({ route, live, appearance, markPush, onClassic, c
     <span className="a-sp" />
     {needs > 0 && <button type="button" className="a-needs" onClick={onNext} title="Go to the next task waiting for your reply"
       aria-label={`${needsYouLabel(needs)}. Go to the next one`}>
-      <StatusBead state="ask" decorative /><span className="a-num">{needsYouLabel(needs)}</span><Icon name="right" size={13} stroke={2.4} /></button>}
+      <StatusBead state="ask" decorative /><span className="a-num">{needs}<span className="a-needs-word">{needsYouLabel(needs).slice(String(needs).length)}</span></span>
+      <Icon name="right" size={13} stroke={2.4} /></button>}
     <div className="a-bell-wrap">
       <button ref={bell} type="button" className={`a-iconbtn a-bell${open ? ' is-open' : ''}`} aria-label={label} title={label}
         aria-expanded={open} aria-haspopup="dialog" onClick={() => setOpen((value) => !value)}>
@@ -62,6 +63,7 @@ export default function TopBar({ route, live, appearance, markPush, onClassic, c
       onClick={() => appearance.choose(next)} />
     <button type="button" className="a-btn a-btn--ghost a-btn--sm" onClick={onClassic} aria-label="Classic view"
       title="Return to the classic interface"><Icon name="swap" size={14} /><span className="a-classic-label" aria-hidden="true">Classic view</span></button>
-    <a className="a-btn a-btn--primary" href={formatHash('new')} onClick={markPush}><Icon name="plus" size={15} stroke={2.2} />New task</a>
+    <a className="a-btn a-btn--primary" href={formatHash('new')} onClick={markPush} title="New task · N" aria-keyshortcuts="N">
+      <Icon name="plus" size={15} stroke={2.2} /><span className="a-newtask-label">New task</span><span aria-hidden="true"><Kbd>N</Kbd></span></a>
   </header>
 }

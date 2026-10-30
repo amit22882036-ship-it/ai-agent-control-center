@@ -22,8 +22,9 @@ the backend reports.
 | M6 | Work Map beside the List; project hierarchy previews; family context; design continuity review | Done |
 | M7 | Task pages: request, progress, team as List and Map, result review, Pause/Resume/Cancel | Done |
 | M8 | Connections (full parity with Classic's AI Providers view) and Settings | Done |
-| M9 | Notifications and attention: the bell, provider update notices, "next that needs you", reply from Work, browser notifications | Implemented, awaiting review |
-| M10–M11 | Accessibility, responsiveness and performance; parity review and default switch | Not started |
+| M9 | Notifications and attention: the bell, provider update notices, "next that needs you", reply from Work, browser notifications | Done |
+| M10 | Product-wide polish: keyboard, reflow and text zoom, responsive layouts, performance, cross-screen state | Done |
+| M11 | Parity review and the default-switch decision | Not started |
 
 Legacy removal is a separate, explicitly authorized final step. The native folder picker is a
 separate milestone after the core migration.
@@ -160,8 +161,8 @@ its unresolved runs and retrying its blocked removal.
 
 Not in M4, as planned: starting a child agent ("Add a helper", M5), the hierarchy explorer (Map,
 M6), task Pause and Cancel with their impact preview (Task page, M7; Classic has no such control
-either), AI Providers setup (M8) and notifications (M9). Classic's agent list colour filter is not
-yet in Atlas.
+either), AI Providers setup (M8) and notifications (M9). Classic's agent list colour filter arrived
+in Atlas in M5 (Work's colour filter).
 
 ## New Task, Projects and starting agents (M5)
 
@@ -315,6 +316,18 @@ in one call. The changed files are recorded during that call; there is no read-o
 shows them before anything is written, and no token that ties an application to what was
 reviewed. A confirmation dialog is not a review of file changes, so Atlas shows the integration
 history read-only and says why it cannot apply. Classic view has no apply control either.
+
+What exists today, verified against the code at M10 (2026-10-31), kept apart on purpose:
+
+| | Exists? | Where |
+| --- | --- | --- |
+| A. A backend integration endpoint | Yes | `POST /tasks/{id}/integrate` (`backend/app/main.py`): a root Task into its project, a helper Task into its lead's private copy. |
+| B. Automatic integration by the backend | Helpers only | Delegation delivery (`delegation_delivery.py`) combines a finished helper's result into its lead's private copy. Nothing applies a root Task to the project automatically. |
+| C. A user-facing Apply action in Classic | No | Classic shows integration status read-only (`AgentActivity.jsx`) and, in agent removal, names the endpoint in text (`RemovalSection.jsx`); it has no button that calls it. |
+| D. A user-facing Apply action in Atlas | No | By decision, until the preview below exists. |
+
+So applying a root Task to the project is a backend capability without a user interface in either
+view, not a Classic feature Atlas lacks.
 
 The smallest safe backend capability: a read-only **integration preview** for a Task that builds
 the same three-way candidate in the existing temporary candidate area without touching the
@@ -537,7 +550,114 @@ browser reports more than about 2 seconds after the event can leave that one eve
 (Classic has the same window). Closing it needs a backend change (for example an explicit
 acknowledgement per event), which is outside the existing contract and needs separate approval.
 
-## Design continuity review (V2 → Atlas, at M7, updated at M8 and M9)
+## Product polish (M10)
+
+M10 changes no backend and adds no feature; it fixes what the product-wide review found. Each
+item below says what was wrong and what changed.
+
+- **Keyboard.** One rule for every single-letter shortcut (`keys.mjs`): never in a field
+  (including contenteditable and textbox roles), during IME composition, on a held-down repeat,
+  with Ctrl, Alt or Meta, or while a menu, dialog, panel or listbox is open. Work and New task now
+  share it (Work's own copy missed contenteditable, composition codes and repeats). **N** opens New
+  task from every page (shown on the New task button, `aria-keyshortcuts` on it and on A, Shift A
+  and R); on New task itself N types. The keyboard reference lists N and states the rule; a test
+  presses every listed Work key and checks it does what the reference says.
+- **Focus.** The colour filter now moves focus into its panel when opened and back to its button on
+  Escape (it was left on nothing); the project picker returns focus to its field after Escape or a
+  choice (it was lost).
+- **Reflow and text zoom.** Widths 1600 to 320 pixels were checked in the browser for every main
+  screen; on a 1280-pixel window 640 is 200 % text, 512 is 250 % and 320 is 400 % (the WCAG reflow
+  width), and browser zoom changes the CSS width the same way. Below 900 pixels the top bar no
+  longer pushed New task, Classic view and the appearance switch off the screen (they were
+  unreachable): the navigation moves to its own row and scrolls sideways if it must; below 600
+  pixels the brand, "needs you" and New task keep their accessible names with shorter labels, list
+  rows put the title on its own line (it had vanished), New task's summary follows the form (it
+  covered the description below 760 pixels), page headers stack, the details panel takes the full
+  width and the notifications panel spans the window. The floating details panel (below 1,100
+  pixels) now starts below the Work header, the attention bar and notices, measured, instead of
+  at a fixed 57 pixels that covered Previous, Next and Reply once the header wrapped.
+- **Large workspaces.** Measured in the browser (production build, synthetic workspaces of one
+  page, from the event to the second frame after it). Family cards out of view now skip style,
+  layout and paint (`content-visibility: auto`; still in the DOM, the accessibility tree and
+  find-in-page); list rows re-render only when their own props change (`memo`), so the bell, a
+  count or a provider read never redraws thousands of rows; the List/Map transition measures only
+  the cards on screen (it measured every row, forcing a full layout).
+
+  | 5,000 tasks (ms) | Before | After |
+  | --- | --- | --- |
+  | Open Work (load to first row) | 3,046 | 1,119–1,240 |
+  | Select a task | 772 | 170–191 |
+  | Select another | 326 | 194–219 |
+  | List after Map | 2,147 | 552–630 |
+  | Map after List | 1,548 | 1,449–1,513 |
+  | Clear a search | 2,063 | 484–579 |
+  | Next that needs you (A) | 353 | 190–210 |
+  | Open the bell | 344 | 32 |
+  | To Settings | 202 | 105–121 |
+  | Back to Work | 2,300 | 472–482 |
+
+  At 1,000 tasks every measured interaction is under 270 ms, and at 100 tasks under 130 ms. Opening
+  the Map from a 5,000-row List still takes about 1.5 s: removing about 150,000 elements is
+  the browser's own layout work (a profile attributes it to the first layout after the switch).
+  Virtualizing the List would remove it, at the cost of tree semantics and find-in-page; it is a
+  candidate for later, not an M10 change. Work loads 200 tasks by default; 5,000 means the person
+  loaded 25 pages. The shared Task feed (M9) costs a read and a derivation of about 20 ms at 5,600
+  tasks per reported change on other pages; those pages need it for the bell, "need you" and
+  browser notifications, so it stays.
+- **Large workspaces and notifications.** Unchanged by decision: Atlas does not load every page in
+  the background to enable browser notifications; with pages unloaded the Windows notification is
+  the fallback when available, and the panel says what it covers.
+- **Data loss.** An unfinished New task now survives leaving the page (Back to Work, N, a link) for
+  the rest of the page session, in memory only, with "Start over": the description and every
+  choice the person made (project, tool, model and effort, access, helpers, allocation and the
+  tools allowed for it), even with no description yet; a saved default applied for them is not
+  counted as their choice. A project named in the address wins. A refused or uncertain start
+  keeps it; a successful start or Start over clears it. A kept tool or model that is no longer
+  usable stays selected with the reason, as on first choice. Reply drafts were already kept per
+  Task (M9).
+
+### Open product decisions, classified
+
+The recommendation is the reasoning offered for the M11 gate; the decision is the owner's.
+
+| Decision | Class | Why |
+| --- | --- | --- |
+| Reliable notifications across mixed Classic/Atlas sessions | A, essential before default | Once Atlas is the default, most people have one interface; until then a Classic and an Atlas tab can each show the same event. Switching the default removes most of the overlap; a backend acknowledgement per event would close it fully (C). |
+| Backend changes for stronger delivery guarantees (the failure window, per-event acknowledgement) | C, separate design | Needs a new contract between pages and the notifier. |
+| Safe preview before Apply to project | B, safe to ship later, but C to build | Neither Classic nor Atlas offers Apply (the endpoint exists without a user action in either), so switching the default loses nothing. Building it needs the backend preview described in Task pages (M7). |
+| Global search across unloaded Tasks | B | Work searches loaded Tasks and says so; a backend search needs its own design (C). |
+| Ask for changes | B / C | A new workflow on top of results; needs backend support. |
+| Safe access to a Task's working copy | C | A local-file action the browser can't take safely. |
+| Native Windows folder selection | B | Typed paths work; the picker is its own milestone. |
+
+### M11 readiness checklist
+
+Evidence is the automated suites run in this session with synthetic fixtures (no real provider,
+backend or runtime database), unless stated otherwise.
+
+| Area | Status | Evidence and conditions |
+| --- | --- | --- |
+| Classic functional parity (agents, actions, creation, providers, notifications) | PASS WITH CONDITIONS | Parity tables for M4, M5, M8 and M9; a full side-by-side review is M11's job. Apply to project is in neither view (backend endpoint only). |
+| User-facing workflows A–M | PASS WITH CONDITIONS | Covered by browser tests per milestone; Apply to project and Ask for changes are available in neither view. |
+| Backend safety (no new APIs, existing endpoints and payloads only) | PASS | Isolation tests: one mutating module, one event connection, no remote hosts; no backend behaviour change in M3–M10 (M7 added a test-only contract recorder). |
+| Provider action safety (reviewed plans, billing confirmation) | PASS | Connections tests (M8); update notices never install (M9). |
+| Task and Agent identity | PASS | Actions target the current assignment only; replacement and stale-target tests (M4, M9). |
+| Data correctness of counts and states | PASS WITH CONDITIONS | Loaded-only counts are labelled; the recorded contract fixtures match the backend (M2, M7); not checked against a real workspace. |
+| Accessibility | PASS WITH CONDITIONS | axe without serious issues at 1440 and 640 pixels in both themes on the main screens; keyboard, focus-return, reduced-motion and right-to-left tests; reflow at 320 pixels. No screen-reader session with NVDA or Narrator was run. |
+| Performance | PASS WITH CONDITIONS | Measured up to 5,000 tasks in Edge on this machine; Map after a 5,000-row List about 1.5 s; not measured on a slower machine. |
+| Error handling and unknown outcomes | PASS | Offline, 5xx and refusal tests across actions; no automatic retries. |
+| Notification reliability | PASS WITH CONDITIONS | Coordination, lock, failure and offline tests with stand-ins; Classic/Atlas overlap and the failure window remain (see above). |
+| Windows platform behaviour (real notifications, Focus assist, Edge and Chrome on Windows) | NOT TESTED | Needs a manual session on Windows with the real backend. |
+| Real environment (real backend, real providers, real projects) | NOT TESTED | Needs a manual run with real accounts, outside automated tests. |
+| Unresolved product decisions | BLOCKED (owner's decision) | The class A item above. |
+| Known limitations | Listed | This document's limitations sections. |
+
+Manual testing still needed before the default switch: one Windows session with the real backend
+and real projects (start, reply, pause, cancel, Connections setup with a real tool, browser and
+Windows notifications with Focus assist on and off), a screen-reader pass, and a slower machine
+with a large workspace.
+
+## Design continuity review (V2 → Atlas, at M7, updated at M8, M9 and M10)
 
 Atlas V2 is the approved direction, not a pixel specification. Status: **A** implemented as
 designed; **B** implemented differently for a reason; **C** added in M6; **D** planned for M7–M11;
@@ -573,7 +693,7 @@ designed; **B** implemented differently for a reason; **C** added in M6; **D** p
 | Settings: keyboard reference, about | C (M8) | Also notifications preference, accessibility, process supervision and diagnostics. The full keyboard review stays M10. |
 | Notifications | C (M9) | A panel derived from live data (needs you, tools, updates), no stored inbox; browser notifications coordinated with Windows ones. |
 | Global search (Ctrl K) over tasks and agents | E (open decision) | Work searches the loaded tasks; searching unloaded tasks and agents needs a backend search. A product decision for a future approved milestone, to be settled before M11. |
-| N for New task | D | M10 keyboard review. |
+| N for New task | A (M10) | From every page; never while typing or with a menu, dialog or panel open. |
 
 ### Checklist for later milestones
 
@@ -581,10 +701,9 @@ designed; **B** implemented differently for a reason; **C** added in M6; **D** p
   applying to the project, all waiting on backend support (see open product decisions).
 - **M8 Connections and Settings (done):** remaining are the provider update notices from
   Classic's bell (M9) and the full keyboard review (M10).
-- **M9 Notifications and attention (implemented):** remaining is a durable notification history,
+- **M9 Notifications and attention (done):** remaining is a durable notification history,
   which the backend does not keep (not planned), and a click action for Windows notifications.
-- **M10 Accessibility, responsiveness, performance, polish:** a full keyboard pass including N,
-  zoomed text beyond 150 %, very large workspaces on slower machines, visual polish against V2.
+- **M10 Accessibility, responsiveness, performance, polish (done):** see Product polish (M10).
 - **M11 Parity and default switch:** functional parity review against Classic; Atlas becomes the
   default only after approval; Classic removed only after explicit approval.
 - **Open product decisions:** global search across unloaded tasks and agents (needs a backend
@@ -619,7 +738,10 @@ answers from `e2e/providers.mjs`, shaped like the backend's; `tests/atlasConnect
 covers the Connections and Settings wording and payloads. `e2e/atlas-notifications.spec.mjs` covers
 the notifications panel, provider update notices, attention navigation, reply from Work, browser
 notifications with the heartbeat and two tabs (M9); `tests/atlasAttention.test.mjs` covers the
-attention model, counts and the notification transition rules.
+attention model, counts and the notification transition rules. `e2e/atlas-polish.spec.mjs` covers
+reflow from 1600 to 320 pixels, N and the shortcut rule, focus return, drafts, cross-screen state,
+reduced motion and axe at 200 % (M10); `e2e/atlas-performance.spec.mjs` measures 100, 1,000 and
+5,000 tasks.
 
 The browser tests start no server. Playwright serves the production build and a fixture backend
 through request routing, so no provider or agent can run. They check the classic default, the

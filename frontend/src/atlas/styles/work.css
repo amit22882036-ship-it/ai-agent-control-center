@@ -28,6 +28,10 @@
 .atlas .a-ol-sec .a-ol-n { letter-spacing: 0; color: var(--a-text-4); }
 .atlas .a-ol-sec.a-ol-sec--needs { color: var(--a-ask); }
 .atlas .a-tcard { margin: 0 14px 10px; border-radius: 14px; background: var(--a-surface); border: 1px solid var(--a-line); box-shadow: var(--a-shadow-1); overflow: hidden; padding: 3px 0; }
+/* Families out of view skip style, layout and paint until they scroll near (they stay in the DOM,
+   in the accessibility tree and reachable by keyboard and find-in-page). Measured: with 5,000 tasks
+   this is most of the cost of opening Work, switching back to the List and clearing a search. */
+.atlas .a-outline .a-tcard { content-visibility: auto; contain-intrinsic-size: auto 220px; }
 .atlas .a-tcard-more { padding: 8px 18px 10px 58px; font-size: 12.5px; color: var(--a-text-3); }
 .atlas .a-ol-more { display: flex; align-items: center; justify-content: center; gap: 12px; padding: 10px 18px 0; }
 .atlas .a-ol-empty { padding: 28px 20px; color: var(--a-text-3); }
@@ -144,6 +148,15 @@
   .atlas .a-work > .a-inspector { position: absolute; right: 0; top: 0; bottom: 0; z-index: 6; box-shadow: var(--a-shadow-3); }
   .atlas .a-ol-cols, .atlas .a-row { grid-template-columns: minmax(0, 1.6fr) 160px minmax(0, 1fr); }
   .atlas .a-ol-cols > :nth-child(4), .atlas .a-row > .a-c-time { display: none; }
+}
+/* Very narrow windows or text zoomed to 250% and more: each row keeps its title on a line of its
+   own, with the agent and what it is doing below it, instead of squeezing three columns. */
+@media (max-width: 600px) {
+  .atlas .a-ol-cols { display: none; }
+  .atlas .a-outline .a-row:not(.a-row--x) { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); row-gap: 2px; padding-top: 6px; padding-bottom: 8px; }
+  .atlas .a-outline .a-row > .a-c-main { grid-column: 1 / -1; min-height: 32px; }
+  .atlas .a-outline .a-row > .a-c-who { padding-left: 24px; }
+  .atlas .a-outline.a-outline--compact .a-row { grid-template-columns: minmax(0, 1fr); }
 }
 @media (prefers-reduced-motion: reduce) {
   .atlas .a-outline { scroll-behavior: auto; }
