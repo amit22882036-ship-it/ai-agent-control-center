@@ -19,8 +19,9 @@ the backend reports.
 | M3 | Work list and read-only inspector | Done |
 | M4 | Agent actions and management in the inspector | Done |
 | M5 | New Task and Projects; Add a helper; Start again; Work colour filter | Done |
-| M6 | Work Map beside the List; project hierarchy previews; family context; design continuity review | Implemented, awaiting review |
-| M7–M11 | Task pages, Connections and Settings, notifications, accessibility and performance, default switch | Not started |
+| M6 | Work Map beside the List; project hierarchy previews; family context; design continuity review | Done |
+| M7 | Task pages: request, progress, team as List and Map, result review, Pause/Resume/Cancel | Implemented, awaiting review |
+| M8–M11 | Connections and Settings, notifications, accessibility and performance, default switch | Not started |
 
 Legacy removal is a separate, explicitly authorized final step. The native folder picker is a
 separate milestone after the core migration.
@@ -35,9 +36,9 @@ always shows the classic dashboard.
 
 The preview contains the shell, navigation, appearance settings and a design gallery (`#/gallery`,
 sample content only); Work as a List and as a Map with the task details panel and its agent
-actions (M3, M4, M6); New task and Projects (M5). Connections still says which milestone adds it
-and links back to the classic dashboard. Every state-changing request goes through
-`api/agentClient.mjs` with the classic endpoints and payloads.
+actions (M3, M4, M6); New task and Projects (M5); and a page for every Task (M7). Connections
+still says which milestone adds it and links back to the classic dashboard. Every
+state-changing request goes through `api/agentClient.mjs` with the classic endpoints and payloads.
 
 ## How Atlas stays isolated
 
@@ -247,13 +248,86 @@ camera is the Map's own state and is not put in the address.
   tasks that need you, with waiting and blocked tasks and the task and family totals underneath.
 
 Measured in Edge on the development machine (`atlas-map.spec.mjs`, 1,000 synthetic tasks in 50
-families, 1440 × 900, four runs): switching to the Map 651–768 ms including the test driver; 176
-of 1,000 nodes drawn (3,420 elements in the map); selecting a node 87–97 ms; a wheel zoom step
-settles within two frames (median 32–33 ms); collapsing all families 58–323 ms. The unit test
+families, 1440 × 900, four runs): switching to the Map 651–768 ms including the test driver
+(1,627 ms once while the whole browser suite ran in parallel); 176 of 1,000 nodes drawn (3,420
+elements in the map); selecting a node 87–97 ms (250 ms in the parallel run); a wheel zoom step
+settles within two to four frames (median 32–39 ms); collapsing all families 58–323 ms. The unit test
 requires the layout of 1,000 tasks to take under 250 ms, and a project preview of a family with
 1,000 helpers under 50 ms. These are runs on one machine, not guarantees.
 
-## Design continuity review (V2 → Atlas, at M6)
+## Task pages (M7)
+
+Every Task has its own page (`#/task?id=<task>`), opened with **Open task** from the details
+panel (or the O key), from a List row, from a helper in the details panel, and from the team on
+another Task page. Selecting a Task stays a selection; opening is a separate step. Each Task page
+is its own entry in the browser history, and its **Work** link returns to the Work view the person
+left (project, filters, colours, List or Map, side list and focus), with the Task selected.
+
+The page is about the Task, not its agent. It reads only this Task's branch and the ancestors
+that place it (`GET /workspace/tasks?root=<task>`), plus its own endpoints: `GET /tasks/{id}`,
+`/assignments`, `/orchestration`, `/integrations`, `/control-operations`, `/dependencies`,
+`/dependents`, the lead's `/delegations` for a helper's recorded result, and the current or last
+agent's `/activity`. All are re-read when the shared event connection reports a change, never
+polled; a failed read keeps the last good answer and the page says it may be stale.
+
+- **Identity and responsibility.** The header names the current agent, or the last one as such,
+  or nobody. "Everyone who held it" lists the assignment history newest first: replaced and
+  removed agents are history, an unknown earlier agent is shown as "Earlier agent", and a
+  replacement never creates another Task.
+- **Request.** The Task's description, labelled by who wrote it: the person (a root Task or a
+  helper the person added) or its lead (a delegated helper, the agent's words).
+- **How it's going.** The status in words, pause and cancel intent, unconfirmed stops, what holds
+  it (blockers and reasons to replan, from the backend's codes), the helper continuation phase,
+  the plan decision and its revision, the lead's rationale quoted as its own words, each planned
+  part's disposition (a planned part is never shown as a Task), rounds with helpers, helper-start
+  problems and the agent's recorded activity for this Task.
+- **Who's on it.** The Task's helper tasks as a List or a Map, from the same store, rows and
+  layout as Work. A team of more than 60 tasks opens with its direct helpers, and the List draws
+  150 rows at a time. Selecting a member shows its state with **Open task** and **Show in Work**.
+- **Result,** in five separate statements: what the agent reported (a helper's recorded result
+  and summary, quoted as its words; a lead's own account is in its output), what the Control
+  Center recorded, what was independently verified (nothing: the backend never runs your tests),
+  what was combined into the lead's copy (a helper's integration) and what was applied to the
+  project (a root Task's integration), with changed and conflicting files and the backend's
+  reasons. A child integration and a project application are never merged into one "done".
+- **Lifecycle.** Pause, Resume and Cancel appear only when the backend's rules allow them, with
+  the reason otherwise. Pause and Cancel show the backend's own impact preview
+  (`POST /tasks/{id}/control-impact`): tasks paused or canceled, agents stopped, finished tasks
+  left as they are, tasks elsewhere that become blocked or must replan. The preview is read again
+  just before sending; if it changed, the new impact is shown and confirmed again. Cancel needs an
+  explicit acknowledgement. Resume says which pause it releases and is offered only for a pause
+  this Task owns (a pause started from a task above it is resumed there). One request at a time;
+  a lost connection is reported as an unknown outcome and never retried by itself; refusals are
+  shown in the backend's words. Agent actions (reply, stop, removal) stay in the Work details panel,
+  linked as **Agent controls in Work**. `POST /tasks/{id}/pause` and `/cancel` take no reference to
+  the previewed impact and apply the impact current at that moment; re-reading just before sending
+  narrows that window but cannot close it. A token bound to the previewed impact, as removal plans
+  have, would.
+- **Advanced.** Lifecycle and control intent, stop state, continuation, decision key and source,
+  wake state, helper starts and control operations, closed by default.
+
+### Applying work to the project: unavailable in Atlas, by decision
+
+`POST /tasks/{id}/integrate` prepares and applies a root Task's changes to the registered project
+in one call. The changed files are recorded during that call; there is no read-only step that
+shows them before anything is written, and no token that ties an application to what was
+reviewed. A confirmation dialog is not a review of file changes, so Atlas shows the integration
+history read-only and says why it cannot apply. Classic view has no apply control either.
+
+The smallest safe backend capability: a read-only **integration preview** for a Task that builds
+the same three-way candidate in the existing temporary candidate area without touching the
+destination, and returns the destination, the base, source and destination snapshots, the changed
+paths with their kind (added, modified, deleted) and a bounded text diff per file, any conflicts,
+and a preview token bound to the source and destination snapshots. `POST /tasks/{id}/integrate`
+would then accept that token and refuse when either snapshot changed since the preview, in the
+same way removal plans are bound to their preview today.
+
+Measured in Edge on the development machine (`atlas-task.spec.mjs`, a Task with 600 helpers and
+deep chains, 1,561 tasks in its branch, 1440 × 900, two runs): the Task page ready in 983–1,151 ms
+including the test driver; switching its team to the Map 207–561 ms (17 nodes drawn near the
+view); opening a Task nine levels deep 16–54 ms. Runs on one machine, not a guarantee.
+
+## Design continuity review (V2 → Atlas, at M7)
 
 Atlas V2 is the approved direction, not a pixel specification. Status: **A** implemented as
 designed; **B** implemented differently for a reason; **C** added in M6; **D** planned for M7–M11;
@@ -272,28 +346,29 @@ designed; **B** implemented differently for a reason; **C** added in M6; **D** p
 | Focus a branch (F), breadcrumbs, Leave (Esc) | C | Shared by both views; breadcrumbs widen the focus. |
 | Zoom, fit, show everything, overview, drag, wheel, "Jump to" | C | |
 | Hover in one view highlights the other | C | |
-| Row quick actions | C / D | "Show in map" now; reply from the row is M9; "Open" (Task page) is M7. |
+| Row quick actions | C / D | "Open task" and "Show in map" (M6, M7); reply from the row is M9. |
 | View options: expand all, collapse | C | |
 | View option: hide removed agents | B | Tasks are never hidden because their agent was removed; the colour filter's "No colour" selects them. |
 | Rotating latest output line in each row | F | Would need a stream per agent; Atlas keeps one event connection. The Output tab has the history. |
 | Inspector: header, tabs, footer actions, resize | A | M3/M4. |
 | Inspector: focus branch, show in map, family picture | C | The family picture now has status shapes, position and "Show in map". |
 | Inspector: "More actions" menu | B | The same actions live in the tabs and the footer. |
-| Task page: request, progress, result and verification, apply, "Who's on it" List/Map | D | M7. |
+| Task page: request, progress, result and verification, "Who's on it" List/Map | C (M7) | The team view reuses the Work List and Map; planned parts are notes, never tasks. |
+| Task page: "Apply to project" | F | Not offered until the backend can preview the exact changes; see Task pages (M7). |
+| Task page: "Ask for changes", "Open the task's copy" | E | Need new backend support or a local-file action; not in a milestone yet. |
 | Projects: cards with hierarchy pictures and counts | C | From the loaded tasks only, bounded, and saying what is left out; counts are of tasks. |
 | Projects: add a project | A / F | Typed path (M5). The native folder picker is its own milestone; dropping a folder is not possible in a browser. |
 | New Task layout and "Before you start" picture | A | M5. |
 | Connections: readiness, usage, billing guidance, nav badge | D | M8. |
 | Settings: keyboard reference, about | D | M8/M10. |
 | Notifications | D | M9. |
-| Global search (Ctrl K) over tasks and agents | E | Work searches the loaded tasks; searching everything needs a backend search to stay honest. |
+| Global search (Ctrl K) over tasks and agents | E (open decision) | Work searches the loaded tasks; searching unloaded tasks and agents needs a backend search. A product decision for a future approved milestone, to be settled before M11. |
 | N for New task | D | M10 keyboard review. |
 
 ### Checklist for later milestones
 
-- **M7 Task pages:** Task lifecycle controls (pause, cancel, with impact preview); result and
-  integration review with what was and was not verified; "Who's on it" with a List/Map of the
-  Task's own team built on the Map layout; "Open" from List rows and the details panel.
+- **M7 Task pages (done):** remaining from V2 are "Ask for changes", opening the task's copy and
+  applying to the project, all waiting on backend support (see open product decisions).
 - **M8 Connections and Settings:** provider readiness and usage, external billing guidance
   without claiming knowledge of account settings, the Connections badge, the keyboard reference.
 - **M9 Notifications:** attention entry points, "next thing that needs you", reply from a row.
@@ -301,7 +376,9 @@ designed; **B** implemented differently for a reason; **C** added in M6; **D** p
   zoomed text beyond 150 %, very large workspaces on slower machines, visual polish against V2.
 - **M11 Parity and default switch:** functional parity review against Classic; Atlas becomes the
   default only after approval; Classic removed only after explicit approval.
-- **Unassigned:** global search beyond the loaded pages (needs a backend search).
+- **Open product decisions:** global search across unloaded tasks and agents (needs a backend
+  search); applying work to the project from Atlas (needs the integration preview described in
+  Task pages (M7)); "Ask for changes" and opening a task's private copy from a Task page.
 
 ## Tests
 
@@ -318,6 +395,9 @@ npm run test:browser   # builds, then runs the browser tests in Microsoft Edge
 synthetic scenarios in `e2e/scenarios.mjs` that use the endpoint's exact node shape.
 `e2e/atlas-actions.spec.mjs` and `e2e/atlas-manage.spec.mjs` cover agent actions (M4);
 `e2e/strict-runner.spec.mjs` runs the action runner under React StrictMode in a development build;
+`e2e/atlas-task.spec.mjs` covers Task pages (M7); `backend/test_task_detail_contract.py` records the
+real task-detail responses of the synthetic scenario into `tests/fixtures/task-detail.contract.json`
+and fails when they drift, and `tests/atlasTaskPage.test.mjs` reads them.
 `e2e/atlas-create.spec.mjs` and `e2e/atlas-start.spec.mjs` cover New Task, Projects, Add a helper,
 Start again and the colour filter (M5); `e2e/atlas-map.spec.mjs` covers the Map, the side list,
 focus, project previews and measured performance with 1,000 tasks (M6).

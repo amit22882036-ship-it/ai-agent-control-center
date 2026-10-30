@@ -17,6 +17,7 @@ import { readInspectorWidth, saveInspectorWidth } from '../layout.mjs'
 import { projectDirectory, projectLabel, projectMenu } from '../model/projects.mjs'
 import { exitAtlas } from '../uiMode.mjs'
 import { captureAnchors, playLensTransition } from '../lensTransition'
+import { rememberWork } from '../workContext'
 
 const FILTER_VALUES = new Set(FILTERS.map((filter) => filter.value))
 const LENSES = [{ value: 'list', label: 'List', icon: 'list', title: 'List · L' }, { value: 'map', label: 'Map', icon: 'map', title: 'Map · M' }]
@@ -135,6 +136,9 @@ export default function WorkPage({ live, route, navigate }) {
     switchLens('map', { task: id, ...(focus && !inBranch(derived.forest, focus, id) ? { focus: undefined } : {}) })
   }, [switchLens, focus, derived])
   const focusBranch = useCallback((id) => go({ focus: id, task: id }), [go])
+  const openTask = useCallback((id) => navigate('task', { id }), [navigate])
+  // The Work view is remembered so a Task page's "Work" link returns to it.
+  useEffect(() => { rememberWork(params) }, [params])
   const leaveFocus = useCallback(() => go({ focus: undefined }), [go])
 
   useLayoutEffect(() => {
@@ -152,11 +156,12 @@ export default function WorkPage({ live, route, navigate }) {
       if (key === 'l' && lens !== 'list') { event.preventDefault(); switchLens('list') }
       else if (key === 'm' && lens !== 'map') { event.preventDefault(); switchLens('map') }
       else if (key === 'f' && selectedId && store.tasks[selectedId]) { event.preventDefault(); focusBranch(selectedId) }
+      else if (key === 'o' && selectedId && store.tasks[selectedId]) { event.preventDefault(); openTask(selectedId) }
       else if (event.key === 'Escape' && focusParam) { event.preventDefault(); leaveFocus() }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [lens, switchLens, selectedId, store, focusBranch, focusParam, leaveFocus])
+  }, [lens, switchLens, selectedId, store, focusBranch, focusParam, leaveFocus, openTask])
 
   // Pointing at a Task in one view highlights it in the other (the side list beside the Map). The
   // highlight is a class set directly, re-applied after each render so a refresh never drops it.
@@ -187,7 +192,7 @@ export default function WorkPage({ live, route, navigate }) {
     <Button size="sm" onClick={() => { setQuery(''); go({ filter: undefined, project: undefined, colors: undefined, focus: undefined }) }}>Clear filters</Button></p>
   const tree = (compact) => <TaskTree view={view} store={store} derived={derived} projectName={projectName} now={now} selectedId={selectedId}
     focusId={focusId} setFocusId={setFocusId} onSelect={select} onToggle={toggle} onLoadMore={feed.loadMore} loadingMore={feed.loadingMore}
-    empty={empty} compact={compact} onShowInMap={compact ? undefined : showInMap} />
+    empty={empty} compact={compact} onShowInMap={compact ? undefined : showInMap} onOpenTask={compact ? undefined : openTask} />
 
   let content
   if (!ready && feed.phase === 'error') {
@@ -236,7 +241,8 @@ export default function WorkPage({ live, route, navigate }) {
         <MenuButton label="View options" icon="sliders" items={[
           { label: 'Expand everything', icon: 'down', onSelect: () => setAll(true) },
           { label: 'Collapse to task families', icon: 'right', onSelect: () => setAll(false) },
-          ...(selectedId && store.tasks[selectedId] ? [{ separator: true }, { label: 'Focus the selected branch', icon: 'focus', hint: 'F', onSelect: () => focusBranch(selectedId) }] : []),
+          ...(selectedId && store.tasks[selectedId] ? [{ separator: true }, { label: 'Open the selected task', icon: 'open', hint: 'O', onSelect: () => openTask(selectedId) },
+            { label: 'Focus the selected branch', icon: 'focus', hint: 'F', onSelect: () => focusBranch(selectedId) }] : []),
         ]} />
       </div>
       {(stale || selectedHidden || (query && !store.complete) || focus || (focusParam && ready && !focus)) && <div className="a-work-notices">
@@ -266,6 +272,6 @@ export default function WorkPage({ live, route, navigate }) {
       projectName={projectName} version={live.version} now={now} width={width}
       onResize={(value) => { setWidth(value); saveInspectorWidth(value) }}
       onClose={() => { setFocusId(selectedId); go({ task: undefined }) }} onSelect={select} onLoadMore={feed.loadMore}
-      getStore={getStore} onRefresh={feed.refresh} lens={lens} onShowInMap={showInMap} onFocusBranch={focusBranch} />}
+      getStore={getStore} onRefresh={feed.refresh} lens={lens} onShowInMap={showInMap} onFocusBranch={focusBranch} onOpenTask={openTask} />}
   </div>
 }

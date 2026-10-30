@@ -8,11 +8,13 @@ import './styles/work.css'
 import './styles/agent.css'
 import './styles/create.css'
 import './styles/map.css'
+import './styles/task.css'
 import TopBar from './shell/TopBar'
 import WorkPage from './pages/WorkPage'
 import PreviewPage from './pages/PreviewPage'
 import NewTaskPage from './pages/NewTaskPage'
 import ProjectsPage from './pages/ProjectsPage'
+import TaskPage from './pages/TaskPage'
 import SettingsPage from './pages/SettingsPage'
 import GalleryPage from './pages/GalleryPage'
 import NotFoundPage from './pages/NotFoundPage'
@@ -59,6 +61,7 @@ export default function AtlasApp() {
   if (route.name === 'work') page = <WorkPage live={live} route={route} navigate={navigate} />
   else if (route.name === 'new') page = <NewTaskPage live={live} navigate={navigate} route={route} />
   else if (route.name === 'projects') page = <ProjectsPage live={live} navigate={navigate} />
+  else if (route.name === 'task') page = <TaskPage key={route.params?.id || 'none'} live={live} navigate={navigate} route={route} />
   else if (route.name === 'connections') page = <PreviewPage key={route.name} kind={route.name} />
   else if (route.name === 'settings') page = <SettingsPage appearance={appearance} live={live} navigate={navigate} />
   else if (route.name === 'gallery') page = <GalleryPage />

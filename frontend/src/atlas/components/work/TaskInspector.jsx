@@ -114,7 +114,7 @@ function Family({ store, derived, id, onSelect, onShowInMap, lens }) {
   </>
 }
 
-function NowTab({ store, derived, id, projectName, onSelect, task, activity, now, handoff, agent, onShowInMap, lens }) {
+function NowTab({ store, derived, id, projectName, onSelect, task, activity, now, handoff, agent, onShowInMap, lens, onOpenTask }) {
   const data = store.tasks[id]
   const parent = data.parentId ? store.tasks[data.parentId] : null
   const children = derived.forest.children[id] || []
@@ -147,12 +147,15 @@ function NowTab({ store, derived, id, projectName, onSelect, task, activity, now
       {children.length > 0 && <div className="a-kids">{children.map((child) => {
         const status = derived.status[child]
         const who = whoView(derived, child)
-        return <button key={child} type="button" className="a-kid" onClick={() => onSelect(child)}>
-          <StatusBead state={status.bead} decorative />
-          <span className="a-kid-main"><span className="a-kt a-ell a-bidi" dir="auto">{store.tasks[child].title || 'Untitled task'}</span>
-            <small>{who.agent ? `${who.name} · ` : 'No agent · '}{status.label}</small></span>
-          <span className="a-c-time a-num">{timeView(store, child, now).text}</span>
-        </button>
+        return <div key={child} className="a-kid-row">
+          <button type="button" className="a-kid" onClick={() => onSelect(child)}>
+            <StatusBead state={status.bead} decorative />
+            <span className="a-kid-main"><span className="a-kt a-ell a-bidi" dir="auto">{store.tasks[child].title || 'Untitled task'}</span>
+              <small>{who.agent ? `${who.name} · ` : 'No agent · '}{status.label}</small></span>
+            <span className="a-c-time a-num">{timeView(store, child, now).text}</span>
+          </button>
+          <IconButton icon="open" size="sm" label={`Open task: ${store.tasks[child].title || 'Untitled task'}`} onClick={() => onOpenTask(child)} />
+        </div>
       })}</div>}
       <dl className="a-kv a-kv--compact">
         <dt>Still working</dt><dd className="a-num">{data.delegations.materialized}</dd>
@@ -243,7 +246,7 @@ function DetailsTab({ store, derived, id, projectName }) {
 // Read-only details for the selected Task and its current or last Agent. Actions arrive in M4;
 // the footer keeps a way to Classic view for what Atlas does not offer yet.
 export default function TaskInspector({ store, derived, taskId, selection, projectName, version, now, width, onResize, onClose, onSelect, onLoadMore,
-  getStore, onRefresh, lens = 'list', onShowInMap, onFocusBranch }) {
+  getStore, onRefresh, lens = 'list', onShowInMap, onFocusBranch, onOpenTask }) {
   const [tab, setTab] = useState('now')
   const agentScope = useAgentScope({ store, taskId, version, getStore, onRefresh })
   const present = selection === 'present'
@@ -278,6 +281,7 @@ export default function TaskInspector({ store, derived, taskId, selection, proje
         <div className="a-role">{data.parentId ? 'Helper' : 'Lead'}{who.agent ? ` · ${who.role === 'current' ? who.detail : 'last agent' + (who.removed ? ' · removed' : '')}` : ' · nobody is assigned'}</div>
       </div>
       <div className="a-ih-acts">
+        <IconButton icon="open" size="sm" label="Open the task page (O)" onClick={() => onOpenTask(taskId)} />
         <IconButton icon="map" size="sm" label={lens === 'map' ? 'Centre this task in the map' : 'Show this task in the map'} onClick={() => onShowInMap(taskId)} />
         <IconButton icon="focus" size="sm" label="Focus this branch (F)" onClick={() => onFocusBranch(taskId)} />
       </div>
@@ -289,13 +293,14 @@ export default function TaskInspector({ store, derived, taskId, selection, proje
   return <Inspector label="Task details" width={width} onResize={onResize} onClose={onClose} header={header}
     tabs={<Tabs label="Task details" tabs={TABS} value={tab} onChange={setTab} idBase={idBase} />}
     footer={<><AgentFooterActions agent={agentScope} /><span className="a-sp" />
+      <Button size="sm" variant="ghost" icon="open" onClick={() => onOpenTask(taskId)}>Open task</Button>
       <Button size="sm" variant="ghost" icon="swap" onClick={() => exitAtlas(undefined, { agentId: handoff })}
         title={handoff ? 'Classic view opens with this agent selected.' : 'Classic view opens without a selection because this task has no current agent.'}>
         Open in Classic</Button></>}>
     <div {...tabPanelProps(idBase, tab)} className="a-insp-panel">
       <AgentStopResult agent={agentScope} />
       {tab === 'now' && <NowTab store={store} derived={derived} id={taskId} projectName={projectName} onSelect={onSelect} task={task} activity={activity.data} now={now}
-        handoff={handoff} agent={agentScope} onShowInMap={onShowInMap} lens={lens} />}
+        handoff={handoff} agent={agentScope} onShowInMap={onShowInMap} lens={lens} onOpenTask={onOpenTask} />}
       {tab === 'activity' && <ActivityTab store={store} derived={derived} id={taskId} activity={activity} assignments={assignments} />}
       {tab === 'output' && (agentScope.agentId ? <OutputHistory key={agentScope.agentId} agentId={agentScope.agentId} version={version}
         historical={agentScope.target.kind !== 'current'} /> : <EmptyState icon="layers" title="No output yet">No agent has worked on this task.</EmptyState>)}

@@ -144,10 +144,12 @@
 .atlas .a-outline.a-outline--compact .a-ol-more { flex-direction: column; gap: 6px; }
 .atlas .a-outline .a-row.is-hl { background: var(--a-hover); }
 
-/* "Show in map" on a List row, for pointer users (the M key and the details panel do the same) */
-.atlas .a-outline .a-row .a-row-map { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); display: none; width: 28px; height: 28px; border-radius: 8px;
+/* "Open task" and "Show in map" on a List row, for pointer users (the O and M keys and the details
+   panel do the same) */
+.atlas .a-outline .a-row .a-row-quick { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); display: none; gap: 4px; }
+.atlas .a-outline .a-row:hover .a-row-quick { display: flex; }
+.atlas .a-outline .a-row .a-row-map { display: grid; width: 28px; height: 28px; border-radius: 8px;
   place-items: center; background: var(--a-surface); border: 1px solid var(--a-line-2); color: var(--a-text-2); padding: 0; }
-.atlas .a-outline .a-row:hover .a-row-map { display: grid; }
 .atlas .a-outline .a-row .a-row-map:hover { color: var(--a-text); }
 
 /* Details: map and focus actions, and the family picture */

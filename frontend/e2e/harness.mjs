@@ -55,6 +55,49 @@ export function catalog(provider) {
       explanation: 'Listed for this account.', supported_efforts: provider === 'gemini' ? [] : ['low', 'medium', 'high'] })) }
 }
 
+// A Task's branch (itself and everything below it), in the scenario's order.
+function branchOf(nodes, rootId) {
+  const ids = new Set([rootId])
+  let grew = true
+  while (grew) {
+    grew = false
+    for (const node of nodes) if (node.parent_task_id && ids.has(node.parent_task_id) && !ids.has(node.task_id)) { ids.add(node.task_id); grew = true }
+  }
+  return ids
+}
+
+// GET /workspace/tasks?root=<id>: the branch as one page, with the ancestors that place it.
+export function rootPage(tasks, rootId) {
+  const nodes = [...tasks.tasks, ...tasks.ancestors]
+  const byId = Object.fromEntries(nodes.map((node) => [node.task_id, node]))
+  if (!byId[rootId]) return { tasks: [], ancestors: [], ancestors_truncated: false, next_after: null, total: 0, root: rootId }
+  const ids = branchOf(nodes, rootId)
+  const ancestors = []
+  for (let parent = byId[rootId].parent_task_id; parent && byId[parent] && ancestors.length < 64; parent = byId[parent].parent_task_id) ancestors.push(byId[parent])
+  const page = tasks.tasks.filter((node) => ids.has(node.task_id))
+  return { tasks: page, ancestors, ancestors_truncated: false, next_after: null, total: page.length, root: rootId }
+}
+
+const TERMINAL = new Set(['completed', 'canceled'])
+
+// The read-only POST /tasks/{id}/control-impact, computed the backend's way over the scenario.
+export function controlImpact(tasks, taskId, action) {
+  const nodes = [...tasks.tasks, ...tasks.ancestors]
+  const byId = Object.fromEntries(nodes.map((node) => [node.task_id, node]))
+  const root = byId[taskId]
+  if (!root) return { status: 404, body: { detail: 'Task not found' } }
+  if (root.status === 'completed' || (action === 'pause' && (root.status === 'canceled' || root.control_intent === 'canceled'))) {
+    return { status: 409, body: { detail: 'Terminal work cannot be controlled' } }
+  }
+  const subtree = [...branchOf(nodes, taskId)]
+  const affected = subtree.filter((id) => !TERMINAL.has(byId[id].status) && byId[id].control_intent !== 'canceled').sort()
+  const workers = affected.filter((id) => byId[id].assignment.current && byId[id].agent?.status === 'running')
+    .map((id) => ({ task_id: id, agent_id: byId[id].assignment.current.agent_id }))
+  return { status: 200, body: { target_task_id: taskId, action, affected_task_ids: affected, descendant_task_ids: subtree.filter((id) => id !== taskId).sort(),
+    external_dependent_task_ids: [], workers_to_stop: workers, completed_descendants: subtree.filter((id) => id !== taskId && byId[id].status === 'completed').sort(),
+    canceled_descendants: subtree.filter((id) => id !== taskId && byId[id].status === 'canceled').sort(), blocked_task_ids: [], replanning_task_ids: [] } }
+}
+
 // Read-only detail responses for the inspector, shaped like the backend's (synthetic content).
 function detail(pathname, search, tasks, projects, agents) {
   const nodes = [...tasks.tasks, ...tasks.ancestors]
@@ -62,8 +105,50 @@ function detail(pathname, search, tasks, projects, agents) {
   let match = /^\/tasks\/([^/]+)$/.exec(pathname)
   if (match) {
     const node = byId[decodeURIComponent(match[1])]
+    // The fields of the real GET /tasks/{id} (see tests/fixtures/task-detail.contract.json).
     return node && { task_id: node.task_id, title: node.title, description: `Synthetic description for ${node.title}.`, status: node.status,
-      parent_task_id: node.parent_task_id, project_id: node.project_id }
+      created_at: node.created_at, updated_at: node.updated_at, parent_task_id: node.parent_task_id, project_id: node.project_id,
+      control_intent: node.control_intent || 'active', resume_status: null, block_resume_status: null, stop_required: node.stop_required ? 1 : 0,
+      legacy_pause: 0, stop_reason: null, orchestration_handoff: null, replan_transitions: [], promotions: [], promotion_decisions: [],
+      active_blockers: (node.blockers || []).map((code, index) => ({ id: `b-${node.task_id}-${index}`, task_id: node.task_id, blocker_type: 'coordination',
+        source_task_id: null, reason_code: code, active: 1, hard: 1 })),
+      replanning_reasons: [], replanning_required: false, resource_claims_pending: false,
+      current_assignment: node.assignment.current ? { assignment_id: node.assignment.current.assignment_id, agent_id: node.assignment.current.agent_id,
+        agent_display_name: node.agent?.display_name || null, agent_display_color: node.agent?.display_color || null, agent_status: node.agent?.status || null } : null }
+  }
+  match = /^\/tasks\/([^/]+)\/orchestration$/.exec(pathname)
+  if (match) {
+    const node = byId[decodeURIComponent(match[1])]
+    return node && { task_id: node.task_id, continuation: node.continuation ? { phase: node.continuation.phase, mode: node.continuation.mode || null, last_error: null, plan_consumed: 0 } : null,
+      materializations: [], decision: { state: node.agent?.autonomous ? (node.plan_revision ? 'promoted' : 'not_recorded') : 'not_authorized', revision: node.plan_revision ?? null,
+        decision_key: null, rationale: null, accepted_at: null, assignment_id: node.assignment.current?.assignment_id || null, superseded: null,
+        promotion_rejected: false, source: null, last_rejection: null, promotions: [] }, wake: { state: 'idle' } }
+  }
+  match = /^\/tasks\/([^/]+)\/integrations$/.exec(pathname)
+  if (match) {
+    const node = byId[decodeURIComponent(match[1])]
+    if (!node) return null
+    const record = (id, kind, destination, status, appliedAt) => ({ integration_id: id, source_task_id: node.task_id, destination_kind: kind, destination_id: destination,
+      status, changed_paths: ['src/exporter.py', 'tests/test_exporter.py'], changed_paths_remaining: 0, conflict_paths: status === 'conflict' ? ['src/exporter.py'] : [],
+      conflict_paths_remaining: 0, validation_status: 'not_run', failure_reason: status === 'conflict' ? 'Source and destination have conflicting changes' : null,
+      created_at: appliedAt || node.updated_at, updated_at: appliedAt || node.updated_at, applied_at: status === 'applied' ? appliedAt : null })
+    const list = []
+    const via = node.delegation?.result?.integration
+    if (via) list.push(record(via.integration_id, 'task', node.parent_task_id, via.status, via.applied_at))
+    if (node.integration) list.push(record(node.integration.integration_id, node.integration.destination_kind || 'project', node.project_id, node.integration.status, node.integration.applied_at))
+    return { integrations: list }
+  }
+  match = /^\/tasks\/([^/]+)\/delegations$/.exec(pathname)
+  if (match) {
+    const id = decodeURIComponent(match[1])
+    return { delegations: nodes.filter((node) => node.parent_task_id === id && node.delegation).map((node) => ({
+      delegation_id: node.delegation.delegation_id, parent_task_id: id, child_task_id: node.task_id, status: node.delegation.status, instruction: `Synthetic instruction for ${node.title}.`,
+      results: node.delegation.result ? [{ result_id: `res-${node.task_id}`, child_task_id: node.task_id, outcome: node.delegation.result.outcome, phase: node.delegation.result.phase,
+        summary: `Synthetic summary: ${node.title} is done.`, integration_id: node.delegation.result.integration?.integration_id || null }] : [] })) }
+  }
+  if (/^\/tasks\/[^/]+\/(dependencies|dependents|control-operations)$/.test(pathname)) {
+    const kind = pathname.split('/').pop()
+    return { [kind === 'control-operations' ? 'operations' : kind]: [] }
   }
   match = /^\/tasks\/([^/]+)\/assignments$/.exec(pathname)
   if (match) {
@@ -136,7 +221,8 @@ export async function openApp(page, { backend = 'online', path = '/', tasks = co
       if (scripted) return route.fulfill({ status: scripted.status || 200, contentType: 'application/json', body: JSON.stringify(scripted.body ?? {}) })
       if (request.method() === 'GET' && url.pathname === '/workspace') return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(workspace) })
       if (request.method() === 'GET' && url.pathname === '/workspace/tasks') {
-        const body = taskPages ? await taskPages(url) : tasks
+        const root = url.searchParams.get('root')
+        const body = taskPages ? await taskPages(url) : root ? rootPage(tasks, root) : tasks
         if (body === null) return route.fulfill({ status: 503, contentType: 'application/json', body: '{"detail":"unavailable"}' })
         return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) })
       }
@@ -152,6 +238,11 @@ export async function openApp(page, { backend = 'online', path = '/', tasks = co
       if (request.method() === 'POST' && url.pathname === '/providers/check') {
         return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ providers: ['claude', 'codex', 'gemini']
           .map((provider) => ({ provider, state: { state: 'ready' } })) }) })
+      }
+      const impact = /^\/tasks\/([^/]+)\/control-impact$/.exec(url.pathname)
+      if (request.method() === 'POST' && impact) {
+        const answer = controlImpact(tasks, decodeURIComponent(impact[1]), body?.action)
+        return route.fulfill({ status: answer.status, contentType: 'application/json', body: JSON.stringify(answer.body) })
       }
       // An action the test did not script succeeds plainly; tests that check refusals script them.
       if (request.method() !== 'GET' && /^\/(agents|tasks|agent-removals|executions|providers)\//.test(url.pathname)) {

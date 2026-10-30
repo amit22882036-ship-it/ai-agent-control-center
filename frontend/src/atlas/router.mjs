@@ -6,6 +6,7 @@ export const ROUTES = {
   connections: { title: 'Connections', nav: true },
   settings: { title: 'Settings', nav: true },
   new: { title: 'New task', nav: false },
+  task: { title: 'Task', nav: false },
   gallery: { title: 'Design gallery', nav: false },
 }
 export const DEFAULT_ROUTE = 'work'
@@ -31,8 +32,12 @@ export function formatHash(name, params = {}) {
   return `#/${name}${query ? `?${query}` : ''}`
 }
 
+// Each Task page is its own page (focus moves to its heading, it opens at the top); other
+// parameters (a selection, a filter) stay on the same page.
 export function routeKey(route) {
-  return route.name === 'not-found' ? `not-found:${route.requested}` : route.name
+  if (route.name === 'not-found') return `not-found:${route.requested}`
+  if (route.name === 'task') return `task:${route.params?.id || ''}`
+  return route.name
 }
 
 export function documentTitle(route) {
@@ -40,8 +45,8 @@ export function documentTitle(route) {
   return `${title} · Control Center (Atlas preview)`
 }
 
-// Which top-level navigation item a route belongs to (New task opens from Work).
+// Which top-level navigation item a route belongs to (New task and Task pages open from Work).
 export function navSection(route) {
-  if (route.name === 'new') return 'work'
+  if (route.name === 'new' || route.name === 'task') return 'work'
   return ROUTES[route.name]?.nav ? route.name : null
 }

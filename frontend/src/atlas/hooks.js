@@ -86,23 +86,29 @@ export function useLiveStatus() {
 
 // The canonical Task store for Work. It re-reads when the shared connection reports a change
 // (`version`); bursts and changes during a read collapse into one follow-up read.
-export function useTaskFeed(version) {
+// `root` narrows the feed to one Task's branch and the ancestors that place it (a Task page), so a
+// page never copies the whole workspace; without it, the workspace is read newest first.
+export function useTaskFeed(version, root = null) {
   const feed = useRef(null)
-  const [state, setState] = useState({ phase: 'loading', stale: false, error: null, pages: 1, readAt: null, loadingMore: false, store: null })
+  const [state, setState] = useState({ phase: 'loading', stale: false, error: null, pages: 1, readAt: null, loadingMore: false, store: null, root })
   useEffect(() => {
     const instance = createTaskFeed({
-      read: (options) => readTasks({ fetcher: apiFetch, base: API_BASE, ...options }),
-      onChange: setState,
+      read: (options) => readTasks({ fetcher: apiFetch, base: API_BASE, root, ...options }),
+      onChange: (next) => setState({ ...next, root }),
     })
     feed.current = instance
+    // A new root starts from a clean read; the connection's next report keeps it current.
+    if (root) instance.request(true)
     return () => { instance.dispose(); feed.current = null }
-  }, [])
+  }, [root])
   // The connection reports once as soon as it starts (version 1), so version 0 needs no read.
   useEffect(() => { if (version > 0) feed.current?.request() }, [version])
   const loadMore = useCallback(() => feed.current?.loadMore(), [])
   // After an action: read again now rather than waiting for the connection to report it.
   const refresh = useCallback(() => feed.current?.request(true), [])
-  return { ...state, loadMore, refresh }
+  // A result from a previous root is never shown for a new one.
+  const current = state.root === root ? state : { phase: 'loading', stale: false, error: null, pages: 1, readAt: null, loadingMore: false, store: null, root }
+  return { ...current, loadMore, refresh }
 }
 
 // A read-only JSON resource that follows the shared connection. A response for an earlier URL or

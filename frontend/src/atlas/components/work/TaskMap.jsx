@@ -401,8 +401,8 @@ export default function TaskMap({ layout, view, store, derived, projectName, now
       Enter opens a task’s details, Space shows or hides its helpers. Plus and minus zoom; Shift with an arrow key moves the map.</p>
     {empty2 && <div className="a-map-empty">{empty}</div>}
     <div className="a-mtool">
-      <button type="button" className="a-mbtn" aria-pressed={side} onClick={onToggleSide} title={side ? 'Hide the list beside the map' : 'Show the list beside the map'}>
-        <Icon name="sidebar" size={16} />{side ? 'Hide list' : 'Show list'}</button>
+      {onToggleSide && <button type="button" className="a-mbtn" aria-pressed={side} onClick={onToggleSide} title={side ? 'Hide the list beside the map' : 'Show the list beside the map'}>
+        <Icon name="sidebar" size={16} />{side ? 'Hide list' : 'Show list'}</button>}
       {!focusBranch && layout.tops.length > 1 && <MenuButton label="Jump to a task family" text="Jump to" icon="map" align="start" items={jumps} />}
     </div>
     {!store.complete && <div className="a-mpartial" role="status">

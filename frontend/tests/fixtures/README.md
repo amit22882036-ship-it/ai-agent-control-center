@@ -10,6 +10,12 @@ Synthetic API responses for deterministic frontend tests (Node unit tests and th
   `backend/test_task_projection.py` from a synthetic isolated database
   (`backend/task_projection_scenarios.py`). That backend test fails when the endpoint's answer
   drifts from this file; regenerate it deliberately with `ATLAS_WRITE_FIXTURES=1`.
+- `task-detail.contract.json`: real responses of the task-detail endpoints (`GET /tasks/{id}`,
+  `/assignments`, `/orchestration`, `/integrations`, `/delegations`, `/dependencies`, `/dependents`,
+  `/control-operations` and the read-only `POST /tasks/{id}/control-impact`) for the same synthetic
+  scenario, recorded by `backend/test_task_detail_contract.py`, which fails when they drift. The
+  scenario's placeholder texts are recorded as `Synthetic text`, and timestamps SQLite generates at
+  insert time as `generated-timestamp`.
 
 The field names follow the backend's read model (`backend/app/presentation.py`, `_nodes` and
 `workspace`). `tests/fixtures.test.mjs` reads that backend source and fails if a fixture's fields

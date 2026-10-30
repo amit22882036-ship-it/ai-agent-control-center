@@ -1,0 +1,1456 @@
+{
+ "release": {
+  "task": {
+   "status": 200,
+   "body": {
+    "task_id": "release",
+    "title": "Ship the release",
+    "description": "Synthetic text description",
+    "status": "in_progress",
+    "created_at": "2026-01-01T00:00:01.000Z",
+    "updated_at": "2026-01-01T00:00:01.000Z",
+    "parent_task_id": null,
+    "project_id": "p1",
+    "control_intent": "active",
+    "resume_status": null,
+    "block_resume_status": null,
+    "stop_required": 0,
+    "legacy_pause": 0,
+    "stop_reason": null,
+    "orchestration_handoff": null,
+    "replan_transitions": [],
+    "promotions": [
+     {
+      "task_id": "release",
+      "proposal_id": "prop-1",
+      "decision_key": "k2",
+      "revision": 2,
+      "proposal": {
+       "deliverable": "Release notes",
+       "depends_on": [],
+       "parallel": true,
+       "proposal_id": "prop-1",
+       "responsibility": "Summarize the changes"
+      },
+      "coordination": {},
+      "delegation_id": "d-plan",
+      "disposition": "blocked",
+      "reason": "Synthetic text",
+      "child_task_id": null,
+      "delegation_status": "requested",
+      "materialization": null,
+      "allocation": null,
+      "child_status": null,
+      "admission_disposition": "blocked"
+     }
+    ],
+    "promotion_decisions": [
+     {
+      "task_id": "release",
+      "decision_key": "k2",
+      "revision": 2,
+      "agent_id": "lead",
+      "assignment_id": "as-lead",
+      "generation": "g",
+      "session_id": "s",
+      "message_id": "pmk2",
+      "content": {
+       "continuation": null,
+       "decision_key": "k2",
+       "items": [
+        {
+         "proposal_id": "prop-1"
+        }
+       ],
+       "protocol": "control-center.promotion.v1",
+       "revision": 2,
+       "task_id": "release"
+      },
+      "receipt": {},
+      "created_at": "generated-timestamp"
+     }
+    ],
+    "active_blockers": [],
+    "replanning_reasons": [],
+    "replanning_required": false,
+    "resource_claims_pending": false,
+    "current_assignment": {
+     "assignment_id": "as-lead",
+     "agent_id": "lead",
+     "agent_display_name": "Lead",
+     "agent_display_color": "blue",
+     "agent_status": "running"
+    }
+   }
+  },
+  "/assignments": {
+   "status": 200,
+   "body": {
+    "assignments": [
+     {
+      "assignment_id": "as-lead",
+      "task_id": "release",
+      "agent_id": "lead",
+      "assigned_at": "2026-01-01T00:00:02.000Z",
+      "ended_at": null,
+      "ended_reason": null
+     }
+    ]
+   }
+  },
+  "/orchestration": {
+   "status": 200,
+   "body": {
+    "task_id": "release",
+    "continuation": {
+     "phase": "reviewing",
+     "mode": "reviewing",
+     "last_error": "Synthetic text",
+     "plan_consumed": 0
+    },
+    "materializations": [],
+    "decision": {
+     "state": "promoted",
+     "revision": 2,
+     "decision_key": "k2",
+     "rationale": "Docs and tests can proceed in parallel; the plan item waits for the docs.",
+     "accepted_at": "generated-timestamp",
+     "assignment_id": "as-lead",
+     "superseded": null,
+     "promotion_rejected": false,
+     "source": "planning",
+     "last_rejection": null,
+     "promotions": [
+      {
+       "proposal_id": "prop-1",
+       "revision": 2,
+       "disposition": "blocked",
+       "admission_disposition": "blocked",
+       "reason": "Synthetic text",
+       "child_task_id": null
+      }
+     ]
+    },
+    "wake": {
+     "state": "idle"
+    }
+   }
+  },
+  "/integrations": {
+   "status": 200,
+   "body": {
+    "integrations": []
+   }
+  },
+  "/delegations": {
+   "status": 200,
+   "body": {
+    "delegations": [
+     {
+      "delegation_id": "d-docs",
+      "project_id": "p1",
+      "parent_task_id": "release",
+      "requested_by_agent_id": "lead",
+      "requested_by_assignment_id": "as-lead",
+      "request_key": "d-docs",
+      "instruction": "Synthetic text instruction",
+      "status": "result_ready",
+      "child_task_id": "docs",
+      "created_at": "2026-01-01T00:00:09.000Z",
+      "updated_at": "2026-01-01T00:00:10.000Z",
+      "materialized_at": "2026-01-01T00:00:11.000Z",
+      "closed_at": null,
+      "admission_error": null,
+      "child_provider": null,
+      "child_model": null,
+      "child_effort": null,
+      "allocation_request": null,
+      "materialization": null,
+      "results": [
+       {
+        "result_id": "res-docs",
+        "delegation_id": "d-docs",
+        "child_task_id": "docs",
+        "assignment_id": "as-docs-2",
+        "agent_id": "docs-new",
+        "execution_generation": null,
+        "outcome": "completed",
+        "output_after": 0,
+        "output_through": 10,
+        "phase": "delivered",
+        "integration_id": "i-docs",
+        "source_snapshot": null,
+        "summary": "Synthetic text summary",
+        "last_error": "Synthetic text",
+        "acknowledgement": null,
+        "created_at": "2026-01-01T00:00:14.000Z",
+        "updated_at": "2026-01-01T00:00:15.000Z"
+       }
+      ]
+     },
+     {
+      "delegation_id": "d-tests",
+      "project_id": "p1",
+      "parent_task_id": "release",
+      "requested_by_agent_id": "lead",
+      "requested_by_assignment_id": "as-lead",
+      "request_key": "d-tests",
+      "instruction": "Synthetic text instruction",
+      "status": "materialized",
+      "child_task_id": "tests",
+      "created_at": "2026-01-01T00:00:18.000Z",
+      "updated_at": "2026-01-01T00:00:19.000Z",
+      "materialized_at": "2026-01-01T00:00:20.000Z",
+      "closed_at": null,
+      "admission_error": null,
+      "child_provider": null,
+      "child_model": null,
+      "child_effort": null,
+      "allocation_request": null,
+      "materialization": null
+     },
+     {
+      "delegation_id": "d-plan",
+      "project_id": "p1",
+      "parent_task_id": "release",
+      "requested_by_agent_id": "lead",
+      "requested_by_assignment_id": "as-lead",
+      "request_key": "d-plan",
+      "instruction": "Synthetic text instruction",
+      "status": "requested",
+      "child_task_id": null,
+      "created_at": "2026-01-01T00:00:22.000Z",
+      "updated_at": "2026-01-01T00:00:23.000Z",
+      "materialized_at": null,
+      "closed_at": null,
+      "admission_error": null,
+      "child_provider": null,
+      "child_model": null,
+      "child_effort": null,
+      "allocation_request": null,
+      "materialization": null
+     },
+     {
+      "delegation_id": "d-direct",
+      "project_id": "p1",
+      "parent_task_id": "release",
+      "requested_by_agent_id": "lead",
+      "requested_by_assignment_id": "as-lead",
+      "request_key": "d-direct",
+      "instruction": "Synthetic text instruction",
+      "status": "requested",
+      "child_task_id": null,
+      "created_at": "2026-01-01T00:00:24.000Z",
+      "updated_at": "2026-01-01T00:00:25.000Z",
+      "materialized_at": null,
+      "closed_at": null,
+      "admission_error": null,
+      "child_provider": null,
+      "child_model": null,
+      "child_effort": null,
+      "allocation_request": null,
+      "materialization": null
+     }
+    ]
+   }
+  },
+  "/dependencies": {
+   "status": 200,
+   "body": {
+    "dependencies": []
+   }
+  },
+  "/dependents": {
+   "status": 200,
+   "body": {
+    "dependents": []
+   }
+  },
+  "/control-operations": {
+   "status": 200,
+   "body": {
+    "operations": []
+   }
+  },
+  "impact:pause": {
+   "status": 200,
+   "body": {
+    "target_task_id": "release",
+    "action": "pause",
+    "affected_task_ids": [
+     "flaky",
+     "release",
+     "tests"
+    ],
+    "descendant_task_ids": [
+     "docs",
+     "flaky",
+     "tests"
+    ],
+    "external_dependent_task_ids": [],
+    "workers_to_stop": [
+     {
+      "task_id": "release",
+      "agent_id": "lead"
+     }
+    ],
+    "completed_descendants": [
+     "docs"
+    ],
+    "canceled_descendants": [],
+    "blocked_task_ids": [],
+    "replanning_task_ids": []
+   }
+  },
+  "impact:cancel": {
+   "status": 200,
+   "body": {
+    "target_task_id": "release",
+    "action": "cancel",
+    "affected_task_ids": [
+     "flaky",
+     "release",
+     "tests"
+    ],
+    "descendant_task_ids": [
+     "docs",
+     "flaky",
+     "tests"
+    ],
+    "external_dependent_task_ids": [],
+    "workers_to_stop": [
+     {
+      "task_id": "release",
+      "agent_id": "lead"
+     }
+    ],
+    "completed_descendants": [
+     "docs"
+    ],
+    "canceled_descendants": [],
+    "blocked_task_ids": [],
+    "replanning_task_ids": []
+   }
+  }
+ },
+ "docs": {
+  "task": {
+   "status": 200,
+   "body": {
+    "task_id": "docs",
+    "title": "Write the docs",
+    "description": "Synthetic text description",
+    "status": "completed",
+    "created_at": "2026-01-01T00:00:03.000Z",
+    "updated_at": "2026-01-01T00:00:03.000Z",
+    "parent_task_id": "release",
+    "project_id": "p1",
+    "control_intent": "active",
+    "resume_status": null,
+    "block_resume_status": null,
+    "stop_required": 0,
+    "legacy_pause": 0,
+    "stop_reason": null,
+    "orchestration_handoff": null,
+    "replan_transitions": [],
+    "promotions": [],
+    "promotion_decisions": [],
+    "active_blockers": [],
+    "replanning_reasons": [],
+    "replanning_required": false,
+    "resource_claims_pending": false,
+    "current_assignment": null
+   }
+  },
+  "/assignments": {
+   "status": 200,
+   "body": {
+    "assignments": [
+     {
+      "assignment_id": "as-docs-1",
+      "task_id": "docs",
+      "agent_id": "docs-old",
+      "assigned_at": "2026-01-01T00:00:05.000Z",
+      "ended_at": "2026-01-01T00:00:06.000Z",
+      "ended_reason": "removed"
+     },
+     {
+      "assignment_id": "as-docs-2",
+      "task_id": "docs",
+      "agent_id": "docs-new",
+      "assigned_at": "2026-01-01T00:00:07.000Z",
+      "ended_at": "2026-01-01T00:00:08.000Z",
+      "ended_reason": "completed"
+     }
+    ]
+   }
+  },
+  "/orchestration": {
+   "status": 200,
+   "body": {
+    "task_id": "docs",
+    "continuation": null,
+    "materializations": [],
+    "decision": {
+     "state": "not_authorized",
+     "revision": null,
+     "decision_key": null,
+     "rationale": null,
+     "accepted_at": null,
+     "assignment_id": "as-docs-2",
+     "superseded": null,
+     "promotion_rejected": false,
+     "source": null,
+     "last_rejection": null,
+     "promotions": []
+    },
+    "wake": {
+     "state": "idle"
+    }
+   }
+  },
+  "/integrations": {
+   "status": 200,
+   "body": {
+    "integrations": [
+     {
+      "integration_id": "i-docs",
+      "source_task_id": "docs",
+      "destination_kind": "task",
+      "destination_id": "release",
+      "destination_key": "task:release",
+      "base_snapshot": "b",
+      "source_snapshot": "s",
+      "destination_before_snapshot": "d",
+      "result_snapshot": null,
+      "status": "applied",
+      "conflict_paths": [
+       "Synthetic text/conflict.py"
+      ],
+      "changed_paths": [
+       "Synthetic text/changed.py"
+      ],
+      "changed_paths_remaining": 0,
+      "conflict_paths_remaining": 0,
+      "validation_status": "not_run",
+      "failure_reason": "Synthetic text",
+      "created_at": "2026-01-01T00:00:12.000Z",
+      "updated_at": "generated-timestamp",
+      "applied_at": "2026-01-01T00:00:13.000Z"
+     }
+    ]
+   }
+  },
+  "/delegations": {
+   "status": 200,
+   "body": {
+    "delegations": []
+   }
+  },
+  "/dependencies": {
+   "status": 200,
+   "body": {
+    "dependencies": []
+   }
+  },
+  "/dependents": {
+   "status": 200,
+   "body": {
+    "dependents": []
+   }
+  },
+  "/control-operations": {
+   "status": 200,
+   "body": {
+    "operations": []
+   }
+  },
+  "impact:pause": {
+   "status": 409,
+   "body": {
+    "detail": "Terminal work cannot be controlled"
+   }
+  },
+  "impact:cancel": {
+   "status": 409,
+   "body": {
+    "detail": "Terminal work cannot be controlled"
+   }
+  }
+ },
+ "tests": {
+  "task": {
+   "status": 200,
+   "body": {
+    "task_id": "tests",
+    "title": "Fix the tests",
+    "description": "Synthetic text description",
+    "status": "waiting",
+    "created_at": "2026-01-01T00:00:16.000Z",
+    "updated_at": "2026-01-01T00:00:16.000Z",
+    "parent_task_id": "release",
+    "project_id": "p1",
+    "control_intent": "active",
+    "resume_status": null,
+    "block_resume_status": null,
+    "stop_required": 0,
+    "legacy_pause": 0,
+    "stop_reason": null,
+    "orchestration_handoff": null,
+    "replan_transitions": [],
+    "promotions": [],
+    "promotion_decisions": [],
+    "active_blockers": [],
+    "replanning_reasons": [],
+    "replanning_required": false,
+    "resource_claims_pending": false,
+    "current_assignment": {
+     "assignment_id": "as-tests",
+     "agent_id": "tester",
+     "agent_display_name": "Tester",
+     "agent_display_color": "blue",
+     "agent_status": "waiting"
+    }
+   }
+  },
+  "/assignments": {
+   "status": 200,
+   "body": {
+    "assignments": [
+     {
+      "assignment_id": "as-tests",
+      "task_id": "tests",
+      "agent_id": "tester",
+      "assigned_at": "2026-01-01T00:00:17.000Z",
+      "ended_at": null,
+      "ended_reason": null
+     }
+    ]
+   }
+  },
+  "/orchestration": {
+   "status": 200,
+   "body": {
+    "task_id": "tests",
+    "continuation": null,
+    "materializations": [],
+    "decision": {
+     "state": "not_authorized",
+     "revision": null,
+     "decision_key": null,
+     "rationale": null,
+     "accepted_at": null,
+     "assignment_id": "as-tests",
+     "superseded": null,
+     "promotion_rejected": false,
+     "source": null,
+     "last_rejection": null,
+     "promotions": []
+    },
+    "wake": {
+     "state": "idle"
+    }
+   }
+  },
+  "/integrations": {
+   "status": 200,
+   "body": {
+    "integrations": []
+   }
+  },
+  "/delegations": {
+   "status": 200,
+   "body": {
+    "delegations": []
+   }
+  },
+  "/dependencies": {
+   "status": 200,
+   "body": {
+    "dependencies": []
+   }
+  },
+  "/dependents": {
+   "status": 200,
+   "body": {
+    "dependents": []
+   }
+  },
+  "/control-operations": {
+   "status": 200,
+   "body": {
+    "operations": []
+   }
+  },
+  "impact:pause": {
+   "status": 200,
+   "body": {
+    "target_task_id": "tests",
+    "action": "pause",
+    "affected_task_ids": [
+     "flaky",
+     "tests"
+    ],
+    "descendant_task_ids": [
+     "flaky"
+    ],
+    "external_dependent_task_ids": [],
+    "workers_to_stop": [],
+    "completed_descendants": [],
+    "canceled_descendants": [],
+    "blocked_task_ids": [],
+    "replanning_task_ids": []
+   }
+  },
+  "impact:cancel": {
+   "status": 200,
+   "body": {
+    "target_task_id": "tests",
+    "action": "cancel",
+    "affected_task_ids": [
+     "flaky",
+     "tests"
+    ],
+    "descendant_task_ids": [
+     "flaky"
+    ],
+    "external_dependent_task_ids": [],
+    "workers_to_stop": [],
+    "completed_descendants": [],
+    "canceled_descendants": [],
+    "blocked_task_ids": [],
+    "replanning_task_ids": [
+     "release"
+    ]
+   }
+  }
+ },
+ "flaky": {
+  "task": {
+   "status": 200,
+   "body": {
+    "task_id": "flaky",
+    "title": "Investigate the flaky test",
+    "description": "Synthetic text description",
+    "status": "pending",
+    "created_at": "2026-01-01T00:00:21.000Z",
+    "updated_at": "2026-01-01T00:00:21.000Z",
+    "parent_task_id": "tests",
+    "project_id": "p1",
+    "control_intent": "active",
+    "resume_status": null,
+    "block_resume_status": null,
+    "stop_required": 0,
+    "legacy_pause": 0,
+    "stop_reason": null,
+    "orchestration_handoff": null,
+    "replan_transitions": [],
+    "promotions": [],
+    "promotion_decisions": [],
+    "active_blockers": [],
+    "replanning_reasons": [],
+    "replanning_required": false,
+    "resource_claims_pending": false,
+    "current_assignment": null
+   }
+  },
+  "/assignments": {
+   "status": 200,
+   "body": {
+    "assignments": []
+   }
+  },
+  "/orchestration": {
+   "status": 200,
+   "body": {
+    "task_id": "flaky",
+    "continuation": null,
+    "materializations": [],
+    "decision": {
+     "state": "not_authorized",
+     "revision": null,
+     "decision_key": null,
+     "rationale": null,
+     "accepted_at": null,
+     "assignment_id": null,
+     "superseded": null,
+     "promotion_rejected": false,
+     "source": null,
+     "last_rejection": null,
+     "promotions": []
+    },
+    "wake": {
+     "state": "idle"
+    }
+   }
+  },
+  "/integrations": {
+   "status": 200,
+   "body": {
+    "integrations": []
+   }
+  },
+  "/delegations": {
+   "status": 200,
+   "body": {
+    "delegations": []
+   }
+  },
+  "/dependencies": {
+   "status": 200,
+   "body": {
+    "dependencies": []
+   }
+  },
+  "/dependents": {
+   "status": 200,
+   "body": {
+    "dependents": []
+   }
+  },
+  "/control-operations": {
+   "status": 200,
+   "body": {
+    "operations": []
+   }
+  },
+  "impact:pause": {
+   "status": 200,
+   "body": {
+    "target_task_id": "flaky",
+    "action": "pause",
+    "affected_task_ids": [
+     "flaky"
+    ],
+    "descendant_task_ids": [],
+    "external_dependent_task_ids": [],
+    "workers_to_stop": [],
+    "completed_descendants": [],
+    "canceled_descendants": [],
+    "blocked_task_ids": [],
+    "replanning_task_ids": []
+   }
+  },
+  "impact:cancel": {
+   "status": 200,
+   "body": {
+    "target_task_id": "flaky",
+    "action": "cancel",
+    "affected_task_ids": [
+     "flaky"
+    ],
+    "descendant_task_ids": [],
+    "external_dependent_task_ids": [],
+    "workers_to_stop": [],
+    "completed_descendants": [],
+    "canceled_descendants": [],
+    "blocked_task_ids": [],
+    "replanning_task_ids": [
+     "release",
+     "tests"
+    ]
+   }
+  }
+ },
+ "solo": {
+  "task": {
+   "status": 200,
+   "body": {
+    "task_id": "solo",
+    "title": "Rename the settings page",
+    "description": "Synthetic text description",
+    "status": "completed",
+    "created_at": "2026-01-01T00:00:26.000Z",
+    "updated_at": "2026-01-01T00:00:26.000Z",
+    "parent_task_id": null,
+    "project_id": "p1",
+    "control_intent": "active",
+    "resume_status": null,
+    "block_resume_status": null,
+    "stop_required": 0,
+    "legacy_pause": 0,
+    "stop_reason": null,
+    "orchestration_handoff": null,
+    "replan_transitions": [],
+    "promotions": [],
+    "promotion_decisions": [],
+    "active_blockers": [],
+    "replanning_reasons": [],
+    "replanning_required": false,
+    "resource_claims_pending": false,
+    "current_assignment": null
+   }
+  },
+  "/assignments": {
+   "status": 200,
+   "body": {
+    "assignments": [
+     {
+      "assignment_id": "as-solo",
+      "task_id": "solo",
+      "agent_id": "solo-agent",
+      "assigned_at": "2026-01-01T00:00:27.000Z",
+      "ended_at": "2026-01-01T00:00:28.000Z",
+      "ended_reason": "completed"
+     }
+    ]
+   }
+  },
+  "/orchestration": {
+   "status": 200,
+   "body": {
+    "task_id": "solo",
+    "continuation": null,
+    "materializations": [],
+    "decision": {
+     "state": "not_authorized",
+     "revision": null,
+     "decision_key": null,
+     "rationale": null,
+     "accepted_at": null,
+     "assignment_id": "as-solo",
+     "superseded": null,
+     "promotion_rejected": false,
+     "source": null,
+     "last_rejection": null,
+     "promotions": []
+    },
+    "wake": {
+     "state": "idle"
+    }
+   }
+  },
+  "/integrations": {
+   "status": 200,
+   "body": {
+    "integrations": [
+     {
+      "integration_id": "i-solo",
+      "source_task_id": "solo",
+      "destination_kind": "project",
+      "destination_id": "p1",
+      "destination_key": "project:p1",
+      "base_snapshot": "b",
+      "source_snapshot": "s",
+      "destination_before_snapshot": "d",
+      "result_snapshot": null,
+      "status": "applied",
+      "conflict_paths": [
+       "Synthetic text/conflict.py"
+      ],
+      "changed_paths": [
+       "Synthetic text/changed.py"
+      ],
+      "changed_paths_remaining": 0,
+      "conflict_paths_remaining": 0,
+      "validation_status": "not_run",
+      "failure_reason": "Synthetic text",
+      "created_at": "2026-01-01T00:00:29.000Z",
+      "updated_at": "generated-timestamp",
+      "applied_at": "2026-01-01T00:00:30.000Z"
+     }
+    ]
+   }
+  },
+  "/delegations": {
+   "status": 200,
+   "body": {
+    "delegations": []
+   }
+  },
+  "/dependencies": {
+   "status": 200,
+   "body": {
+    "dependencies": []
+   }
+  },
+  "/dependents": {
+   "status": 200,
+   "body": {
+    "dependents": []
+   }
+  },
+  "/control-operations": {
+   "status": 200,
+   "body": {
+    "operations": []
+   }
+  },
+  "impact:pause": {
+   "status": 409,
+   "body": {
+    "detail": "Terminal work cannot be controlled"
+   }
+  },
+  "impact:cancel": {
+   "status": 409,
+   "body": {
+    "detail": "Terminal work cannot be controlled"
+   }
+  }
+ },
+ "orphaned-work": {
+  "task": {
+   "status": 200,
+   "body": {
+    "task_id": "orphaned-work",
+    "title": "Migrate the database",
+    "description": "Synthetic text description",
+    "status": "in_progress",
+    "created_at": "2026-01-01T00:00:31.000Z",
+    "updated_at": "2026-01-01T00:00:31.000Z",
+    "parent_task_id": null,
+    "project_id": "p1",
+    "control_intent": "active",
+    "resume_status": null,
+    "block_resume_status": null,
+    "stop_required": 0,
+    "legacy_pause": 0,
+    "stop_reason": null,
+    "orchestration_handoff": null,
+    "replan_transitions": [],
+    "promotions": [],
+    "promotion_decisions": [],
+    "active_blockers": [],
+    "replanning_reasons": [],
+    "replanning_required": false,
+    "resource_claims_pending": false,
+    "current_assignment": null
+   }
+  },
+  "/assignments": {
+   "status": 200,
+   "body": {
+    "assignments": [
+     {
+      "assignment_id": "as-gone",
+      "task_id": "orphaned-work",
+      "agent_id": "gone",
+      "assigned_at": "2026-01-01T00:00:33.000Z",
+      "ended_at": "2026-01-01T00:00:34.000Z",
+      "ended_reason": "removed"
+     }
+    ]
+   }
+  },
+  "/orchestration": {
+   "status": 200,
+   "body": {
+    "task_id": "orphaned-work",
+    "continuation": null,
+    "materializations": [],
+    "decision": {
+     "state": "not_authorized",
+     "revision": null,
+     "decision_key": null,
+     "rationale": null,
+     "accepted_at": null,
+     "assignment_id": "as-gone",
+     "superseded": null,
+     "promotion_rejected": false,
+     "source": null,
+     "last_rejection": null,
+     "promotions": []
+    },
+    "wake": {
+     "state": "idle"
+    }
+   }
+  },
+  "/integrations": {
+   "status": 200,
+   "body": {
+    "integrations": []
+   }
+  },
+  "/delegations": {
+   "status": 200,
+   "body": {
+    "delegations": []
+   }
+  },
+  "/dependencies": {
+   "status": 200,
+   "body": {
+    "dependencies": []
+   }
+  },
+  "/dependents": {
+   "status": 200,
+   "body": {
+    "dependents": []
+   }
+  },
+  "/control-operations": {
+   "status": 200,
+   "body": {
+    "operations": []
+   }
+  },
+  "impact:pause": {
+   "status": 200,
+   "body": {
+    "target_task_id": "orphaned-work",
+    "action": "pause",
+    "affected_task_ids": [
+     "orphaned-work"
+    ],
+    "descendant_task_ids": [],
+    "external_dependent_task_ids": [],
+    "workers_to_stop": [],
+    "completed_descendants": [],
+    "canceled_descendants": [],
+    "blocked_task_ids": [],
+    "replanning_task_ids": []
+   }
+  },
+  "impact:cancel": {
+   "status": 200,
+   "body": {
+    "target_task_id": "orphaned-work",
+    "action": "cancel",
+    "affected_task_ids": [
+     "orphaned-work"
+    ],
+    "descendant_task_ids": [],
+    "external_dependent_task_ids": [],
+    "workers_to_stop": [],
+    "completed_descendants": [],
+    "canceled_descendants": [],
+    "blocked_task_ids": [],
+    "replanning_task_ids": []
+   }
+  }
+ },
+ "paused": {
+  "task": {
+   "status": 200,
+   "body": {
+    "task_id": "paused",
+    "title": "Refactor the parser",
+    "description": "Synthetic text description",
+    "status": "paused",
+    "created_at": "2026-01-01T00:00:37.000Z",
+    "updated_at": "2026-01-01T00:00:37.000Z",
+    "parent_task_id": null,
+    "project_id": "p1",
+    "control_intent": "paused",
+    "resume_status": null,
+    "block_resume_status": null,
+    "stop_required": 0,
+    "legacy_pause": 0,
+    "stop_reason": null,
+    "orchestration_handoff": null,
+    "replan_transitions": [],
+    "promotions": [],
+    "promotion_decisions": [],
+    "active_blockers": [],
+    "replanning_reasons": [],
+    "replanning_required": false,
+    "resource_claims_pending": false,
+    "current_assignment": null
+   }
+  },
+  "/assignments": {
+   "status": 200,
+   "body": {
+    "assignments": [
+     {
+      "assignment_id": "as-paused",
+      "task_id": "paused",
+      "agent_id": "paused-agent",
+      "assigned_at": "2026-01-01T00:00:38.000Z",
+      "ended_at": "2026-01-01T00:00:39.000Z",
+      "ended_reason": "paused"
+     }
+    ]
+   }
+  },
+  "/orchestration": {
+   "status": 200,
+   "body": {
+    "task_id": "paused",
+    "continuation": null,
+    "materializations": [],
+    "decision": {
+     "state": "not_authorized",
+     "revision": null,
+     "decision_key": null,
+     "rationale": null,
+     "accepted_at": null,
+     "assignment_id": "as-paused",
+     "superseded": null,
+     "promotion_rejected": false,
+     "source": null,
+     "last_rejection": null,
+     "promotions": []
+    },
+    "wake": {
+     "state": "idle"
+    }
+   }
+  },
+  "/integrations": {
+   "status": 200,
+   "body": {
+    "integrations": []
+   }
+  },
+  "/delegations": {
+   "status": 200,
+   "body": {
+    "delegations": []
+   }
+  },
+  "/dependencies": {
+   "status": 200,
+   "body": {
+    "dependencies": []
+   }
+  },
+  "/dependents": {
+   "status": 200,
+   "body": {
+    "dependents": []
+   }
+  },
+  "/control-operations": {
+   "status": 200,
+   "body": {
+    "operations": []
+   }
+  },
+  "impact:pause": {
+   "status": 200,
+   "body": {
+    "target_task_id": "paused",
+    "action": "pause",
+    "affected_task_ids": [
+     "paused"
+    ],
+    "descendant_task_ids": [],
+    "external_dependent_task_ids": [],
+    "workers_to_stop": [],
+    "completed_descendants": [],
+    "canceled_descendants": [],
+    "blocked_task_ids": [],
+    "replanning_task_ids": []
+   }
+  },
+  "impact:cancel": {
+   "status": 200,
+   "body": {
+    "target_task_id": "paused",
+    "action": "cancel",
+    "affected_task_ids": [
+     "paused"
+    ],
+    "descendant_task_ids": [],
+    "external_dependent_task_ids": [],
+    "workers_to_stop": [],
+    "completed_descendants": [],
+    "canceled_descendants": [],
+    "blocked_task_ids": [],
+    "replanning_task_ids": []
+   }
+  }
+ },
+ "blocked": {
+  "task": {
+   "status": 200,
+   "body": {
+    "task_id": "blocked",
+    "title": "Deploy the preview",
+    "description": "Synthetic text description",
+    "status": "blocked",
+    "created_at": "2026-01-01T00:00:40.000Z",
+    "updated_at": "2026-01-01T00:00:40.000Z",
+    "parent_task_id": null,
+    "project_id": "p1",
+    "control_intent": "active",
+    "resume_status": null,
+    "block_resume_status": null,
+    "stop_required": 0,
+    "legacy_pause": 0,
+    "stop_reason": null,
+    "orchestration_handoff": null,
+    "replan_transitions": [],
+    "promotions": [],
+    "promotion_decisions": [],
+    "active_blockers": [
+     {
+      "id": "b-blocked-resource_conflict",
+      "task_id": "blocked",
+      "blocker_type": "coordination",
+      "source_task_id": null,
+      "reason_code": "resource_conflict",
+      "active": 1,
+      "created_at": "2026-01-01T00:00:42.000Z",
+      "resolved_at": null,
+      "hard": 1,
+      "source_type": null,
+      "source_id": null,
+      "waiting_claim_id": null,
+      "owning_claim_id": null,
+      "deadlock_id": null,
+      "edge_kind": null,
+      "waiting_intent_id": null,
+      "owning_intent_id": null
+     }
+    ],
+    "replanning_reasons": [],
+    "replanning_required": false,
+    "resource_claims_pending": false,
+    "current_assignment": {
+     "assignment_id": "as-blocked",
+     "agent_id": "blocked-agent",
+     "agent_display_name": "Blocked",
+     "agent_display_color": "blue",
+     "agent_status": "waiting"
+    }
+   }
+  },
+  "/assignments": {
+   "status": 200,
+   "body": {
+    "assignments": [
+     {
+      "assignment_id": "as-blocked",
+      "task_id": "blocked",
+      "agent_id": "blocked-agent",
+      "assigned_at": "2026-01-01T00:00:41.000Z",
+      "ended_at": null,
+      "ended_reason": null
+     }
+    ]
+   }
+  },
+  "/orchestration": {
+   "status": 200,
+   "body": {
+    "task_id": "blocked",
+    "continuation": null,
+    "materializations": [],
+    "decision": {
+     "state": "not_authorized",
+     "revision": null,
+     "decision_key": null,
+     "rationale": null,
+     "accepted_at": null,
+     "assignment_id": "as-blocked",
+     "superseded": null,
+     "promotion_rejected": false,
+     "source": null,
+     "last_rejection": null,
+     "promotions": []
+    },
+    "wake": {
+     "state": "idle"
+    }
+   }
+  },
+  "/integrations": {
+   "status": 200,
+   "body": {
+    "integrations": []
+   }
+  },
+  "/delegations": {
+   "status": 200,
+   "body": {
+    "delegations": []
+   }
+  },
+  "/dependencies": {
+   "status": 200,
+   "body": {
+    "dependencies": []
+   }
+  },
+  "/dependents": {
+   "status": 200,
+   "body": {
+    "dependents": []
+   }
+  },
+  "/control-operations": {
+   "status": 200,
+   "body": {
+    "operations": []
+   }
+  },
+  "impact:pause": {
+   "status": 200,
+   "body": {
+    "target_task_id": "blocked",
+    "action": "pause",
+    "affected_task_ids": [
+     "blocked"
+    ],
+    "descendant_task_ids": [],
+    "external_dependent_task_ids": [],
+    "workers_to_stop": [],
+    "completed_descendants": [],
+    "canceled_descendants": [],
+    "blocked_task_ids": [],
+    "replanning_task_ids": []
+   }
+  },
+  "impact:cancel": {
+   "status": 200,
+   "body": {
+    "target_task_id": "blocked",
+    "action": "cancel",
+    "affected_task_ids": [
+     "blocked"
+    ],
+    "descendant_task_ids": [],
+    "external_dependent_task_ids": [],
+    "workers_to_stop": [],
+    "completed_descendants": [],
+    "canceled_descendants": [],
+    "blocked_task_ids": [],
+    "replanning_task_ids": []
+   }
+  }
+ },
+ "limited": {
+  "task": {
+   "status": 200,
+   "body": {
+    "task_id": "limited",
+    "title": "Summarize the logs",
+    "description": "Synthetic text description",
+    "status": "waiting",
+    "created_at": "2026-01-01T00:00:35.000Z",
+    "updated_at": "2026-01-01T00:00:35.000Z",
+    "parent_task_id": null,
+    "project_id": "p1",
+    "control_intent": "active",
+    "resume_status": null,
+    "block_resume_status": null,
+    "stop_required": 0,
+    "legacy_pause": 0,
+    "stop_reason": null,
+    "orchestration_handoff": null,
+    "replan_transitions": [],
+    "promotions": [],
+    "promotion_decisions": [],
+    "active_blockers": [],
+    "replanning_reasons": [],
+    "replanning_required": false,
+    "resource_claims_pending": false,
+    "current_assignment": {
+     "assignment_id": "as-limited",
+     "agent_id": "limited-agent",
+     "agent_display_name": "Limited",
+     "agent_display_color": "blue",
+     "agent_status": "waiting"
+    }
+   }
+  },
+  "/assignments": {
+   "status": 200,
+   "body": {
+    "assignments": [
+     {
+      "assignment_id": "as-limited",
+      "task_id": "limited",
+      "agent_id": "limited-agent",
+      "assigned_at": "2026-01-01T00:00:36.000Z",
+      "ended_at": null,
+      "ended_reason": null
+     }
+    ]
+   }
+  },
+  "/orchestration": {
+   "status": 200,
+   "body": {
+    "task_id": "limited",
+    "continuation": null,
+    "materializations": [],
+    "decision": {
+     "state": "not_authorized",
+     "revision": null,
+     "decision_key": null,
+     "rationale": null,
+     "accepted_at": null,
+     "assignment_id": "as-limited",
+     "superseded": null,
+     "promotion_rejected": false,
+     "source": null,
+     "last_rejection": null,
+     "promotions": []
+    },
+    "wake": {
+     "state": "idle"
+    }
+   }
+  },
+  "/integrations": {
+   "status": 200,
+   "body": {
+    "integrations": []
+   }
+  },
+  "/delegations": {
+   "status": 200,
+   "body": {
+    "delegations": []
+   }
+  },
+  "/dependencies": {
+   "status": 200,
+   "body": {
+    "dependencies": []
+   }
+  },
+  "/dependents": {
+   "status": 200,
+   "body": {
+    "dependents": []
+   }
+  },
+  "/control-operations": {
+   "status": 200,
+   "body": {
+    "operations": []
+   }
+  },
+  "impact:pause": {
+   "status": 200,
+   "body": {
+    "target_task_id": "limited",
+    "action": "pause",
+    "affected_task_ids": [
+     "limited"
+    ],
+    "descendant_task_ids": [],
+    "external_dependent_task_ids": [],
+    "workers_to_stop": [],
+    "completed_descendants": [],
+    "canceled_descendants": [],
+    "blocked_task_ids": [],
+    "replanning_task_ids": []
+   }
+  },
+  "impact:cancel": {
+   "status": 200,
+   "body": {
+    "target_task_id": "limited",
+    "action": "cancel",
+    "affected_task_ids": [
+     "limited"
+    ],
+    "descendant_task_ids": [],
+    "external_dependent_task_ids": [],
+    "workers_to_stop": [],
+    "completed_descendants": [],
+    "canceled_descendants": [],
+    "blocked_task_ids": [],
+    "replanning_task_ids": []
+   }
+  }
+ }
+}

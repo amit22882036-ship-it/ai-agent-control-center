@@ -1,0 +1,87 @@
+/* Atlas M7: the Task page. State rules use at least three class-level selectors so the classic
+   stylesheet's global element rules can never override them. */
+.atlas .a-taskpage { padding-bottom: 48px; }
+.atlas .a-taskpage .a-tcrumbs { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; font-size: 13px; color: var(--a-text-3); }
+.atlas .a-taskpage .a-tcrumbs .a-link { color: var(--a-text-2); text-decoration: none; display: inline-flex; align-items: center; gap: 4px; }
+.atlas .a-taskpage .a-tcrumbs .a-link:hover { color: var(--a-text); text-decoration: underline; }
+.atlas .a-taskpage .a-crumb { display: inline-flex; align-items: center; gap: 6px; min-width: 0; }
+.atlas .a-taskpage .a-thead { display: flex; align-items: flex-start; gap: 16px; flex-wrap: wrap; }
+.atlas .a-taskpage .a-thead-main { flex: 1; min-width: 280px; }
+.atlas .a-taskpage .a-thead .a-title { overflow-wrap: anywhere; }
+.atlas .a-taskpage .a-tmeta { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 16px; margin-top: 6px; font-size: 13.5px; color: var(--a-text-3); }
+.atlas .a-taskpage .a-tmeta > span { display: inline-flex; align-items: center; gap: 6px; min-width: 0; }
+.atlas .a-taskpage .a-thead-acts { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding-top: 6px; }
+.atlas .a-taskpage .a-tbanner { display: flex; align-items: center; gap: 10px; margin: 16px 0 12px; padding: 12px 14px; border-radius: 14px;
+  background: var(--a-surface); border: 1px solid var(--a-line); font-size: 14px; }
+.atlas .a-taskpage .a-tbanner.a-tone-ask { background: var(--a-ask-soft); border-color: var(--a-ask-line); }
+.atlas .a-taskpage .a-tbanner.a-tone-alert { background: var(--a-fail-soft); border-color: color-mix(in srgb, var(--a-fail) 35%, var(--a-line)); }
+.atlas .a-taskpage .a-tbanner.a-tone-work { background: color-mix(in srgb, var(--a-work) 7%, var(--a-surface)); }
+.atlas .a-taskpage .a-result { margin-bottom: 12px; }
+
+.atlas .a-taskpage .a-tgrid { display: grid; grid-template-columns: minmax(0, 1.75fr) minmax(300px, 1fr); gap: 16px; align-items: start; margin-top: 12px; }
+.atlas .a-taskpage .a-tmain, .atlas .a-taskpage .a-tside { display: grid; gap: 16px; min-width: 0; }
+.atlas .a-taskpage .a-tsec .a-card-body { display: grid; gap: 10px; }
+.atlas .a-taskpage .a-tsec .a-card-head .a-fine { font-size: 12.5px; }
+.atlas .a-taskpage .a-prose { font-size: 14.5px; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; }
+.atlas .a-taskpage .a-tstate { font-weight: 700; font-size: 15px; }
+.atlas .a-taskpage .a-tstate.a-tone-ask { color: var(--a-ask); }
+.atlas .a-taskpage .a-tstate.a-tone-alert, .atlas .a-taskpage .a-fine.a-tone-alert { color: var(--a-fail); }
+.atlas .a-taskpage .a-tstate.a-tone-work { color: var(--a-work); }
+.atlas .a-taskpage .a-tstate .a-muted { color: var(--a-text-3); font-weight: 500; }
+.atlas .a-taskpage .a-tblock { display: grid; gap: 6px; padding-top: 10px; border-top: 1px solid var(--a-line-3); }
+.atlas .a-taskpage .a-tblock h3, .atlas .a-taskpage .a-tsub { font-size: 11.5px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--a-text-3);
+  display: flex; align-items: center; gap: 8px; margin: 0; }
+.atlas .a-taskpage .a-tblock h3 .a-h3-aside { text-transform: none; letter-spacing: 0; font-weight: 500; }
+.atlas .a-taskpage .a-tsub { margin-top: 8px; }
+.atlas .a-taskpage .a-tlist { list-style: none; padding: 0; margin: 0; display: grid; gap: 6px; }
+.atlas .a-taskpage .a-tlist li { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; font-size: 13.5px; line-height: 1.45; }
+.atlas .a-taskpage .a-tlist li > .a-icon { flex: none; transform: translateY(2px); color: var(--a-text-3); }
+.atlas .a-taskpage .a-quote { margin: 0; padding: 10px 12px; border-left: 3px solid var(--a-line-2); background: var(--a-sunken); border-radius: 0 10px 10px 0;
+  font-size: 13.5px; line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--a-text-2); }
+.atlas .a-taskpage .a-quote .a-quote-by { display: block; font-size: 11.5px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--a-text-3);
+  margin-bottom: 4px; white-space: normal; }
+
+/* Result: five separate statements */
+.atlas .a-taskpage .a-rrow { display: grid; grid-template-columns: 190px minmax(0, 1fr); gap: 12px; padding: 10px 0; border-top: 1px solid var(--a-line-3); }
+.atlas .a-taskpage .a-rrow:first-child { border-top: 0; padding-top: 0; }
+.atlas .a-taskpage .a-rrow .a-rrow-k { font-size: 12px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--a-text-3); padding-top: 2px; }
+.atlas .a-taskpage .a-rrow .a-rrow-v { display: grid; gap: 6px; min-width: 0; font-size: 13.5px; }
+.atlas .a-taskpage .a-integ.is-attention b { color: var(--a-fail); }
+.atlas .a-taskpage .a-paths { list-style: none; padding: 0; margin: 0; display: grid; gap: 3px; font-size: 12.5px; max-height: 220px; overflow: auto; }
+.atlas .a-taskpage .a-apply-note { display: flex; gap: 6px; align-items: flex-start; }
+.atlas .a-taskpage .a-apply-note .a-icon { flex: none; margin-top: 2px; }
+
+/* Responsible agent and history */
+.atlas .a-taskpage .a-tagent { display: flex; align-items: center; gap: 12px; }
+.atlas .a-taskpage .a-tagent-main { min-width: 0; display: grid; gap: 2px; }
+.atlas .a-taskpage .a-tagent-main b { font-size: 15px; overflow-wrap: anywhere; }
+.atlas .a-taskpage .a-tagent-main small { color: var(--a-text-3); font-size: 12.5px; }
+.atlas .a-taskpage .a-tsec .a-dep { margin-right: 8px; }
+
+/* The team, as a List or a Map */
+.atlas .a-taskpage .a-tteam { margin-top: 16px; }
+.atlas .a-taskpage .a-tteam .a-team-body { position: relative; height: 460px; border-radius: 12px; overflow: hidden; border: 1px solid var(--a-line-3); }
+.atlas .a-taskpage .a-tteam .a-team-body .a-outline { background: var(--a-bg); padding-top: 4px; }
+.atlas .a-taskpage .a-tteam .a-team-pick { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 10px 12px; border-radius: 12px;
+  background: var(--a-sunken); border: 1px solid var(--a-line-3); }
+.atlas .a-taskpage .a-tteam .a-team-pick-main { flex: 1; min-width: 200px; display: grid; gap: 2px; }
+.atlas .a-taskpage .a-tteam .a-team-pick-main small { color: var(--a-text-3); font-size: 12.5px; }
+.atlas .a-taskpage .a-tteam .a-lens.a-seg .a-seg-item[aria-checked="true"] { background: var(--a-ink); color: var(--a-on-ink); box-shadow: none; }
+
+/* The lifecycle dialog's impact preview */
+.atlas .a-impact { display: grid; gap: 8px; }
+.atlas .a-impact .a-impact-lines { margin: 0; padding-left: 18px; display: grid; gap: 4px; font-size: 14px; }
+.atlas .a-impact .a-impact-list { margin: 0; padding-left: 18px; display: grid; gap: 3px; font-size: 13px; max-height: 180px; overflow: auto; }
+
+@media (max-width: 1180px) {
+  .atlas .a-taskpage .a-tgrid { grid-template-columns: minmax(0, 1.5fr) minmax(280px, 1fr); }
+  .atlas .a-taskpage .a-rrow { grid-template-columns: 150px minmax(0, 1fr); }
+}
+@media (max-width: 1040px) {
+  .atlas .a-taskpage .a-tgrid { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* Work details: each helper can be selected or opened on its own page */
+.atlas .a-kids .a-kid-row { display: flex; align-items: center; gap: 2px; }
+.atlas .a-kids .a-kid-row .a-kid { flex: 1; min-width: 0; }
+.atlas .a-impact-head { font-weight: 700; font-size: 13.5px; margin: 4px 0 0; }

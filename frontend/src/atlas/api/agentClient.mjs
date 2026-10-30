@@ -55,6 +55,11 @@ export const agentActions = {
   startChild: (parentId, payload, options) => send('POST', `${agent(parentId)}/children/start`, payload, options),
   startTaskAgent: (taskId, payload, options) => send('POST', `${task(taskId)}/start-agent`, payload, options),
   registerProject: (name, rootPath, options) => send('POST', '/projects', { name, root_path: rootPath }, options),
+  // Task lifecycle (M7). Pause and Cancel are previewed first with the read-only control-impact.
+  controlImpact: (taskId, action, options) => send('POST', `${task(taskId)}/control-impact`, { action }, options),
+  pauseTask: (taskId, options) => send('POST', `${task(taskId)}/pause`, undefined, options),
+  resumeTask: (taskId, options) => send('POST', `${task(taskId)}/resume`, undefined, options),
+  cancelTask: (taskId, options) => send('POST', `${task(taskId)}/cancel`, undefined, options),
   // Process ownership.
   refreshDiagnostics: (executionId, options) => send('POST', `/executions/${encode(executionId)}/diagnostics`, undefined, options),
   attest: (executionId, body, options) => send('POST', `/executions/${encode(executionId)}/attestation`, body, options),
