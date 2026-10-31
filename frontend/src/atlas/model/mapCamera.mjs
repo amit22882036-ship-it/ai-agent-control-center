@@ -49,15 +49,33 @@ export function centreOn(camera, box, view) {
   return { k, x: view.l + view.w / 2 - ((box.minX + box.maxX) / 2) * k, y: view.h / 2 - ((box.minY + box.maxY) / 2) * k }
 }
 
-// Moves only when the box is (partly) outside the view; otherwise returns the same camera.
-export function ensureVisible(camera, box, view, margin = 24) {
+// Moves only when the box is (partly) outside the view; otherwise returns the same camera. It
+// moves only along the axis that needs it, centring the box there, so a box hidden by the side
+// list does not also jump vertically. With `bounds` (the whole graph), the move never opens empty
+// space before the graph's top or left edge, nor after its bottom or right edge when the graph is
+// larger than the view.
+export function ensureVisible(camera, box, view, margin = 24, bounds = null) {
   if (!camera) return null
-  const left = camera.x + box.minX * camera.k
-  const right = camera.x + box.maxX * camera.k
-  const top = camera.y + box.minY * camera.k
-  const bottom = camera.y + box.maxY * camera.k
-  const inside = left >= view.l + margin && right <= view.l + view.w - margin && top >= margin && bottom <= view.h - margin
-  return inside ? camera : centreOn(camera, box, view)
+  const { k } = camera
+  const left = camera.x + box.minX * k
+  const right = camera.x + box.maxX * k
+  const top = camera.y + box.minY * k
+  const bottom = camera.y + box.maxY * k
+  const outX = left < view.l + margin || right > view.l + view.w - margin
+  const outY = top < margin || bottom > view.h - margin
+  if (!outX && !outY) return camera
+  const centred = centreOn(camera, box, view)
+  let x = outX ? centred.x : camera.x
+  let y = outY ? centred.y : camera.y
+  if (bounds && outX) {
+    if ((bounds.maxX - bounds.minX) * k > view.w - 2 * PAD.x) x = Math.max(x, view.l + view.w - PAD.x - bounds.maxX * k)
+    x = Math.min(x, view.l + PAD.x - bounds.minX * k)
+  }
+  if (bounds && outY) {
+    if ((bounds.maxY - bounds.minY) * k > view.h - PAD.top - PAD.bottom) y = Math.max(y, view.h - PAD.bottom - bounds.maxY * k)
+    y = Math.min(y, PAD.top - bounds.minY * k)
+  }
+  return { k, x, y }
 }
 
 // The world rectangle the view shows, grown by `margin` screen pixels (for drawing only what is near).

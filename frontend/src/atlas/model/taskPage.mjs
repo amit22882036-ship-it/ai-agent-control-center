@@ -205,7 +205,8 @@ export function impactView(impact, store) {
   const lines = []
   const affected = impact.affected_task_ids || []
   lines.push(`${affected.length} task${affected.length === 1 ? '' : 's'} will be ${verb}: this one${affected.length > 1 ? ` and ${affected.length - 1} below it` : ''}.`)
-  if (workers.length) lines.push(`${workers.length} running agent${workers.length === 1 ? '' : 's'} will be stopped.`)
+  // The backend allows this for work that isn't running; say so rather than imply an agent stops.
+  lines.push(workers.length ? `${workers.length} running agent${workers.length === 1 ? '' : 's'} will be stopped.` : 'No agent is running here now, so none is stopped.')
   if ((impact.completed_descendants || []).length) lines.push(`${impact.completed_descendants.length} finished task${impact.completed_descendants.length === 1 ? ' stays' : 's stay'} as ${impact.completed_descendants.length === 1 ? 'it is' : 'they are'}.`)
   if ((impact.external_dependent_task_ids || []).length) lines.push(`${impact.external_dependent_task_ids.length} task${impact.external_dependent_task_ids.length === 1 ? '' : 's'} elsewhere that depend${impact.external_dependent_task_ids.length === 1 ? 's' : ''} on this work will be blocked.`)
   if ((impact.replanning_task_ids || []).length) lines.push(`${impact.replanning_task_ids.length} task${impact.replanning_task_ids.length === 1 ? '' : 's'} will be told to reconsider ${impact.replanning_task_ids.length === 1 ? 'its' : 'their'} plan.`)

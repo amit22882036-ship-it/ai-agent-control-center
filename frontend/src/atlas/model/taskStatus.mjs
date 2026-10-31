@@ -93,7 +93,9 @@ export function taskStatus(task, agents = { current: null, last: null }) {
   // Nobody holds the Task now.
   switch (task.lifecycle) {
     case 'blocked': return make('blocked', { certainty: task.blockers.length ? 'reported' : 'unknown' })
-    case 'pending': return make('pending')
+    // Not started, or returned to "not started" after its agent stopped (the backend's own state). A
+    // task that was worked on before says so, so it never reads as brand new.
+    case 'pending': return agents.last ? make('pending', { label: 'Not running', detail: 'Worked on before; nothing runs until an agent is started again' }) : make('pending')
     case 'waiting': return make('waiting', { certainty: 'unknown' })
     case 'in_progress': return make('stopped', { label: 'No agent working', detail: 'In progress without a current agent', certainty: 'unknown' })
     default: return make('unknown', { certainty: 'unknown' })

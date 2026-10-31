@@ -22,12 +22,28 @@ function Section({ id, title, aside, children, className }) {
 
 // What was asked. A root task's request is the person's; a helper's comes from its lead's
 // delegation (the agent's words) unless the person added the helper themselves.
+// A long text (a request, the lead's explanation of its plan, a helper's summary) starts folded to
+// its first lines; the whole text is always in the page (copying and screen readers get all of
+// it) and opens with one button. Nothing is cut or rewritten.
+const LONG_TEXT = { chars: 700, lines: 12 }
+function FoldedText({ id, text, noun, as: Tag = 'p', className = 'a-prose' }) {
+  const [open, setOpen] = useState(false)
+  const lines = text.split('\n').length
+  const long = text.length > LONG_TEXT.chars || lines > LONG_TEXT.lines
+  return <>
+    <Tag id={id} className={`${className} a-bidi${long && !open ? ' a-request-folded' : ''}`} dir="auto">{text}</Tag>
+    {long && <button type="button" className="a-link a-request-toggle" aria-expanded={open} aria-controls={id} onClick={() => setOpen((value) => !value)}>
+      {open ? 'Show less' : `Show the whole ${noun} (${lines} line${lines === 1 ? '' : 's'}, ${text.length.toLocaleString('en-US')} characters)`}</button>}
+  </>
+}
+const RequestText = ({ text }) => <FoldedText id="t-request-text" text={text} noun="request" />
+
 export function RequestCard({ task, detail }) {
   const text = detail.data?.description
   const byAgent = Boolean(task?.delegation)
   return <Section id="t-request" title="Request" aside={<span className="a-fine">{task?.parentId ? (byAgent ? 'Written by its lead (an agent)' : 'Written by you, as a helper task') : 'Written by you'}</span>}>
     {detail.loading && !detail.data ? <Skeleton lines={2} label="Loading the request" />
-      : text ? <p className="a-prose a-bidi" dir="auto">{clip(text, 6000)}</p>
+      : text ? <RequestText text={text} />
         : <p className="a-fine">{detail.error ? 'The request couldn’t be read right now.' : 'No request text was recorded.'}</p>}
   </Section>
 }
@@ -52,7 +68,8 @@ export function ProgressCard({ progress, activity, taskId, store, onOpenTask }) 
     {plan && <div className="a-tblock">
       <h3>Plan{progress.planRevision ? <span className="a-h3-aside">revision {progress.planRevision}</span> : null}</h3>
       <p>{plan.text}</p>
-      {plan.rationale && <blockquote className="a-quote a-bidi" dir="auto"><span className="a-quote-by">In the lead’s words (not checked by the Control Center)</span>{clip(plan.rationale, 1200)}</blockquote>}
+      {plan.rationale && <blockquote className="a-quote a-bidi" dir="auto"><span className="a-quote-by">In the lead’s words (not checked by the Control Center)</span>
+        <FoldedText id="t-plan-rationale" text={plan.rationale} noun="explanation" as="span" className="a-quote-text" /></blockquote>}
       {plan.items.length > 0 && <ul className="a-tlist">{plan.items.map((item) => <li key={`${item.id}-${item.revision}`}>
         <Icon name="layers" size={14} /><span>Planned part <span className="a-mono">{item.id}</span>: {item.text}{item.admission ? ` (admitted as: ${item.admission.toLowerCase()})` : ''}</span>
         {item.childTaskId && store.tasks[item.childTaskId] && <> · <button type="button" className="a-link" onClick={() => onOpenTask(item.childTaskId)}>Open its task</button></>}
@@ -106,7 +123,8 @@ export function ResultCard({ result }) {
   return <Section id="t-result" title="Result">
     {row('reported', 'Reported by the agent', <>
       <p>{result.reported.text}</p>
-      {result.reported.summary && <blockquote className="a-quote a-bidi" dir="auto"><span className="a-quote-by">The helper’s summary (its own words)</span>{clip(result.reported.summary, 1500)}</blockquote>}
+      {result.reported.summary && <blockquote className="a-quote a-bidi" dir="auto"><span className="a-quote-by">The helper’s summary (its own words)</span>
+        <FoldedText id="t-helper-summary" text={result.reported.summary} noun="summary" as="span" className="a-quote-text" /></blockquote>}
     </>)}
     {row('recorded', 'Recorded by the Control Center', <><p>{result.recorded.text}</p>{result.recorded.result && <p className="a-fine">{result.recorded.result}</p>}</>)}
     {row('verified', 'Independently verified', <p className="a-fine">{result.verified.text}</p>)}

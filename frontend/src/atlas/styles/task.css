@@ -85,3 +85,14 @@
 .atlas .a-kids .a-kid-row { display: flex; align-items: center; gap: 2px; }
 .atlas .a-kids .a-kid-row .a-kid { flex: 1; min-width: 0; }
 .atlas .a-impact-head { font-weight: 700; font-size: 13.5px; margin: 4px 0 0; }
+
+/* UAT pass 1: a long request, plan explanation or helper summary starts folded (the full text
+   stays in the page), and a row of links
+   jumps to the parts of the page. */
+.atlas .a-taskpage .a-quote .a-quote-text { display: block; }
+.atlas .a-taskpage .a-request-folded { max-height: 13.5em; overflow: hidden;
+  -webkit-mask-image: linear-gradient(180deg, #000 70%, transparent); mask-image: linear-gradient(180deg, #000 70%, transparent); }
+.atlas .a-taskpage .a-request-toggle { margin-top: 8px; font-size: 13.5px; font-weight: 600; }
+.atlas .a-taskpage .a-tjump { display: flex; flex-wrap: wrap; gap: 4px 16px; margin-top: 12px; font-size: 13.5px; }
+.atlas .a-taskpage .a-tjump .a-link { color: var(--a-text-2); }
+.atlas .a-taskpage .a-tjump .a-link:hover { color: var(--a-text); }

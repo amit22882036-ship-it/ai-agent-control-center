@@ -9,7 +9,7 @@ import { impactView, sameImpact } from '../../model/taskPage.mjs'
 const COPY = {
   pause: {
     title: 'Pause this task',
-    intro: 'Pausing stops the running agents of this task and the unfinished tasks below it. Nothing is lost: questions, sessions, workspaces and history are kept, and nothing runs again until you resume.',
+    intro: 'Pausing keeps this task and the unfinished tasks below it from being started, and stops any of their agents that are running. Nothing is lost: questions, sessions, workspaces and history are kept, and nothing runs again until you resume.',
     confirm: 'Pause', done: 'Paused. Nothing runs until it is resumed.', danger: false,
   },
   resume: {
@@ -19,7 +19,7 @@ const COPY = {
   },
   cancel: {
     title: 'Cancel this task',
-    intro: 'Canceling ends this task and the unfinished tasks below it. Their output, workspaces, sessions and history are kept, but the work can’t be resumed.',
+    intro: 'Canceling ends this task and the unfinished tasks below it, and stops any of their agents that are running. Their output, workspaces, sessions and history are kept, but the work can’t be resumed.',
     confirm: 'Cancel task', done: 'Canceled. Its output, workspaces and history are kept.', danger: true,
   },
 }

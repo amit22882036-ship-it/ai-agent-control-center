@@ -276,7 +276,7 @@ test('live updates refresh the map in place without moving the camera, and a los
   changed = true
   await announceChange(page)
   await expect(node(page, 'Handle quoted fields')).toHaveAccessibleName(/Working/)
-  // Its family moved from "Needs your attention" to "In progress", yet the selected task stays put on screen.
+  // Its family moved from "Needs your attention" to "Open", yet the selected task stays put on screen.
   await page.waitForTimeout(300)
   const after = await node(page, 'Handle quoted fields').boundingBox()
   expect(Math.abs(after.x - before.x)).toBeLessThan(1)

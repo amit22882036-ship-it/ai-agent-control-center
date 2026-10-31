@@ -13,6 +13,7 @@ import { INSPECTOR, readInspectorWidth, saveInspectorWidth } from '../layout.mjs
 import { KEY_GROUPS, KEY_NOTE, SETTINGS_SECTIONS, diagnosticsText, notificationView, settingsSection, supervisionView } from '../model/settings.mjs'
 import { attentionOf } from '../model/connections.mjs'
 import { deliveryView } from '../model/notify.mjs'
+import { Disclosure } from '../components/agent/fields'
 
 const THEMES = [['automatic', 'monitor', 'auto'], ['light', 'sun', 'light'], ['dark', 'moon', 'dark']]
 
@@ -101,6 +102,10 @@ export default function SettingsPage({ appearance, live, navigate, route, notifi
             <dt>When</dt><dd>When an agent needs your reply, and when an agent finishes.</dd>
             <dt>Browser permission</dt><dd>{notice.permission}</dd>
             <dt>How they arrive</dt><dd>{deliveryView(notifications, delivery).detail}</dd>
+          </dl>
+          {/* The rules behind it, for whoever wants them; the preference above is what matters. */}
+          <Disclosure summary="How notifications are coordinated" className="a-settings-more">
+          <dl className="a-kv a-settings-kv">
             <dt>One at a time</dt><dd>While this page shows them, it tells the backend so, and the backend holds back its Windows notification for
               the same event. Otherwise the backend may try a Windows notification; Windows settings and Focus assist decide whether it appears.
               In this browser, only one Control Center tab shows them, Atlas or Classic view, and only while it has every task loaded and current; otherwise the Windows notification is the fallback when available. Another browser or browser profile open at the same time is not coordinated with this one and can show the same event.</dd>
@@ -108,6 +113,7 @@ export default function SettingsPage({ appearance, live, navigate, route, notifi
             <dt>Also needed</dt><dd>{notice.prerequisite} Windows Focus assist (Do not disturb) can hide them.</dd>
             <dt>Shared</dt><dd>The same preference as Classic view’s bell in this browser. The backend keeps one setting for its Windows notifications: turning them on in any browser turns that on; turning them off here turns it off until a browser that has them on says so again.</dd>
           </dl>
+          </Disclosure>
         </Card>
         <Card className="a-section" id="atlas-settings-keyboard" titleId="atlas-settings-keyboard-h" title="Keyboard">
           {KEY_GROUPS.map(([group, keys]) => <div key={group} className="a-keygroup">

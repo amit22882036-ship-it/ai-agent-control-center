@@ -111,31 +111,57 @@ export function useTaskFeed(version, root = null) {
   return { ...current, loadMore, refresh }
 }
 
-// A read-only JSON resource that follows the shared connection. A response for an earlier URL or
-// an earlier version never replaces a newer one. A null `url` reads nothing. When a later read
-// fails for a temporary reason (unreachable or a server error), the last good data stays, marked
-// with the error; a refusal such as 404 clears it.
+// A read-only JSON resource that follows the shared connection. Reads of one URL never overlap:
+// a change reported while a read is under way does not cancel it (in a busy workspace changes can
+// arrive faster than a read answers, and cancelling would leave the data "loading" for ever); it
+// asks for one more read when this one ends, however many changes arrived meanwhile. Only a new
+// URL, or leaving the page, cancels a read. A null `url` reads nothing. When a later read fails
+// for a temporary reason (unreachable or a server error), the last good data stays, marked with
+// the error; a refusal such as 404 clears it.
 export function useLiveResource(url, version) {
   const [state, setState] = useState({ url: null, data: null, error: null, loading: false })
-  const latest = useRef(0)
+  // The read for the current URL: its controller, a pending start, and whether to read again.
+  const flight = useRef(null)
+  // A new URL (or leaving) cancels what the previous one was doing.
   useEffect(() => {
     if (!url) return undefined
-    const id = ++latest.current
-    const controller = new AbortController()
-    const timer = setTimeout(async () => {
+    const entry = { url, controller: null, timer: null, again: false }
+    flight.current = entry
+    return () => {
+      clearTimeout(entry.timer)
+      entry.controller?.abort()
+      if (flight.current === entry) flight.current = null
+    }
+  }, [url])
+  useEffect(() => {
+    const entry = flight.current
+    if (!url || !entry || entry.url !== url) return
+    // A read already waiting to start, or under way, covers this change (the latter reads again).
+    if (entry.timer !== null) return
+    if (entry.controller) { entry.again = true; return }
+    const start = async () => {
+      entry.timer = null
+      entry.again = false
+      entry.controller = new AbortController()
+      const { signal } = entry.controller
       setState((current) => (current.url === url ? { ...current, loading: true } : { url, data: null, error: null, loading: true }))
       try {
-        const response = await apiFetch(url, { signal: controller.signal, cache: 'no-store' })
+        const response = await apiFetch(url, { signal, cache: 'no-store' })
         const data = await response.json().catch(() => null)
-        if (id !== latest.current) return
+        if (signal.aborted) return
         setState((current) => (response.ok ? { url, data, error: null, loading: false }
           : { url, data: response.status >= 500 && current.url === url ? current.data : null, error: response.status, loading: false }))
       } catch (error) {
-        if (id !== latest.current || error?.name === 'AbortError') return
+        if (signal.aborted || error?.name === 'AbortError') return
         setState((current) => ({ ...current, url, error: 'unreachable', loading: false }))
+      } finally {
+        if (!signal.aborted) {
+          entry.controller = null
+          if (entry.again) entry.timer = setTimeout(start, 60)
+        }
       }
-    }, 60)
-    return () => { clearTimeout(timer); controller.abort() }
+    }
+    entry.timer = setTimeout(start, 60)
   }, [url, version])
   return state.url === url ? state : { url, data: null, error: null, loading: Boolean(url) }
 }

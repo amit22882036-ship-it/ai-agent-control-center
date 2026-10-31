@@ -140,6 +140,15 @@ export default function TaskPage({ live, route, navigate }) {
       <Icon name={outcome.tone === 'ok' ? 'check' : 'info'} size={15} /><div>{outcome.text}</div></div>}
     {stale && <Notice tone="warn" role="status" title="Showing the last information received">The backend isn’t answering right now; this page updates by itself when it returns.</Notice>}
     {who.agent && who.role === 'current' && history.length > 1 && <p className="a-fine">{history.length - 1} earlier agent{history.length === 2 ? '' : 's'} worked on this task; it is the same task.</p>}
+    {/* Quick ways to the parts that matter most, whatever the length of the request. */}
+    <nav className="a-tjump" aria-label="On this page">
+      {[['t-request', 'Request'], ['t-progress', 'How it’s going'], ['t-result', 'Result'], ['t-agent', 'Responsible agent'], ['t-team', 'Who’s on it']].map(([id, label]) =>
+        <button key={id} type="button" className="a-link" onClick={() => {
+          const heading = document.getElementById(id)
+          heading?.closest('section')?.scrollIntoView({ block: 'start', behavior: window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' })
+          if (heading) { heading.tabIndex = -1; heading.focus({ preventScroll: true }) }
+        }}>{label}</button>)}
+    </nav>
     <div className="a-tgrid">
       <div className="a-tmain">
         <RequestCard task={task} detail={detail} />

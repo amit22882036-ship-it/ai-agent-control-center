@@ -59,7 +59,7 @@ function Face({ who, size }) {
   return <Avatar name={who.name} color={who.agent.color} tool={who.agent.tool} size={size} removed={who.removed} decorative />
 }
 
-const MapNode = memo(function MapNode({ node, row, info, selected, tabbable, dim, onPick, onOpen, onFold }) {
+const MapNode = memo(function MapNode({ node, row, info, selected, tabbable, dim, historic, onPick, onOpen, onFold }) {
   const bead = info.status.bead
   const ring = selected ? 'sel' : RINGS[bead]
   const root = node.depth === 0
@@ -75,7 +75,7 @@ const MapNode = memo(function MapNode({ node, row, info, selected, tabbable, dim
     {row.expanded ? <Icon name="down" size={12} stroke={2.4} /> : <>+{info.hidden}</>}
   </button>
   if (node.kind === 'row') {
-    return <div {...common} className={`a-gr${selected ? ' is-selected' : ''}${dim ? ' is-dim' : ''}${info.status.tone === 'ask' ? ' a-gr--ask' : ''}`}
+    return <div {...common} className={`a-gr${selected ? ' is-selected' : ''}${dim ? ' is-dim' : ''}${historic ? ' is-historic' : ''}${info.status.tone === 'ask' ? ' a-gr--ask' : ''}`}
       style={{ left: node.x, top: node.y, width: node.w, height: node.h }}>
       <span className="a-gav">{ring && <span className={`a-ring a-ring--${ring}`} />}<Face who={info.who} size={30} />
         {BADGES.has(bead) && <span className="a-gbadge a-gbadge--sm"><StatusBead state={bead} size={13} decorative /></span>}</span>
@@ -85,7 +85,7 @@ const MapNode = memo(function MapNode({ node, row, info, selected, tabbable, dim
       {fold}
     </div>
   }
-  return <div {...common} className={`a-gn${root ? ' a-gn--root' : ''}${selected ? ' is-selected' : ''}${dim ? ' is-dim' : ''}`}
+  return <div {...common} className={`a-gn${root ? ' a-gn--root' : ''}${selected ? ' is-selected' : ''}${dim ? ' is-dim' : ''}${historic ? ' is-historic' : ''}`}
     style={{ left: node.x, top: node.y, width: node.w }}>
     <span className="a-gav">{ring && <span className={`a-ring a-ring--${ring}`} />}<Face who={info.who} size={root ? 54 : 44} />
       {BADGES.has(bead) && <span className="a-gbadge"><StatusBead state={bead} size={16} decorative /></span>}</span>
@@ -220,7 +220,7 @@ export default function TaskMap({ layout, view, store, derived, projectName, now
     if (lastSelected.current === selectedId) return
     lastSelected.current = selectedId
     if (!selectedId || !layout.nodes[selectedId] || !store2.camera()) return
-    const next = ensureVisible(store2.camera(), box(layout.nodes[selectedId]), viewRect(), 36)
+    const next = ensureVisible(store2.camera(), box(layout.nodes[selectedId]), viewRect(), 36, boxOf(layout))
     if (next !== store2.camera()) setCamera(next, { animated: true })
   }, [selectedId, layout, setCamera, viewRect, store2])
 
@@ -235,7 +235,7 @@ export default function TaskMap({ layout, view, store, derived, projectName, now
   // Showing or hiding the side list changes the open area: keep the selection in it.
   useEffect(() => {
     if (!store2.camera() || !selectedId || !layout.nodes[selectedId]) return
-    const next = ensureVisible(store2.camera(), box(layout.nodes[selectedId]), viewRect(), 36)
+    const next = ensureVisible(store2.camera(), box(layout.nodes[selectedId]), viewRect(), 36, boxOf(layout))
     if (next !== store2.camera()) setCamera(next, { animated: true })
     // Only when the side list opens or closes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -302,7 +302,7 @@ export default function TaskMap({ layout, view, store, derived, projectName, now
     keyboard.current = true
     setFocusId(id)
     if (store2.camera() && layout.nodes[id]) {
-      const next = ensureVisible(store2.camera(), box(layout.nodes[id]), viewRect(), 36)
+      const next = ensureVisible(store2.camera(), box(layout.nodes[id]), viewRect(), 36, boxOf(layout))
       if (next !== store2.camera()) setCamera(next, { animated: true })
     }
   }, [layout, setCamera, viewRect, store2])
@@ -386,7 +386,8 @@ export default function TaskMap({ layout, view, store, derived, projectName, now
     <div className="a-mtree" role="tree" aria-label="Work map" aria-describedby="map-keys">
       <div className={`a-minner${animated ? ' is-animated' : ''}`}
         style={camera ? { width: layout.width, height: layout.height, transform: `translate(${camera.x}px, ${camera.y}px) scale(${camera.k})` } : { visibility: 'hidden' }}>
-        {layout.zones.map((zone) => <div key={zone.topId} className={`a-mzone${anchorTop === zone.topId ? ' is-current' : ''}`} aria-hidden="true"
+        {/* Finished families (the "Completed and history" band) are drawn quieter, never hidden. */}
+        {layout.zones.map((zone) => <div key={zone.topId} className={`a-mzone${anchorTop === zone.topId ? ' is-current' : ''}${derived.byTop[zone.topId]?.section === 'done' ? ' is-historic' : ''}`} aria-hidden="true"
           style={{ left: zone.x, top: zone.y, width: zone.w, height: zone.h }} />)}
         {!focusBranch && layout.bands.map((band) => <div key={band.key} className={`a-mband${band.key === 'needs' ? ' a-mband--needs' : ''}`} aria-hidden="true"
           style={{ left: band.x, top: band.y }}>{band.label}<span className="a-num">{band.count}</span></div>)}
@@ -394,7 +395,8 @@ export default function TaskMap({ layout, view, store, derived, projectName, now
           {Object.entries(layout.edges).map(([tone, d]) => d && <path key={tone} className={`a-e a-e--${tone}`} d={d} />)}
         </svg>
         {shown.map((id) => <MapNode key={id} node={layout.nodes[id]} row={rows.get(id).row} info={infos[id]} selected={id === selectedId}
-          tabbable={id === focusTarget} dim={view.searching && !rows.get(id).row.match} onPick={pick} onOpen={open} onFold={fold} />)}
+          tabbable={id === focusTarget} dim={view.searching && !rows.get(id).row.match} historic={rows.get(id).family?.section === 'done'}
+          onPick={pick} onOpen={open} onFold={fold} />)}
       </div>
     </div>
     <p id="map-keys" className="a-sr">Arrow keys move between tasks: up to the lead, down to the first helper, left and right between tasks at the same level.
@@ -403,7 +405,7 @@ export default function TaskMap({ layout, view, store, derived, projectName, now
     <div className="a-mtool">
       {onToggleSide && <button type="button" className="a-mbtn" aria-pressed={side} onClick={onToggleSide} title={side ? 'Hide the list beside the map' : 'Show the list beside the map'}>
         <Icon name="sidebar" size={16} />{side ? 'Hide list' : 'Show list'}</button>}
-      {!focusBranch && layout.tops.length > 1 && <MenuButton label="Jump to a task family" text="Jump to" icon="map" align="start" items={jumps} />}
+      {!focusBranch && layout.tops.length > 1 && <MenuButton label="Jump to a task family" text="Jump to" icon="map" align="end" items={jumps} />}
     </div>
     {!store.complete && <div className="a-mpartial" role="status">
       <span>Showing {loaded} of {store.total ?? 'all'} tasks, newest first.</span>

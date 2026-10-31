@@ -127,11 +127,25 @@ test('the camera fits, zooms around a point, follows a moved task and only moves
   const z = zoomAt({ k: 1, x: 0, y: 0 }, 1.2, 300, 200)
   assert.ok(Math.abs((300 - z.x) / z.k - 300) < 1e-9 && Math.abs((200 - z.y) / z.k - 200) < 1e-9)
   assert.equal(zoomAt({ k: 1.5, x: 0, y: 0 }, 4, 0, 0).k, ZOOM.max)
-  // ensureVisible leaves a visible box alone and centres one that is off screen.
+  // ensureVisible leaves a visible box alone and centres one that is off screen, along the axis
+  // that needs it only.
   const camera = { k: 1, x: 0, y: 0 }
   assert.equal(ensureVisible(camera, { minX: 100, minY: 100, maxX: 268, maxY: 220 }, view), camera)
   const moved = ensureVisible(camera, { minX: 3000, minY: 100, maxX: 3168, maxY: 220 }, view)
-  assert.deepEqual(moved, centreOn(camera, { minX: 3000, minY: 100, maxX: 3168, maxY: 220 }, view))
+  assert.deepEqual(moved, { ...centreOn(camera, { minX: 3000, minY: 100, maxX: 3168, maxY: 220 }, view), y: 0 })
+  const both = { minX: 3000, minY: 3000, maxX: 3168, maxY: 3120 }
+  assert.deepEqual(ensureVisible(camera, both, view), centreOn(camera, both, view))
+  // UAT: a task near the top of the graph, scrolled out above the view, comes back without a
+  // large empty area opening above the graph; the deliberate horizontal position is kept.
+  const graph = { minX: 0, minY: 0, maxX: 4000, maxY: 3000 }
+  const scrolled = { k: 1, x: -50, y: -800 }
+  const near = ensureVisible(scrolled, { minX: 200, minY: 20, maxX: 368, maxY: 140 }, view, 36, graph)
+  assert.equal(near.x, -50)
+  assert.equal(near.y, 64)  // The graph's top sits at the usual top padding, not at mid-screen.
+  assert.ok(near.y + 20 >= 36 && near.y + 140 <= view.h - 36)
+  // Near the bottom of a tall graph the view never shows empty space below it.
+  const low = ensureVisible({ k: 1, x: 0, y: 0 }, { minX: 200, minY: 2900, maxX: 368, maxY: 2990 }, view, 36, graph)
+  assert.equal(low.y, view.h - 28 - 3000)
   // A side list covering the left edge counts as not visible.
   assert.notEqual(ensureVisible(camera, { minX: 10, minY: 100, maxX: 178, maxY: 220 }, { l: 300, w: 700, h: 700 }), camera)
   // After a refresh moves the selected task, the camera follows so it stays put on screen.

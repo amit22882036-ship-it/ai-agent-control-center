@@ -107,7 +107,7 @@ function detail(pathname, search, tasks, projects, agents, providers) {
   if (match) {
     const node = byId[decodeURIComponent(match[1])]
     // The fields of the real GET /tasks/{id} (see tests/fixtures/task-detail.contract.json).
-    return node && { task_id: node.task_id, title: node.title, description: `Synthetic description for ${node.title}.`, status: node.status,
+    return node && { task_id: node.task_id, title: node.title, description: node.description ?? `Synthetic description for ${node.title}.`, status: node.status,
       created_at: node.created_at, updated_at: node.updated_at, parent_task_id: node.parent_task_id, project_id: node.project_id,
       control_intent: node.control_intent || 'active', resume_status: null, block_resume_status: null, stop_required: node.stop_required ? 1 : 0,
       legacy_pause: 0, stop_reason: null, orchestration_handoff: null, replan_transitions: [], promotions: [], promotion_decisions: [],
@@ -145,7 +145,7 @@ function detail(pathname, search, tasks, projects, agents, providers) {
     return { delegations: nodes.filter((node) => node.parent_task_id === id && node.delegation).map((node) => ({
       delegation_id: node.delegation.delegation_id, parent_task_id: id, child_task_id: node.task_id, status: node.delegation.status, instruction: `Synthetic instruction for ${node.title}.`,
       results: node.delegation.result ? [{ result_id: `res-${node.task_id}`, child_task_id: node.task_id, outcome: node.delegation.result.outcome, phase: node.delegation.result.phase,
-        summary: `Synthetic summary: ${node.title} is done.`, integration_id: node.delegation.result.integration?.integration_id || null }] : [] })) }
+        summary: node.delegation.result.summary ?? `Synthetic summary: ${node.title} is done.`, integration_id: node.delegation.result.integration?.integration_id || null }] : [] })) }
   }
   if (/^\/tasks\/[^/]+\/(dependencies|dependents|control-operations)$/.test(pathname)) {
     const kind = pathname.split('/').pop()

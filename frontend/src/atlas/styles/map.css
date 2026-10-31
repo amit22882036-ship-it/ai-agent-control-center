@@ -105,8 +105,8 @@
 .atlas .a-mappane.is-far .a-gn:not(.a-gn--root) .a-gt { -webkit-line-clamp: 1; }
 
 /* Map controls */
-.atlas .a-mappane .a-mtool { position: absolute; top: 14px; left: 16px; z-index: 4; display: flex; align-items: center; gap: 8px; }
-.atlas .a-work.has-side .a-mappane .a-mtool, .atlas .a-work.has-side .a-mappane .a-mctl { left: calc(var(--a-side-w) + 16px); }
+.atlas .a-mappane .a-mtool { position: absolute; top: 14px; right: 16px; z-index: 4; display: flex; align-items: center; gap: 8px; }
+.atlas .a-work.has-side .a-mappane .a-mctl { left: calc(var(--a-side-w) + 16px); }
 .atlas .a-mappane .a-mbtn { display: flex; align-items: center; gap: 7px; height: 34px; padding: 0 12px 0 10px; border-radius: 10px; background: var(--a-surface);
   border: 1px solid var(--a-line); box-shadow: var(--a-shadow-1); font-weight: 600; color: var(--a-text-2); white-space: nowrap; }
 .atlas .a-mappane .a-mbtn:hover, .atlas .a-mappane .a-mbtn[aria-pressed="true"] { color: var(--a-text); }
@@ -115,7 +115,7 @@
   background: var(--a-surface); border: 1px solid var(--a-line); box-shadow: var(--a-shadow-2); }
 .atlas .a-mappane .a-mctl .a-pct { min-width: 46px; text-align: center; font-size: 12px; font-weight: 600; color: var(--a-text-2); }
 .atlas .a-mappane .a-mctl .a-mctl-sep { width: 1px; height: 20px; background: var(--a-line); margin: 0 3px; }
-.atlas .a-mappane .a-mpartial { position: absolute; top: 14px; right: 16px; z-index: 4; display: flex; align-items: center; gap: 10px; padding: 6px 6px 6px 12px;
+.atlas .a-mappane .a-mpartial { position: absolute; top: 60px; right: 16px; z-index: 4; display: flex; align-items: center; gap: 10px; padding: 6px 6px 6px 12px;
   border-radius: 11px; background: var(--a-surface); border: 1px solid var(--a-line); box-shadow: var(--a-shadow-1); font-size: 12.5px; color: var(--a-text-2); }
 .atlas .a-mappane .a-mini { position: absolute; right: 16px; bottom: 16px; z-index: 4; width: 184px; height: 112px; border-radius: 12px; overflow: hidden; cursor: pointer;
   background: var(--a-surface); border: 1px solid var(--a-line); box-shadow: var(--a-shadow-2); }
@@ -172,7 +172,8 @@
   /* The floating details panel leaves the Work header (filters, search, List/Map) uncovered. */
   .atlas .a-work > .a-inspector { top: var(--a-work-head, 57px); }
   .atlas .a-work:has(> .a-inspector) .a-mappane .a-mini { display: none; }
-  .atlas .a-work:has(> .a-inspector) .a-mappane .a-mpartial { right: calc(min(var(--a-inspector-w, 404px), 360px) + 16px); }
+  .atlas .a-work:has(> .a-inspector) .a-mappane .a-mpartial,
+  .atlas .a-work:has(> .a-inspector) .a-mappane .a-mtool { right: calc(min(var(--a-inspector-w, 404px), 360px) + 16px); }
 }
 @media (prefers-reduced-motion: reduce) {
   .atlas .a-mappane .a-minner.is-animated { transition: none; }
@@ -207,3 +208,13 @@
 .atlas .a-pthumb .a-pthumb-shimmer { width: 60%; height: 10px; border-radius: 6px; background: var(--a-sunken); }
 .atlas .a-pthumb .a-pv-more rect { fill: var(--a-surface); stroke: var(--a-text-4); stroke-width: 1.2; stroke-dasharray: 3 3; }
 .atlas .a-pthumb .a-pv-more text { fill: var(--a-text-2); font: 700 46px var(--a-font); }
+
+/* UAT pass 1: the view tools sit top right, so they never cover the first band's label; finished
+   families are drawn quieter (never hidden) so open work stands out in a large map, and come back
+   to full strength when pointed at, focused or selected. */
+.atlas .a-mappane .a-mzone.is-historic { opacity: .55; }
+.atlas .a-mappane .a-gn.is-historic:not(.is-selected):not(:hover):not(:focus-visible),
+.atlas .a-mappane .a-gr.is-historic:not(.is-selected):not(:hover):not(:focus-visible) { opacity: .62; }
+@media (prefers-reduced-motion: no-preference) {
+  .atlas .a-mappane .a-gn.is-historic, .atlas .a-mappane .a-gr.is-historic { transition: opacity .15s; }
+}

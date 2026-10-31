@@ -133,3 +133,13 @@
 .atlas .a-cx-account { display: flex; gap: 6px; align-items: flex-start; margin: 0; color: var(--a-text-2); }
 .atlas .a-cx-account svg { flex: none; margin-top: 2px; }
 .atlas .a-cx-account-notice .a-notice-text { display: grid; gap: 6px; }
+
+/* UAT pass 1: on wide desktops Connections and Settings use more of the window (still a reading
+   width, never edge to edge), and their explanatory text is a little larger. */
+@media (min-width: 1600px) {
+  .atlas .a-page.a-cx-page { max-width: 1400px; }
+  .atlas .a-page.a-page--narrow { max-width: 1240px; }
+}
+.atlas .a-cx-page .a-fine, .atlas .a-page--narrow .a-fine { font-size: 13.5px; line-height: 1.5; }
+.atlas .a-page--narrow .a-settings-kv { font-size: 14px; }
+.atlas .a-page--narrow .a-settings-more { margin-top: 12px; }

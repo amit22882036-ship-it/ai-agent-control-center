@@ -91,7 +91,7 @@ export default function GalleryPage() {
             <span className="a-demo-label">Segmented choice</span>
             <Segmented label="View as" value={lens} onChange={setLens} options={[{ value: 'list', label: 'List', icon: 'list' }, { value: 'map', label: 'Map', icon: 'map' }]} />
             <Segmented label="Show" value={filter} onChange={setFilter} options={[{ value: 'all', label: 'All', count: 7 }, { value: 'needs', label: 'Needs you', count: 2 },
-              { value: 'active', label: 'In progress', count: 4 }, { value: 'done', label: 'Done', count: 3 }]} />
+              { value: 'active', label: 'Open', count: 4 }, { value: 'done', label: 'Done', count: 3 }]} />
           </div>
           <div className="a-demo">
             <span className="a-demo-label">Switch</span>

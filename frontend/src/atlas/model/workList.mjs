@@ -6,13 +6,13 @@ import { AGENT_COLORS, TOOLS } from '../vocabulary.mjs'
 
 export const SECTIONS = [
   { key: 'needs', label: 'Needs your attention' },
-  { key: 'active', label: 'In progress' },
+  { key: 'active', label: 'Open' },
   { key: 'done', label: 'Completed and history' },
 ]
 export const FILTERS = [
   { value: 'all', label: 'All' },
   { value: 'needs', label: 'Needs you' },
-  { value: 'active', label: 'In progress' },
+  { value: 'active', label: 'Open' },
   { value: 'done', label: 'Done' },
 ]
 // States in which nothing more happens without someone acting.
@@ -81,7 +81,8 @@ export function familyCounts(derived, project = null) {
   const families = derived.families.filter((family) => !project || family.projectId === project)
   const counts = { all: families.length, needs: 0, active: 0, done: 0 }
   for (const family of families) counts[family.section] += 1
-  // "In progress" lists every family that is not finished, including those that need you.
+  // "Open" lists every family that is not finished (running, waiting, blocked, paused or not
+  // started), including those that need you; it never claims they are running.
   counts.active += counts.needs
   return counts
 }

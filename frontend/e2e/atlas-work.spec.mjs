@@ -27,7 +27,7 @@ test('the synthetic scenarios use exactly the endpoint’s node shape', () => {
 
 test('root and child tasks render as one tree from parent_task_id, with sections and guides', async ({ page }) => {
   await openWork(page, { tasks: showcase() })
-  await expect(page.locator('.a-ol-sec')).toHaveText([/Needs your attention/, /In progress/, /Completed and history/])
+  await expect(page.locator('.a-ol-sec')).toHaveText([/Needs your attention/, /Open/, /Completed and history/])
   await expect(row(page, 'Build the CSV import pipeline')).toHaveAttribute('aria-level', '1')
   await expect(row(page, 'Handle quoted fields')).toHaveAttribute('aria-level', '2')
   await expect(row(page, 'Document the CLI flags')).toHaveAttribute('aria-level', '3')
