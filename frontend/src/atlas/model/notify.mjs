@@ -6,9 +6,11 @@
 // Atlas reads Tasks a page at a time, so an Agent seen for the first time is announced only when
 // its Task was already being watched (a new assignment, for example after a replacement) or the
 // Task was created after watching began. An older page loaded later never replays old states.
+import { NOTIFY_TITLES, notificationTag } from '../../notificationCoordination.mjs'
+
 export const NOTIFY_TEXT = {
-  'waiting:user': { heading: 'Agent needs your input', announce: 'needs your reply' },
-  finished: { heading: 'Agent finished', announce: 'finished' },
+  'waiting:user': { heading: NOTIFY_TITLES['waiting:user'], announce: 'needs your reply' },
+  finished: { heading: NOTIFY_TITLES.finished, announce: 'finished' },
 }
 // A little leeway for a Task created just before the first read.
 const CREATED_LEEWAY_MS = 5000
@@ -54,10 +56,10 @@ export function createNotifyTracker({ startedAt = Date.now() } = {}) {
 }
 
 // The browser notification for one event, worded as Classic words it (title, then the Task, at most
-// 180 characters). The tag is the same in every Atlas tab, so the same event shown twice replaces
-// itself instead of stacking.
+// 180 characters). The tag is the one Classic uses for the same Agent transition, so the same event
+// shown by two pages replaces itself instead of stacking.
 export function browserNotification(event) {
-  return { title: event.heading, options: { body: event.task.slice(0, 180), tag: `control-center:${event.key}` } }
+  return { title: event.heading, options: { body: event.task.slice(0, 180), tag: notificationTag(event.agentId, event.state) } }
 }
 
 // How notifications reach the person now, in words that promise nothing the page can't know.
@@ -68,8 +70,8 @@ export const FALLBACK = 'Windows notifications are the fallback when available.'
 const CAUSES = {
   offline: 'The backend isn’t answering, so nothing can be sent until it returns.',
   failed: `This browser couldn’t show one here. ${FALLBACK}`,
-  'no-locks': `This browser can’t coordinate Atlas tabs, so none shows them. ${FALLBACK}`,
-  follower: 'Another Atlas tab shows them.',
+  'no-locks': `This browser can’t coordinate Control Center tabs, so none shows them. ${FALLBACK}`,
+  follower: 'Another Control Center tab in this browser shows them.',
   stale: `The task list isn’t current here. ${FALLBACK}`,
   partial: `Not every task is loaded here. ${FALLBACK}`,
 }

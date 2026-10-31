@@ -44,3 +44,13 @@ test('cleanup abort prevents a late heartbeat', async () => {
   })
   assert.equal(calls, 1)
 })
+
+test('an untouched off preference is not sent, so it never overrides another browser that is on', async () => {
+  const calls = []
+  await syncSystemNotifications({ enabled: false, browserActive: false, sendPreference: false }, async (...args) => {
+    calls.push(args)
+    return { ok: true }
+  })
+  assert.equal(calls.length, 0)
+  await assert.rejects(syncSystemNotifications({ enabled: true, browserActive: true, sendPreference: false }, async () => ({ ok: true })))
+})

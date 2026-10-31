@@ -103,10 +103,10 @@ export default function SettingsPage({ appearance, live, navigate, route, notifi
             <dt>How they arrive</dt><dd>{deliveryView(notifications, delivery).detail}</dd>
             <dt>One at a time</dt><dd>While this page shows them, it tells the backend so, and the backend holds back its Windows notification for
               the same event. Otherwise the backend may try a Windows notification; Windows settings and Focus assist decide whether it appears.
-              Only one Atlas tab shows them. A Classic tab open at the same time shows its own, so the same event can appear twice.</dd>
+              In this browser, only one Control Center tab shows them, Atlas or Classic view, and only while it has every task loaded and current; otherwise the Windows notification is the fallback when available. Another browser or browser profile open at the same time is not coordinated with this one and can show the same event.</dd>
             <dt>In Atlas</dt><dd>The bell lists what needs you now, from the live task list; it keeps no history.</dd>
             <dt>Also needed</dt><dd>{notice.prerequisite} Windows Focus assist (Do not disturb) can hide them.</dd>
-            <dt>Shared</dt><dd>The same preference as Classic view’s bell; changing it here changes it there.</dd>
+            <dt>Shared</dt><dd>The same preference as Classic view’s bell in this browser. The backend keeps one setting for its Windows notifications: turning them on in any browser turns that on; turning them off here turns it off until a browser that has them on says so again.</dd>
           </dl>
         </Card>
         <Card className="a-section" id="atlas-settings-keyboard" titleId="atlas-settings-keyboard-h" title="Keyboard">

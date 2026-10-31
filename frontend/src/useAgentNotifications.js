@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { createAgentNotifications } from './agentNotifications'
-import { HEARTBEAT_INTERVAL_MS, RECENT_POLL_MS, nextSyncDelay, syncSystemNotifications } from './systemNotificationSync'
+import { HEARTBEAT_INTERVAL_MS, nextSyncDelay, syncSystemNotifications } from './systemNotificationSync'
+import { deliveryEligible, heartbeatDue, locksAvailable } from './notificationCoordination.mjs'
+import useNotificationLeadership, { useFreshRead } from './useNotificationLeadership'
 import { desktopNotificationPrerequisite, notificationStatus } from './notificationGuidance'
 
 const preferenceKey = 'ai-agent-control-center.notifications'
@@ -17,8 +19,23 @@ export default function useAgentNotifications(onSelect) {
   const [requesting, setRequesting] = useState(false)
   const [message, setMessage] = useState('')
   const [syncError, setSyncError] = useState('')
-  const lastPoll = useRef(null)
+  // The last read this page showed notifications for while holding the lock (heartbeats follow it).
+  const lastClaimed = useRef(null)
   const [browserDeliveryFailed, setBrowserDeliveryFailed] = useState(false)
+  // The backend's preference is shared by every browser. "On" is told to it on every sync (so it
+  // survives a backend restart); "off" only once, after the person switched it off here, so a
+  // browser where notifications were never turned on doesn't keep switching them off for another.
+  const offPending = useRef(false)
+  // When the last workspace read succeeded (null after a failed one) and whether it covered every
+  // agent (no "Load more" pending). Only a recent, complete read lets this page take over
+  // notifications from the Windows fallback; an old one gives the lock up (useFreshRead).
+  const [coverage, setCoverage] = useState({ at: null, complete: false })
+  const fresh = useFreshRead(coverage.at)
+  const granted = supported && permission === 'granted'
+  const eligible = deliveryEligible({ enabled, granted, failed: browserDeliveryFailed, current: fresh, complete: coverage.complete })
+  const leader = useNotificationLeadership(eligible)
+  const showing = useRef({ leader: false, eligible: false })
+  useEffect(() => { showing.current = { leader, eligible } }, [leader, eligible])
   const [tracker] = useState(() => createAgentNotifications(onSelect, (error) => {
     setBrowserDeliveryFailed(true)
     setMessage(error)
@@ -37,15 +54,18 @@ export default function useAgentNotifications(onSelect) {
       if (syncing || Date.now() < notBefore) return
       syncing = true
       try {
+        const sendPreference = enabled || offPending.current
         await syncSystemNotifications({
           enabled,
-          browserActive: supported && Notification.permission === 'granted'
-            && !browserDeliveryFailed && lastPoll.current !== null
-            && Date.now() - lastPoll.current < RECENT_POLL_MS,
+          sendPreference,
+          // Only the page holding the shared lock, eligible and recently read, claims the event.
+          browserActive: supported && Notification.permission === 'granted' && !browserDeliveryFailed
+            && heartbeatDue({ leader: showing.current.leader, eligible: showing.current.eligible, lastRead: lastClaimed.current }),
           signal: controller.signal,
         })
         failures = 0
         notBefore = 0
+        if (!enabled && sendPreference) offPending.current = false
         if (!controller.signal.aborted) setSyncError('')
       } catch {
         failures += 1
@@ -89,13 +109,23 @@ export default function useAgentNotifications(onSelect) {
     }
   }, [supported])
 
-  const observeAgents = useCallback((agents) => {
-    // Native permission is checked again by the tracker on every transition.
-    tracker.observe(agents, enabledRef.current)
-    lastPoll.current = Date.now()
+  const observeAgents = useCallback((agents, { complete = true } = {}) => {
+    // Native permission is checked again by the tracker on every transition. Only the page that
+    // holds the shared lock shows them; every page records transitions.
+    const claiming = enabledRef.current && showing.current.leader && showing.current.eligible && complete
+    tracker.observe(agents, claiming)
+    const now = Date.now()
+    lastClaimed.current = claiming ? now : null
+    setCoverage({ at: now, complete })
   }, [tracker])
+  // A failed read: this page's view is no longer current, so it stops claiming notifications.
+  const observeFailure = useCallback(() => {
+    lastClaimed.current = null
+    setCoverage((current) => (current.at === null ? current : { ...current, at: null }))
+  }, [])
 
   function savePreference(value) {
+    offPending.current = !value
     setBrowserDeliveryFailed(false)
     enabledRef.current = value
     setEnabled(value)
@@ -129,9 +159,10 @@ export default function useAgentNotifications(onSelect) {
     }
   }
 
-  const status = notificationStatus({ supported, permission, enabled })
+  const delivery = !enabled || !granted ? undefined : leader ? 'here' : eligible && locksAvailable() ? 'other-tab' : 'fallback'
+  const status = notificationStatus({ supported, permission, enabled, delivery })
 
-  return { observeAgents, toggleNotifications, enabled, supported, permission, requesting, status,
+  return { observeAgents, observeFailure, toggleNotifications, enabled, supported, permission, requesting, status, delivery,
     prerequisite: desktopNotificationPrerequisite,
     message: [message, syncError].filter(Boolean).join(' ') }
 }

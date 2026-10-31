@@ -506,26 +506,50 @@ closely while the panel or Connections is open, at most every 15 seconds otherwi
 The preference is Classic's (same stored key, the same rule: on only while the browser allows
 notifications; the browser asks only from the switch). The backend notifies an agent that starts
 waiting for a reply or finishes: it waits 8 seconds and shows a Windows notification only if no page
-has sent `POST /notifications/heartbeat` in the last 6 seconds. Atlas now shows browser
-notifications too, and sends Classic's heartbeat only while it can really show them: the preference
-is on, the browser allows them, showing one has not failed in this page, this is the Atlas tab
-holding the Web Lock `control-center-atlas-notifications`, the backend answers, the Task list is
-current, and every page of Tasks is loaded (otherwise a change on an unloaded page could be missed).
-In every other case no heartbeat is sent, and the backend's Windows notification is the fallback
+has sent `POST /notifications/heartbeat` in the last 6 seconds. Since the option B correction (after
+M11) Classic view and Atlas follow one set of rules (`src/notificationCoordination.mjs`): in one
+browser profile, at most one page of either view shows browser notifications, the one holding the
+Web Lock `control-center-notifications`. Web Locks are shared only within one browser profile, so
+Edge and Chrome (or two profiles) open together are not coordinated: each can show the same event,
+and the shared tag does not merge notifications across browsers. Stronger cross-browser
+coordination would need a backend design and separate approval. A page asks for the lock only while it could show every
+notification itself (the preference is on, the browser allows them, showing one has not failed in
+this page, its last read of the workspace succeeded and the backend answers, and every page is
+loaded: Classic's agent pages and Atlas's Task pages), and gives it up as soon as it can't,
+including when its last successful read is older than 60 seconds (one timer per read, no extra
+request: a stale page releases the lock so a fresh one in another tab can take it, and its next read
+makes it eligible again). The holder sends the heartbeat only within 4 seconds of a read it showed
+notifications for while holding the lock (a read that arrived before it took the lock never leads
+to a heartbeat, so its events are left to the Windows fallback), so a page whose live
+updates stopped soon stops suppressing the Windows notification. In every other case no heartbeat is sent, and the backend's Windows notification is the fallback
 when available. So an event is not shown by both; whether a Windows notification actually appears
 depends on Windows settings, Focus assist, the backend being reachable and the notifier itself, and
 the wording never promises it ("Windows notifications are the fallback when available"). While the
 backend isn't answering, Atlas says that nothing can be sent until it returns. Without the Web Locks
-API (an insecure address or an old browser) Atlas tabs can't agree on one of them, so none shows
-browser notifications and none sends the heartbeat.
+API (an insecure address or an old browser) pages can't agree on one of them, so none shows
+browser notifications and none sends the heartbeat. Before option B, Classic sent the heartbeat
+whenever it had polled in the last 4 seconds, even with agents on pages it had not loaded; that
+could hold back a Windows notification for an agent it could not see, and it no longer does.
+
+**The preference across browsers.** The backend keeps one in-memory preference for its Windows
+notifications (`POST /notifications/preferences`), while each browser keeps its own stored choice
+and permission. Classic used to send its preference every 2 seconds, including an "off" that was
+merely the default in a browser where notifications were never turned on, which kept switching them
+off for a browser that had them on. Since option B, Classic sends "on" on every sync (as before, so
+it survives a backend restart) and "off" once, only after the person switched it off there; Atlas
+already sent only changes, "on" again after a reconnection, and never an untouched "off". An
+explicit "off" in one browser still turns the backend's Windows notifications off for all of them
+until a browser with them on says so again: a per-browser preference would need a backend change.
 
 Which changes are announced follows Classic and the backend (an agent starting to wait for the
 person, an agent finishing), once per transition. Atlas's own rule for identity: the first reading
 is a baseline (nothing is replayed); an agent seen for the first time is announced only when its
 Task was already being watched (a replacement agent, a new assignment) or the Task was created after
 watching began, so loading older pages never replays old states; the same state reported again (a
-repeated event, a reconnect) is not announced. Each notification is tagged by
-`control-center:{agent}:{state}`, so the same event shown by two tabs replaces itself. A click opens
+repeated event, a reconnect) is not announced. Each notification in both views is tagged by
+`control-center:{agent}:{state}` (`waiting:user` or `finished`), so the same event shown by two
+pages in the moment the lock changes hands replaces itself. Classic's click still selects the Agent
+in Classic; Atlas's opens the Task. A click opens
 the Task (never an Agent) in Work, so a stale notification shows whoever holds the Task now, or that
 it no longer exists. New questions are also announced politely to screen readers.
 
@@ -536,15 +560,15 @@ it no longer exists. New questions are also announced politely to screen readers
 | Bell badge with the number of provider updates | A dot; counts in the accessible name and in the panel | Updates are calm information; questions use the backend's own count. |
 | Bell lists provider updates only | Panel adds what needs the person and tools that need attention | One place for attention, derived from live data, no history. |
 | Browser notification tracker over the polled agent list | Transition tracker over the canonical Task list | Atlas reads Tasks a page at a time; first-seen rules avoid replays. |
-| Heartbeat whenever the page polled in the last 4 seconds | Heartbeat only while every page is loaded, the list is current and this tab holds the lock | Never suppress a Windows notification for an event Atlas could miss. |
-| Each Classic tab shows its own notifications | One Atlas tab shows them (Web Locks); without Web Locks none does; tags make repeats replace each other | Fewer duplicates. A Classic tab and an Atlas tab open together still each show one (Classic is unchanged). |
+| Heartbeat: shared rule since option B | Same rule | Only the lock holder, with every page loaded and a read in the last 4 seconds. |
+| One page of either view shows them (shared lock and tag, since option B) | Same | No duplicate between Classic and Atlas tabs; without Web Locks no page shows them. |
 | A click selects the Agent | A click opens the Task | The Task is the stable identity; an Agent may have been replaced. |
 
-Limitations, carried to the M11 gate: the Windows notifier cannot open a task (it has no click
-action); a Classic tab and an Atlas tab open at the same time can each show the same event (Classic
-neither takes the lock nor tags its notifications, and Classic is unchanged); a workspace too large
-to load completely gets Windows notifications only. **Failure window:** when the browser fails to
-show a notification, Atlas stops the heartbeat at once, so the backend's 8-second wait usually ends
+Limitations, carried to the default-switch gate: the Windows notifier cannot open a task (it has no
+click action); a workspace whose pages are not all loaded (in either view) gets Windows
+notifications only; a page that lost the lock to another may briefly show the same event as the new
+holder, which the shared tag then replaces. **Failure window:** when the browser fails to
+show a notification, the page stops the heartbeat at once, so the backend's 8-second wait usually ends
 with the last heartbeat more than 6 seconds old and the Windows fallback is tried; a failure the
 browser reports more than about 2 seconds after the event can leave that one event shown by neither
 (Classic has the same window). Closing it needs a backend change (for example an explicit
@@ -622,7 +646,7 @@ The recommendation is the reasoning offered for the M11 gate; the decision is th
 
 | Decision | Class | Why |
 | --- | --- | --- |
-| Reliable notifications across mixed Classic/Atlas sessions | A, essential before default | Once Atlas is the default, most people have one interface; until then a Classic and an Atlas tab can each show the same event. Switching the default removes most of the overlap; a backend acknowledgement per event would close it fully (C). |
+| Reliable notifications across mixed Classic/Atlas sessions | Decided: option B, implemented after M11 (awaiting approval) | One page of either view shows them under a shared lock and tag; a backend acknowledgement per event would also close the failure window (C, not approved). |
 | Backend changes for stronger delivery guarantees (the failure window, per-event acknowledgement) | C, separate design | Needs a new contract between pages and the notifier. |
 | Safe preview before Apply to project | B, safe to ship later, but C to build | Neither Classic nor Atlas offers Apply (the endpoint exists without a user action in either), so switching the default loses nothing. Building it needs the backend preview described in Task pages (M7). |
 | Global search across unloaded Tasks | B | Work searches loaded Tasks and says so; a backend search needs its own design (C). |

@@ -10,7 +10,14 @@ export function nextSyncDelay(failures) {
   return Math.min(HEARTBEAT_INTERVAL_MS * 2 ** failures, MAX_SYNC_DELAY_MS)
 }
 
-export async function syncSystemNotifications({ enabled, browserActive, signal }, request = apiFetch) {
+// The backend keeps one notification preference for every browser. `sendPreference: false` skips
+// telling it (a page that is off and was not switched off here must not override another browser
+// that is on); the heartbeat is only ever sent with the preference on.
+export async function syncSystemNotifications({ enabled, browserActive, signal, sendPreference = true }, request = apiFetch) {
+  if (!sendPreference) {
+    if (enabled) throw new Error('An enabled preference is always told to the backend')
+    return
+  }
   const preference = await request('http://127.0.0.1:8000/notifications/preferences', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },

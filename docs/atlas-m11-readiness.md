@@ -26,7 +26,8 @@ projects, real Windows notifications or a screen reader. Those are the condition
 
 1. A manual Windows session following the checklist below, with no blocking finding.
 2. A screen-reader pass (NVDA or Narrator) following the walkthrough below.
-3. The owner's decision on mixed Classic/Atlas notifications (option A, B or C below).
+3. The owner's decision on mixed Classic/Atlas notifications. **Decided: option B**, implemented
+   after this review as a separate correction (see Notifications; awaiting approval).
 
 ## Classic and Atlas parity
 
@@ -145,6 +146,19 @@ show them at all. Both views share one origin, which tags and locks require. Thi
 notification tracker (`agentNotifications.js`, `useAgentNotifications.js`), so it is not done here.
 Closing limitation 2 needs a new backend acknowledgement per event.
 
+**Decision and correction (2026-10-31):** the owner chose **B**. Classic and Atlas now share one
+lock, one event identity and tag, and one eligibility rule (`src/notificationCoordination.mjs`): a
+page asks for the lock only while it has read every page of the workspace successfully, and sends
+the heartbeat only within 4 seconds of that read. This removes limitation 1 within one browser profile and also a safety gap
+found while implementing it: Classic used to send the heartbeat with agents on unloaded pages. A
+page whose last read is older than 60 seconds now gives the lock up (a stale tab could otherwise
+keep it from a fresh one), and a heartbeat follows only a read the page showed notifications for.
+Web Locks do not reach across browsers or profiles: Edge and Chrome open together can each show the
+same event. The backend's single preference is now overridden only by an explicit "off", not by a
+browser where notifications were simply never turned on.
+Limitation 2 remains. Tested in `e2e/notifications-shared.spec.mjs` with a stand-in lock manager
+shared by the pages; a real two-browser-tab check is part of the Windows checklist (item 15).
+
 **Options for the owner:**
 
 - **A. Accept the documented limitation** for initial default use. After the switch most people
@@ -199,7 +213,8 @@ themes), reflow from 1600 to 320 pixels (400 % text), right-to-left titles and n
 
 ## Windows manual checklist
 
-Status for every item: **MANUAL TEST REQUIRED** unless marked otherwise. Items marked *fixture*
+The step-by-step version, in three phases with an isolated setup for Mock, is the
+[UAT guide](atlas-uat-guide.md). Status for every item: **MANUAL TEST REQUIRED** unless marked otherwise. Items marked *fixture*
 also have an **AUTOMATED FIXTURE PASS**, which does not replace the manual check. Read-only items
 first; items that change runtime data or start an agent need the owner's separate go-ahead.
 
@@ -217,10 +232,10 @@ first; items that change runtime data or start an agent need the owner's separat
 | 10 | Stop the backend: Atlas says it isn't answering, keeps the last data, disables actions; restart: it recovers (*fixture*) | No | MANUAL |
 | 11 | Process ownership for a task with an earlier run shows the real state | No | MANUAL |
 | 12 | Notifications: turn on in Settings; the browser asks once; permission denied is reported | Preference only | MANUAL |
-| 13 | With a Mock agent waiting for a reply: Atlas shows one browser notification; close Atlas and repeat: a Windows notification appears | Starts a Mock agent | MANUAL, needs go-ahead |
+| 13 | A Mock agent finishing: Atlas shows one browser notification; close Atlas and repeat: a Windows notification may appear (Mock never asks a question, so a waiting notification needs a real provider) | Starts a Mock agent | MANUAL, needs go-ahead |
 | 14 | Focus assist on: notifications are held by Windows; nothing claims they were shown | Starts a Mock agent | MANUAL, needs go-ahead |
-| 15 | Classic and Atlas open together: note duplicates (limitation 1) | Starts a Mock agent | MANUAL, needs go-ahead |
-| 16 | Reply, Pause, Resume, Cancel on Mock tasks; results read correctly | Changes Mock tasks | MANUAL, needs go-ahead |
+| 15 | Classic and Atlas open together: one notification in total (option B) | Starts a Mock agent | MANUAL, needs go-ahead |
+| 16 | Pause, Resume, Cancel on Mock tasks; results read correctly (Reply needs a real provider) | Changes Mock tasks | MANUAL, needs go-ahead |
 | 17 | A real provider task end to end | Uses a paid plan | MANUAL, needs explicit go-ahead |
 
 ## Open product decisions

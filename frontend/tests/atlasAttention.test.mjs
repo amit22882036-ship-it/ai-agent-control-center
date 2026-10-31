@@ -138,7 +138,7 @@ test('notifications: a replacement agent on a watched Task is new; an older page
 test('a browser notification is worded like Classic’s and tagged by event, so tabs replace rather than stack', () => {
   const [event] = createNotifyTracker({ startedAt: 0 }).observe([])
   assert.equal(event, undefined)
-  const shown = browserNotification({ heading: 'Agent needs your input', task: 'x'.repeat(300), key: 'a1:waiting:user' })
+  const shown = browserNotification({ heading: 'Agent needs your input', task: 'x'.repeat(300), agentId: 'a1', state: 'waiting:user', key: 'a1:waiting:user' })
   assert.equal(shown.title, 'Agent needs your input')
   assert.equal(shown.options.body.length, 180)
   assert.equal(shown.options.tag, 'control-center:a1:waiting:user')
@@ -163,7 +163,7 @@ test('delivery wording never promises a Windows notification and names the reaso
   const offline = deliveryView(on, { delivering: false, cause: 'offline' })
   assert.equal(offline.short, 'On. The backend isn’t answering, so nothing can be sent until it returns.')
   assert.doesNotMatch(offline.short, /Windows/)
-  assert.equal(deliveryView(on, { delivering: false, cause: 'follower' }).short, 'On. Another Atlas tab shows them.')
+  assert.equal(deliveryView(on, { delivering: false, cause: 'follower' }).short, 'On. Another Control Center tab in this browser shows them.')
   for (const cause of ['failed', 'no-locks', 'stale', 'partial', 'offline', 'follower', null]) {
     const { short, detail } = deliveryView(on, { delivering: false, cause })
     assert.doesNotMatch(`${short} ${detail}`, /(are|is) (used|shown)|will (be shown|appear)/, String(cause))

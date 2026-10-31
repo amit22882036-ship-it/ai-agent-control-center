@@ -54,7 +54,7 @@ For isolated live E2E preparation, register a separate disposable repository wit
 
 Projection queries use a single read transaction and explicit public fields. They do not reconcile state, spawn Workers, advance orchestration, read worktrees or expose filesystem paths, provider protocol payloads, raw result excerpts or unrelated Task activity. Task-owned result queries are Project-scoped. Activity is a bounded recent view, not a complete audit export. Raw output remains available only through the existing output interface. Missing historical relationships are not fabricated.
 
-Waiting context distinguishes input requests, dependencies, delegated results, ordinary coordination, pending Parent continuation, paused work and recovery. Unknown waits remain generic. Input notifications require a user-input wait, while ordinary coordination does not trigger a request for user attention. Existing completion notifications and browser/native delivery coordination remain unchanged.
+Waiting context distinguishes input requests, dependencies, delegated results, ordinary coordination, pending Parent continuation, paused work and recovery. Unknown waits remain generic. Input notifications require a user-input wait, while ordinary coordination does not trigger a request for user attention. Completion notifications are unchanged; since the option B correction, browser delivery is coordinated with Atlas under one lock and one rule (see [Atlas migration](atlas-migration.md#browser-and-windows-notifications)).
 
 ## Hierarchy and inspector
 

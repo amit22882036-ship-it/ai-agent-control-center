@@ -8,6 +8,11 @@ const axePath = require.resolve('axe-core/axe.min.js')
 const NOW = new Date('2026-10-29T12:05:00.000Z')
 const posts = (log, path) => log.requests.filter((item) => item.method !== 'GET' && (!path || item.path === path))
 const beats = (log) => posts(log, '/notifications/heartbeat').length
+// A page sends the heartbeat only after a read it showed notifications for as the lock holder, so
+// a reported change after it took the lock is what starts it.
+async function claimed(page, log) {
+  await expect.poll(async () => { await announceChange(page).catch(() => {}); return beats(log) }, { timeout: 10000 }).toBeGreaterThan(0)
+}
 const bell = (page) => page.locator('.a-bell')
 const panel = (page) => page.getByRole('dialog', { name: 'Notifications' })
 const answer = (page) => page.getByRole('complementary', { name: 'Task details' }).getByLabel('Your answer')
@@ -241,7 +246,7 @@ test('browser notifications: one per transition, tagged, with the heartbeat, and
   const script = scripted()
   const log = await open(page, 'settings?section=notifications', { taskPages: script.taskPages })
   await expect(page.getByText('As browser notifications from this page')).toBeVisible()
-  await expect.poll(() => beats(log)).toBeGreaterThan(0)
+  await claimed(page, log)
   expect(await page.evaluate(() => window.__shown.length)).toBe(0)  // Nothing already true is replayed.
   script.ask()
   await announceChange(page)
@@ -294,26 +299,27 @@ test('with two Atlas tabs open, only the one holding the lock shows browser noti
   await stubNotifications(page)
   await stubLocks(page, true)
   const first = await open(page, 'settings?section=notifications')
-  await expect.poll(() => beats(first)).toBeGreaterThan(0)
+  await claimed(page, first)
   const other = await context.newPage()
   await stubNotifications(other)
   await stubLocks(other, false)
   const second = await open(other, 'settings?section=notifications')
-  await expect(other.getByText('Another Atlas tab shows them.')).toBeVisible()
+  await expect(other.getByText('Another Control Center tab in this browser shows them.')).toBeVisible()
   await other.waitForTimeout(2500)
   expect(beats(second)).toBe(0)
   // When the first tab closes, the browser hands the lock to the other one.
   await page.close()
   await other.evaluate(() => window.__grant())
   await expect(other.getByText('As browser notifications from this page')).toBeVisible()
-  await expect.poll(() => beats(second), { timeout: 8000 }).toBeGreaterThan(0)
+  // It claims events only right after reading the task list, as on the next reported change.
+  await claimed(other, second)
 })
 
 test('without Web Locks no tab shows browser notifications or sends the heartbeat; the wording promises nothing', async ({ page }) => {
   await stubNotifications(page)
   const script = scripted()
   const log = await open(page, 'settings?section=notifications', { taskPages: script.taskPages })
-  await expect(page.getByText('This browser can’t coordinate Atlas tabs, so none shows them. Windows notifications are the fallback when available.', { exact: false })).toBeVisible()
+  await expect(page.getByText('This browser can’t coordinate Control Center tabs, so none shows them. Windows notifications are the fallback when available.', { exact: false })).toBeVisible()
   await expect(page.locator('#atlas-settings-notifications')).not.toContainText(/Windows notifications are used|shown as Windows notifications/)
   script.ask()
   await announceChange(page)
@@ -321,7 +327,7 @@ test('without Web Locks no tab shows browser notifications or sends the heartbea
   expect(beats(log)).toBe(0)
   expect(await page.evaluate(() => window.__shown.length)).toBe(0)
   await bell(page).click()
-  await expect(panel(page)).toContainText('Notifications: On. This browser can’t coordinate Atlas tabs')
+  await expect(panel(page)).toContainText('Notifications: On. This browser can’t coordinate Control Center tabs')
 })
 
 test('when the browser fails to show one, the heartbeat stops at once so the backend can fall back', async ({ page }) => {
@@ -333,7 +339,7 @@ test('when the browser fails to show one, the heartbeat stops at once so the bac
   })
   const script = scripted()
   const log = await open(page, 'settings?section=notifications', { taskPages: script.taskPages })
-  await expect.poll(() => beats(log)).toBeGreaterThan(0)
+  await claimed(page, log)
   await page.evaluate(() => { window.__failNext = true })
   script.ask()
   await announceChange(page)
@@ -352,7 +358,7 @@ test('backend unavailable: no heartbeat and no promise of a Windows notification
   await stubLocks(page, true)
   let online = true
   const log = await open(page, 'work', { api: () => (online ? undefined : { status: 503, body: { detail: 'unavailable' } }) })
-  await expect.poll(() => beats(log)).toBeGreaterThan(0)
+  await claimed(page, log)
   online = false
   await announceChange(page)
   await expect(page.locator('.a-conn')).toContainText('Backend unavailable')

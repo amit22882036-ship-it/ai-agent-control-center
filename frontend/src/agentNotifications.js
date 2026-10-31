@@ -1,4 +1,8 @@
-// Keep transition state outside React renders and polling effect restarts.
+import { NOTIFY_TITLES, notificationTag } from './notificationCoordination.mjs'
+
+// Keep transition state outside React renders and polling effect restarts. `enabled` on observe
+// means "this page shows notifications now" (preference, permission and the shared lock); every
+// transition is recorded either way, so taking over later never replays earlier events.
 export function createAgentNotifications(onSelect, onError) {
   const statuses = new Map()
   const openNotifications = new Set()
@@ -17,10 +21,10 @@ export function createAgentNotifications(onSelect, onError) {
         if (agent.status === 'waiting' && waitingKind !== 'user') continue
         try {
           if (!NotificationAPI || NotificationAPI.permission !== 'granted') continue
-          const notification = new NotificationAPI(
-            agent.status === 'waiting' ? 'Agent needs your input' : 'Agent finished',
-            { body: (agent.task || `Agent ${agent.agent_id}`).slice(0, 180) },
-          )
+          // The same event identity and tag as Atlas, so one event never stacks twice.
+          const event = agent.status === 'waiting' ? 'waiting:user' : 'finished'
+          const notification = new NotificationAPI(NOTIFY_TITLES[event],
+            { body: (agent.task || `Agent ${agent.agent_id}`).slice(0, 180), tag: notificationTag(agent.agent_id, event) })
           openNotifications.add(notification)
           notification.onclose = () => openNotifications.delete(notification)
           notification.onerror = () => {

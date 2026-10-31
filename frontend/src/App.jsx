@@ -45,7 +45,7 @@ function App() {
   const newAgentButtonRef = useRef(null)
   const notifications = useAgentNotifications(setSelectedAgentId)
   const providerNotices = useProviderNotices(detailsRefresh)
-  const { observeAgents } = notifications
+  const { observeAgents, observeFailure } = notifications
 
   useEffect(() => {
     const controller = new AbortController()
@@ -68,11 +68,13 @@ function App() {
           setOverview(data.overview)
           setHasMore(after !== null)
           setError('')
-          observeAgents(collected)
+          // Notifications may be claimed only when every agent was read (no page left to load).
+          observeAgents(collected, { complete: after === null })
         }
       } catch {
         if (!controller.signal.aborted) {
           setError('Backend unavailable. Unable to load agents; retrying automatically.')
+          observeFailure()
         }
         return false
       } finally {
@@ -93,7 +95,7 @@ function App() {
       queue.dispose()
       controller.abort()
     }
-  }, [observeAgents])
+  }, [observeAgents, observeFailure])
 
   useEffect(() => {
     if (listVersion > 0) refreshRef.current?.()
