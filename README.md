@@ -4,7 +4,7 @@ A local platform for orchestrating, monitoring and controlling AI coding agents 
 
 A chat window gives you one model and one conversation. The Control Center instead treats work as **Tasks** owned by **Agents**: a Parent agent can split a request into separate responsibilities, the backend admits **Child agents** under explicit limits, each Child works in its own workspace, and its result comes back only through conflict-checked integration and the Parent's explicit acceptance. Different agents in one hierarchy can run on different providers, models and reasoning efforts.
 
-> **Status:** an open-source engineering project under active development, run locally on Windows. It is not a production service. The [OpenAI Codex CLI](https://github.com/openai/codex) is the provider verified with real runs. Claude Code and Gemini CLI adapters are implemented and tested against fake CLIs; authenticated end-to-end runs with them have not been performed yet. A Mock provider lets you explore the UI without model usage. See [providers](docs/providers.md) and [limitations](#current-limitations).
+> **Status:** an open-source engineering project under active development, run locally on Windows. It is not a production service. The [OpenAI Codex CLI](https://github.com/openai/codex) is the provider verified most broadly with real runs. Claude Code has had a short authenticated run in an isolated environment (starts, a reply, a helper started by hand, stops); its autonomous delegation and limit recovery are verified only against fake CLIs. Gemini CLI is tested against fake CLIs only. A Mock provider lets you explore the UI without model usage. See [providers](docs/providers.md) and [limitations](#current-limitations).
 
 ![Agent Workspace with a Parent agent, two Child agents and the inspector open](docs/images/agent-workspace.png)
 
@@ -69,8 +69,8 @@ A real autonomous run with Codex has been verified end to end. A natural-languag
 | Provider | Status |
 | --- | --- |
 | OpenAI Codex CLI | Verified with real runs (tested with Codex CLI 0.154.0). Autonomous orchestration and delegation. |
-| Anthropic Claude Code | Implemented; tested with fake CLIs only. Model discovery was checked against the installed CLI without a model request. Autonomous orchestration supported. |
-| Google Gemini CLI | Implemented; tested with fake CLIs only. Can run as a delegated Child but cannot coordinate Children. A specific model cannot be enforced by Gemini CLI, so only Auto routing or its default model can be selected. |
+| Anthropic Claude Code | Implemented. One isolated authenticated run (2026-10-25): tasks started and finished, a reply resumed the session, a helper task started by hand, stops ended verified. Autonomous orchestration, delegation, usage-limit handling and restart recovery are tested with fake CLIs only. Model discovery was checked against the installed CLI without a model request. |
+| Google Gemini CLI | Implemented; tested with fake CLIs only. Can run as a delegated Child but cannot coordinate Children. A specific model cannot be enforced by Gemini CLI, so only Auto routing or its default model can be selected. Since June 18, 2026 Gemini CLI no longer serves free, Google AI Pro or Google AI Ultra personal accounts (Google moved them to Antigravity CLI, which is not supported here); the only allowed route, Sign in with Google, now works for Gemini Code Assist Standard and Enterprise licences. |
 | Mock | Simulated work for development and UI exploration; no model is used. |
 
 Each real provider uses the CLI you installed and signed in to on your own machine, under your own plan. The Control Center contains no credentials, never uses API keys and never buys credits; Claude Code and Gemini CLI stay disabled until you enable them and confirm their billing route. Available models and limits depend on your account. Details: [providers](docs/providers.md).
@@ -210,6 +210,8 @@ Go to <http://127.0.0.1:5173>.
 
 The dashboard always calls the backend at `127.0.0.1:8000`, so the backend must run on that port. Both servers listen only on `127.0.0.1`.
 
+The dashboard opens in **Classic view**, the default. **Atlas**, the redesigned interface (Stage 2J), is an opt-in preview: choose **Atlas preview** in the top bar, and **Classic view** in Atlas to return. Both use the same backend and data. See [Atlas migration](docs/atlas-migration.md) for what it covers and [Atlas readiness review](docs/atlas-m11-readiness.md) for what is still unverified.
+
 ### 10. Register an existing Git project
 
 Agents work on a registered Project, which must be an existing Git repository with at least one commit. For a first try, create a small sandbox repository in a third window:
@@ -259,7 +261,7 @@ Everything has a working default, and environment variables are read by the back
 
 ## Current limitations
 
-- **Under active development.** Real-provider end-to-end validation is not complete: Claude Code and Gemini CLI, multi-provider hierarchies and Auto allocation have been exercised with fake CLIs and isolated databases, not with authenticated accounts.
+- **Under active development.** Real-provider end-to-end validation is not complete: Claude Code has had one short authenticated run (no autonomous delegation, integration or limit recovery); Gemini CLI, multi-provider hierarchies and Auto allocation have been exercised only with fake CLIs and isolated databases.
 - **Gemini model selection.** Gemini CLI documents no way to disable its model fallback and does not report which model produced a response, so selecting a specific Gemini model is refused; only Auto routing or its default model run.
 - **Local and single-user.** The backend has no user authentication. Its [local API guards](docs/api-security.md) block other websites, but any program running as your Windows user can call it. Do not expose it to a network. Production security and deployment have not been validated.
 - **Windows only for real agents.** Launching and Job Object supervision are implemented and tested on Windows. Other operating systems are not a supported target.
@@ -269,11 +271,11 @@ Everything has a working default, and environment variables are read by the back
 - **Private runtime data.** Prompts, agent output and workspace paths are stored in `data/control_center.sqlite3` and the task-workspace folder. Both are excluded from Git. Do not publish them.
 - **Tested, not guaranteed.** The automated suites use mocks, fake provider CLIs, process shims and real temporary Git repositories. Agent status does not prove that an agent's work is correct, so review results before relying on them.
 - **Provider setup.** Setup operations in AI Providers are Windows only and were tested with a fake npm and fake CLIs, not by installing or signing in to real CLIs. Provider permissions apply globally and per Task subtree; there are no project-level permissions.
-- **UI coverage.** Some controls exist only as API endpoints, including Task lifecycle, resources, work intents and integration. The UI has no separate Project or Task management screens.
+- **UI coverage.** Some controls exist only as API endpoints in both interfaces: resources, work intents and applying a root Task's work to its project (`POST /tasks/{id}/integrate`; helper results are combined into their lead automatically). Classic view has no Task lifecycle controls or Project screens; the Atlas preview adds Task pages with Pause, Resume and Cancel and a Projects screen.
 
 ## Roadmap
 
-- **Real-provider integration testing:** authenticated end-to-end runs with Claude Code and Gemini CLI, and mixed-provider hierarchies.
+- **Real-provider integration testing:** authenticated autonomous runs with Claude Code, any authenticated run with Gemini CLI, and mixed-provider hierarchies.
 - **User experience redesign and production readiness (Stage 2J):** a substantial redesign of the interface and workflows, not only visual polish.
 - **Convenient launch and presentation (Stage 2K):** a simpler way to start the application on the desktop (the packaging approach is not decided yet) and a project demonstration video.
 
@@ -311,6 +313,8 @@ The full backend suite takes about 30 minutes on Windows. It uses temporary data
 | [Resource coordination](docs/resource-coordination.md) | Resource claims, fairness, deadlocks and work intents |
 | [Process supervision](docs/process-supervision.md) | Windows Job Object containment, Stop semantics, restart recovery, diagnostics and human attestation |
 | [Local API security](docs/api-security.md) | Host and Origin checks, CSRF token and scripting the API |
+| [Atlas migration](docs/atlas-migration.md) | The opt-in Atlas interface: milestones, parity with Classic view, design decisions and tests |
+| [Atlas readiness review](docs/atlas-m11-readiness.md) | Evidence for and against making Atlas the default, and the manual checks still needed |
 | [Project history](docs/history/stage1-handoff.md) | The Stage 1 technical checkpoint and earlier design decisions |
 
 ## License

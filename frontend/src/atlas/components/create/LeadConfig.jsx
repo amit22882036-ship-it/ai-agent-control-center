@@ -8,6 +8,7 @@ import { providerLabel } from '../../../providerPresentation.mjs'
 import { LEAD_TOOLS, toolState } from '../../model/newTask.mjs'
 import { TOOLS } from '../../vocabulary.mjs'
 import { formatHash } from '../../router.mjs'
+import { humanTimes } from '../../model/connections.mjs'
 
 const TOOL_COLOR = { claude: 'blue', codex: 'green', gemini: 'yellow', mock: 'neutral' }
 
@@ -88,7 +89,7 @@ export function LeadSettings({ provider, models, picker, onPicker, sandbox, onSa
         usage, and is never retried or replaced automatically.</Check>}
     </div>}
     <div className="a-lc-wide a-catalog" role="status">
-      <span className={fresh.stale ? 'a-catalog-stale' : undefined}>{fresh.text || (models.error ? models.error : 'Loading the model list…')}</span>
+      <span className={fresh.stale ? 'a-catalog-stale' : undefined}>{humanTimes(fresh.text) || (models.error ? models.error : 'Loading the model list…')}</span>
       {catalog && <span className="a-catalog-access">{fresh.verified ? 'Listed for this account' : 'Account access not verified'}</span>}
       <Button size="sm" variant="ghost" icon="refresh" disabled={disabled || models.refreshing} onClick={models.refresh}>
         {models.refreshing ? 'Refreshing…' : 'Refresh models'}</Button>

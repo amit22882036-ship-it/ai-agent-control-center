@@ -5,6 +5,7 @@ import { Check, GroupedSelect, PlainSelect } from './fields'
 import { GROUP_LABELS, OTHER_MODEL, chosenConfig, defaultNeedsAttempt, effortChoices, freshness, groupModels, initialChoice,
   modelLimitation, newSessionLikely, optionLabel, selection } from '../../../modelPresentation.mjs'
 import { providerLabel } from '../../../providerPresentation.mjs'
+import { humanTimes } from '../../model/connections.mjs'
 
 // Provider → model → effort, from the account-scoped catalog the backend discovered (the classic
 // picker's rules and words). Unavailable models stay visible but cannot be chosen; an unverified
@@ -37,7 +38,7 @@ export function ModelChoice({ provider, models, value, onChange, disabled, label
       onChange={(effort) => update({ effort })}
       options={[{ value: '', label: 'Provider default' }, ...efforts.levels.map((level) => ({ value: level, label: level }))]} />
     {provider !== 'mock' && <div className="a-catalog" role="status">
-      <span className={fresh.stale ? 'a-catalog-stale' : undefined}>{fresh.text || 'Loading the model list…'}</span>
+      <span className={fresh.stale ? 'a-catalog-stale' : undefined}>{humanTimes(fresh.text) || 'Loading the model list…'}</span>
       {catalog && <span className="a-catalog-access">{fresh.verified ? 'Listed for this account' : 'Account access not verified'}</span>}
       <Button size="sm" variant="ghost" icon="refresh" disabled={disabled || models.refreshing} onClick={models.refresh}>
         {models.refreshing ? 'Refreshing…' : 'Refresh models'}</Button>

@@ -24,7 +24,7 @@ the backend reports.
 | M8 | Connections (full parity with Classic's AI Providers view) and Settings | Done |
 | M9 | Notifications and attention: the bell, provider update notices, "next that needs you", reply from Work, browser notifications | Done |
 | M10 | Product-wide polish: keyboard, reflow and text zoom, responsive layouts, performance, cross-screen state | Done |
-| M11 | Parity review and the default-switch decision | Not started |
+| M11 | Readiness review for the default-switch decision ([atlas-m11-readiness.md](atlas-m11-readiness.md)) | Review done; the decision is the owner's |
 
 Legacy removal is a separate, explicitly authorized final step. The native folder picker is a
 separate milestone after the core migration.

@@ -75,7 +75,7 @@ export function RegisterProjectDialog({ open, onClose, onRegistered, onRefresh =
   }
 
   return <Dialog open={open} onClose={() => { if (!busy) onClose() }} title="Add a project"
-    description="A project is the top folder of a Git repository with at least one commit. Agents work in private copies; your folder changes only when you apply a result.">
+    description="A project is the top folder of a Git repository with at least one commit. Agents work in private copies of it; nothing here writes their changes into your folder.">
     <form className="a-register" onSubmit={register}>
       <TextField label="Project name" value={name} maxLength={100} disabled={busy} onChange={edit(setName)} />
       <TextField label="Folder path" mono value={path} disabled={busy} placeholder="C:\path\to\repository"
@@ -139,7 +139,7 @@ export function ProjectPicker({ directory, value, onChange, onRegistered, disabl
         <span className="a-pjt"><b>Add a project…</b><small>Type the full path of a Git repository</small></span>
       </button>
     </div>}
-    <p className="a-fine a-pjhint">Agents work in a private copy; your folder changes only when you apply a result.</p>
+    <p className="a-fine a-pjhint">Agents work in a private copy; nothing here writes their changes into your folder.</p>
     {adding && <RegisterProjectDialog open onClose={() => setAdding(false)} onRefresh={onRefresh}
       onRegistered={(project) => { setAdding(false); onRegistered(project) }} />}
   </div>
