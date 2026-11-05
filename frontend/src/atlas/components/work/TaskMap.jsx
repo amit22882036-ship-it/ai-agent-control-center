@@ -6,6 +6,7 @@ import { MenuButton } from '../overlays'
 import { boxOf, branchIds, mapKey } from '../../model/mapLayout.mjs'
 import { ZOOM, ensureVisible, fitCamera, followAnchor, intersects, panBy, worldRect, zoomAt } from '../../model/mapCamera.mjs'
 import { PLACEMENT_NOTES, descendantCount, timeView, whoView } from '../../model/workList.mjs'
+import { familyStrand } from '../../model/workSheet.mjs'
 
 // Above this many shown Tasks, only the ones near the view are drawn (the selected and the
 // keyboard-focused Task always are). Smaller maps are drawn whole.
@@ -51,7 +52,10 @@ function nodeInfo({ store, derived, id, row, now, projectName, family }) {
   const project = row.depth === 0 ? projectName(task.projectId) : null
   // Read after the visible title and status (the node is named by its content).
   const extra = [whoText, project ? `Project: ${project}` : null, hidden ? `${hidden} task${hidden === 1 ? '' : 's'} hidden below` : null].filter(Boolean).join('. ')
-  return { title, status, who, time, hidden, notLoaded, planned: task.planned.unmaterialized, placement, extra, project }
+  // A closed family shows its strand, so a team of sixteen never looks like a single task.
+  const top = row.depth === 0 && hidden && derived.byTop[id] ? derived.byTop[id] : null
+  const strand = top ? familyStrand(derived, top) : null
+  return { title, status, who, time, hidden, notLoaded, planned: task.planned.unmaterialized, placement, extra, project, strand }
 }
 
 function Face({ who, size }) {
@@ -93,6 +97,9 @@ const MapNode = memo(function MapNode({ node, row, info, selected, tabbable, dim
     <span className={`a-gs a-tone-${info.status.tone}`}><span className="a-sr">. </span>{info.status.label}{info.time ? ` · ${info.time}` : ''}</span>
     <span className="a-sr">. {info.extra}.</span>
     {info.project && <span className="a-gproj a-bidi" dir="auto" aria-hidden="true">{info.project}</span>}
+    {info.strand && <span className="a-gstrand" aria-hidden="true" title={`${info.strand.size} tasks, ${info.strand.finished} finished`}>
+      <span className="a-strand">{info.strand.marks.map((mark, index) => <i key={index} className={`a-sm a-sm--${mark.category}${mark.lead ? ' is-lead' : ''}`} />)}</span>
+      <span className="a-strand-n a-num">{info.strand.finished}/{info.strand.size}</span></span>}
     {(info.notLoaded > 0 || info.planned > 0 || row.hasChildren || info.placement) && <span className="a-gchips">
       {info.placement && <span className="a-gchip a-gchip--warn" title={info.placement}><Icon name="info" size={11} />{info.placement}</span>}
       {fold}

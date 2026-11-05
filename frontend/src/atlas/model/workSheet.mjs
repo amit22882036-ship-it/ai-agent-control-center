@@ -4,7 +4,9 @@
 import { taskCategory } from './workList.mjs'
 
 // Row heights in CSS pixels at the default text size; the sheet scales them with the root font.
-export const ROW = { section: 52, day: 36, family: 64, member: 50, more: 40, reveal: 56, end: 72 }
+export const ROW = { section: 52, day: 36, family: 64, member: 50, ask: 84, past: 44, pastm: 38, more: 40, reveal: 56, end: 72 }
+// Row kinds that are Tasks (the rest are headings and notes).
+export const TASK_KINDS = new Set(['family', 'member', 'ask', 'past', 'pastm'])
 
 const DAY = 86400000
 const parse = (value) => {
@@ -67,7 +69,11 @@ export function sheetRows(view, store, derived, { now = Date.now(), finishedOpen
   const rows = []
   const pushFamily = (family, sectionKey) => {
     for (const row of family.rows) {
-      rows.push({ kind: row.depth === 0 ? 'family' : 'member', key: `task:${row.id}`, id: row.id, row, family, section: sectionKey })
+      // Three densities: a task that needs the person is a tall row that says what it needs;
+      // history is a quiet one-line ledger; everything else is a regular row.
+      const kind = taskCategory(derived, row.id) === 'needs' ? 'ask'
+        : sectionKey === 'done' ? (row.depth === 0 ? 'past' : 'pastm') : row.depth === 0 ? 'family' : 'member'
+      rows.push({ kind, key: `task:${row.id}`, id: row.id, row, family, section: sectionKey })
       if (row.hiddenChildren > 0) {
         rows.push({ kind: 'more', key: `more:${row.id}`, id: row.id, depth: row.depth + 1, hidden: row.hiddenChildren, family })
       }
@@ -151,7 +157,17 @@ export function sheetWindow(tops, total, scrollTop, height, overscan = 480) {
 }
 
 // Rows a keyboard can stand on: Tasks (family and member rows).
-export const focusable = (row) => row.kind === 'family' || row.kind === 'member'
+export const focusable = (row) => TASK_KINDS.has(row.kind)
+
+// A family's strand: one mark per Task, lead first, then helpers in tree order, each in its state's
+// category, so a family's shape and progress read at a glance. Long teams are sampled evenly.
+export function familyStrand(derived, family, limit = 14) {
+  const ids = family.members
+  const marks = ids.length <= limit ? ids : Array.from({ length: limit }, (_, i) => ids[Math.floor((i * ids.length) / limit)])
+  const counts = teamCounts(derived, family)
+  return { marks: marks.map((id) => ({ id, category: taskCategory(derived, id), lead: id === family.topId })), size: counts.size,
+    finished: counts.done + counts.canceled, counts, sampled: ids.length > limit }
+}
 
 // "Changed since you looked": a Task whose record changed after the later of the moment the person
 // last cleared the marks and the moment they last opened that Task. Reported times only.

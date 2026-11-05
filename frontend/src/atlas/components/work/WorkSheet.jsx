@@ -4,7 +4,7 @@ import { Avatar, StatusBead } from '../identity'
 import { Button } from '../primitives'
 import GreaseMark from './GreaseMark'
 import { PLACEMENT_NOTES, nowView, taskCategory, timeView, treeKey, whoView } from '../../model/workList.mjs'
-import { ROW, focusable, sheetOffsets, sheetWindow, teamCounts } from '../../model/workSheet.mjs'
+import { ROW, TASK_KINDS, familyStrand, focusable, sheetOffsets, sheetWindow } from '../../model/workSheet.mjs'
 
 const reducedMotion = () => typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
 const EASE = 'cubic-bezier(.2,.8,.2,1)'
@@ -44,15 +44,20 @@ const TEAM = [
   ['pending', 'pending', 'not started'], ['done', 'done', 'finished'], ['canceled', 'stopped', 'canceled'],
 ]
 
-// A family's team at a glance: how many of its Tasks are in each state, never a percentage.
+// A family's team at a glance: its strand (one mark per Task, lead first, coloured by state) and
+// how many of its Tasks are finished, never a percentage.
 function Team({ derived, family }) {
-  const counts = teamCounts(derived, family)
+  const strand = familyStrand(derived, family)
+  const { counts } = strand
   if (counts.size < 2) return <div className="a-c-team" aria-hidden="true" />
   const parts = TEAM.filter(([key]) => counts[key] > 0)
-  return <div className="a-c-team" title={parts.map(([key, , words]) => `${counts[key]} ${words}`).join(' · ')}>
-    <span className="a-sr">Team: {parts.map(([key, , words]) => `${counts[key]} ${words}`).join(', ')}.</span>
-    {parts.map(([key, bead]) => <span key={key} className={`a-tm a-tm--${key}`} aria-hidden="true">
-      <StatusBead state={bead} size={11} decorative /><span className="a-num">{counts[key]}</span></span>)}
+  const words = parts.map(([key, , label]) => `${counts[key]} ${label}`)
+  return <div className="a-c-team" title={`${counts.size} tasks: ${words.join(' · ')}${strand.sampled ? ' (strand sampled)' : ''}`}>
+    <span className="a-sr">Team of {counts.size}: {words.join(', ')}.</span>
+    <span className="a-strand" aria-hidden="true">
+      {strand.marks.map((mark, index) => <i key={index} className={`a-sm a-sm--${mark.category}${mark.lead ? ' is-lead' : ''}`} />)}
+    </span>
+    <span className="a-strand-n a-num" aria-hidden="true">{strand.finished}/{counts.size}</span>
   </div>
 }
 
@@ -73,7 +78,9 @@ const TaskRow = memo(function TaskRow({ entry, top, height, store, derived, proj
   const hiddenAttention = row.hasChildren && !row.expanded && derived.attentionBelow.has(row.id)
   const title = task.title || 'Untitled task'
   const finished = entry.section === 'done'
-  const classes = ['a-row', top0 ? 'a-row--root' : 'a-row--member', selected && 'is-selected', marked && 'is-marked',
+  const asking = entry.kind === 'ask'
+  const past = entry.kind === 'past' || entry.kind === 'pastm'
+  const classes = ['a-row', top0 ? 'a-row--root' : 'a-row--member', selected && 'is-selected', marked && 'is-marked', asking && 'is-ask', past && 'is-past',
     status.key === 'canceled' && 'is-canceled', finished && 'is-finished', entry.first && 'is-first', entry.last && 'is-last'].filter(Boolean).join(' ')
   return <div className={classes} role="treeitem" aria-level={row.depth + 1} aria-setsize={row.setSize} aria-posinset={row.position}
     aria-expanded={row.hasChildren ? row.expanded : undefined} aria-selected={selected} tabIndex={focused ? 0 : -1}
@@ -95,7 +102,12 @@ const TaskRow = memo(function TaskRow({ entry, top, height, store, derived, proj
       <span className="a-r-title">
         <span className="a-t a-bidi" dir="auto" title={title}>{title}</span>
         <span className="a-sr">{status.label}.</span>
-        {top0 && !compact && <span className="a-sub">
+        {asking && !compact && <span className="a-askline">
+          <b>{current.line}</b>{current.second ? <span>{' · '}{current.second}</span> : null}
+          {onReply && status.key === 'needs_input' && <button type="button" className="a-askreply" tabIndex={-1} aria-hidden="true" title="Reply · R"
+            onClick={(event) => { event.stopPropagation(); onReply(row.id) }}><Icon name="reply" size={13} />Reply</button>}
+        </span>}
+        {top0 && !compact && !past && <span className="a-sub">
           <span className="a-pdot" style={{ '--hue': entry.hue }} aria-hidden="true" />
           <span className="a-bidi" dir="auto">{projectName(task.projectId)}</span>
           {/* A flex line drops a leading space, so the separator starts with a no-break space. */}
@@ -110,14 +122,14 @@ const TaskRow = memo(function TaskRow({ entry, top, height, store, derived, proj
       <Who who={who} />
       <div className="a-c-now">
         <span className={`a-l a-tone-${current.tone}`}>{current.line}</span>
-        {current.second && <span className="a-l2">{current.second}</span>}
+        {current.second && !past && <span className="a-l2">{current.second}</span>}
       </div>
       <div className="a-c-time a-num" title={changed ? `${time.title}. Changed since you last looked.` : time.title}>
         {changed && <span className="a-changed" aria-hidden="true" />}{time.text}{changed && <span className="a-sr"> (changed since you last looked)</span>}
       </div>
       {(onShowInMap || onOpenTask) && <span className="a-row-quick">
         {/* A pointer shortcut; with the keyboard, select the row and press R (or use the details panel). */}
-        {onReply && status.key === 'needs_input' && <button type="button" className="a-row-map a-row-reply" tabIndex={-1} aria-hidden="true" title="Reply · R"
+        {onReply && status.key === 'needs_input' && !asking && <button type="button" className="a-row-map a-row-reply" tabIndex={-1} aria-hidden="true" title="Reply · R"
           onClick={(event) => { event.stopPropagation(); onReply(row.id) }}><Icon name="reply" size={14} /><span>Reply</span></button>}
         {onOpenTask && <button type="button" className="a-row-map" tabIndex={-1} aria-hidden="true" title="Open task"
           onClick={(event) => { event.stopPropagation(); onOpenTask(row.id) }}><Icon name="open" size={14} /></button>}
@@ -368,7 +380,7 @@ export default function WorkSheet({ rows, viewKey, store, derived, projectName, 
   for (let i = start; i < end; i += 1) {
     const entry = rows[i]
     const h = height(i)
-    if (entry.kind === 'family' || entry.kind === 'member') {
+    if (TASK_KINDS.has(entry.kind)) {
       shown.push(<TaskRow key={entry.key} entry={{ ...entry, hue: hueOf?.(store.tasks[entry.id]?.projectId) }} top={tops[i]} height={h} store={store} derived={derived}
         projectName={projectName} now={now} selected={entry.id === selectedId} focused={entry.id === focusTarget}
         changed={Boolean(changed?.(entry.id))} onSelect={onSelect} onToggle={toggleRow} onFocusRow={setFocusId} compact={compact}

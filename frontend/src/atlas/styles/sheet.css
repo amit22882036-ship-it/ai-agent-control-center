@@ -181,12 +181,58 @@
 /* A marked task shows one mark: the grease circle around a hand drawn in the same marker. */
 .atlas .a-sheet .a-row.is-marked .a-row-bead .a-bead circle:first-child { fill: transparent; }
 .atlas .a-sheet .a-row.is-marked .a-row-bead .a-bead path { stroke: var(--a-mark); stroke-width: 1.35; }
-/* The section being read stays named while its heading is out of view. */
+/* The section being read stays named while its heading is out of view: a scroll-edge band the rows
+   pass under, with the label where the heading itself sits, so the heading seems to stop there. */
 .atlas .a-sheet-pin { position: sticky; top: 0; height: 0; z-index: 4; pointer-events: none; }
-.atlas .a-sheet-pin-label { position: absolute; top: 8px; right: 22px; display: inline-flex; align-items: center; gap: 8px; height: 28px; padding: 0 12px;
-  border-radius: 999px; font: 650 12.5px/1 var(--a-font); color: var(--a-text-2); background: var(--a-glass-2);
-  backdrop-filter: var(--a-blur); -webkit-backdrop-filter: var(--a-blur); box-shadow: var(--a-shadow-1); }
-.atlas .a-sheet-pin-label .a-num { color: var(--a-text-4); font-family: var(--a-mono); font-size: 11.5px; }
+.atlas .a-sheet-pin-label { position: absolute; top: 0; left: 0; right: 0; height: 44px; display: flex; align-items: center; gap: 8px;
+  padding: 0 30px 8px; font: 650 13.5px/1 var(--a-font); letter-spacing: -.005em; color: var(--a-text-2);
+  background: linear-gradient(to bottom, var(--a-bg) 0%, color-mix(in srgb, var(--a-bg) 82%, transparent) 58%, transparent 100%);
+  backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+  mask-image: linear-gradient(to bottom, #000 62%, transparent); -webkit-mask-image: linear-gradient(to bottom, #000 62%, transparent); }
+.atlas .a-sheet-pin-label .a-num { color: var(--a-text-4); font-weight: 600; }
+@media (prefers-reduced-transparency: reduce) {
+  .atlas .a-sheet-pin-label { backdrop-filter: none; -webkit-backdrop-filter: none; background: var(--a-bg); mask-image: none; -webkit-mask-image: none; height: 36px; padding-bottom: 0; }
+}
+
+/* The strand: a family's tasks as one mark each, lead first, in their state's colour. Its shape
+   tells a big team from a small one and a finished one from a busy one before any word is read. */
+.atlas .a-strand { display: inline-flex; align-items: center; gap: 2px; min-width: 0; overflow: hidden; }
+.atlas .a-sm { flex: none; width: 4px; height: 14px; border-radius: 2px; background: color-mix(in srgb, var(--a-text-3) 32%, transparent); }
+.atlas .a-sm.is-lead { width: 8px; border-radius: 3px; margin-right: 3px; }
+.atlas .a-sm--needs { background: var(--a-mark); }
+.atlas .a-sm--working { background: var(--a-live); }
+.atlas .a-sm--waiting { background: color-mix(in srgb, var(--a-block) 55%, transparent); }
+.atlas .a-sm--held { background: var(--a-block); }
+.atlas .a-sm--pending { background: transparent; box-shadow: inset 0 0 0 1.25px color-mix(in srgb, var(--a-text-3) 60%, transparent); }
+.atlas .a-sm--done { background: color-mix(in srgb, var(--a-work) 34%, transparent); }
+.atlas .a-sm--canceled { background: repeating-linear-gradient(135deg, color-mix(in srgb, var(--a-text-3) 40%, transparent) 0 2px, transparent 2px 4px); }
+.atlas .a-strand-n { margin-left: 8px; font: 600 11.5px/1 var(--a-mono); color: var(--a-text-3); white-space: nowrap; }
+.atlas .a-sheet .a-row.is-past .a-sm { height: 9px; opacity: .8; }
+.atlas .a-gstrand { display: flex; align-items: center; justify-content: center; margin-top: 6px; }
+.atlas .a-gstrand .a-sm { height: 11px; }
+.atlas .a-gstrand .a-strand-n { margin-left: 6px; font-size: 10.5px; }
+
+/* Asks: a task that needs the person is taller and says what it needs, with Reply on the row. */
+.atlas .a-sheet .a-row.is-ask .a-r-title .a-t { font-weight: 680; }
+.atlas .a-askline { display: flex; align-items: center; gap: 0; margin-top: 5px; min-width: 0; font-size: 12.5px; color: var(--a-ask); white-space: nowrap; }
+.atlas .a-askline b { font-weight: 680; }
+.atlas .a-askline > span { overflow: hidden; text-overflow: ellipsis; color: color-mix(in srgb, var(--a-ask) 78%, var(--a-text-2)); }
+.atlas .a-askreply { flex: none; display: inline-flex; align-items: center; gap: 5px; height: 24px; margin-left: 12px; padding: 0 10px; border-radius: 999px;
+  font-size: 12px; font-weight: 680; color: var(--a-group); background: var(--a-ask); pointer-events: auto; }
+.atlas .a-askreply:hover { filter: brightness(1.06); }
+.atlas .a-sheet .a-row.is-ask .a-c-now { visibility: hidden; }
+/* Only the mark and the words carry the marker colour; the paper stays paper, so a list of asks
+   reads as a short to-do list, not an alarm. */
+
+/* History is a ledger: one quiet line per task, no second lines. */
+.atlas .a-sheet .a-row.is-past .a-r-title .a-t { font-size: 13.5px; font-weight: 540; color: var(--a-text-2); }
+.atlas .a-sheet .a-row.is-past.a-row--member .a-r-title .a-t { font-size: 13px; }
+.atlas .a-sheet .a-row.is-past .a-c-who .a-avatar { transform: scale(.78); }
+.atlas .a-sheet .a-row.is-past .a-c-who small { display: none; }
+.atlas .a-sheet .a-row.is-past .a-c-who b { font-weight: 520; color: var(--a-text-3); }
+.atlas .a-sheet .a-row.is-past .a-c-now .a-l { font-weight: 500; font-size: 13px; }
+.atlas .a-sheet .a-row.is-past .a-row-bead { transform: scale(.86); }
+.atlas .a-sheet .a-row.is-past.a-row--root:not(.is-first)::before { opacity: .6; }
 .atlas .a-sheet-pin-label.a-sheet-pin--needs { color: var(--a-ask); }
 /* "Go" beside the Need you readout: the first task that needs you, as A does. */
 .atlas .a-now .a-now-go { align-self: center; display: inline-flex; align-items: center; gap: 2px; height: 30px; margin: 0 6px 0 -6px; padding: 0 8px 0 12px;

@@ -168,13 +168,13 @@ test('Work moves between the tasks that need you in the List’s order, in both 
 test('reply from a row or with R puts the cursor in the answer, and a draft survives moving away and back', async ({ page }) => {
   await open(page, 'work')
   await row(page, 'Handle quoted fields').hover()
-  await row(page, 'Handle quoted fields').locator('.a-row-reply').click()
+  await row(page, 'Handle quoted fields').locator('.a-askreply').click()
   await expect(page).toHaveURL(/task=quoted/)
   await expect(answer(page)).toBeFocused()
   await answer(page).fill('Keep them; escape inside quotes.')
   // Only rows waiting for a reply have it.
   await row(page, 'Migrate the settings database').hover()
-  await expect(row(page, 'Migrate the settings database').locator('.a-row-reply')).toHaveCount(0)
+  await expect(row(page, 'Migrate the settings database').locator('.a-askreply')).toHaveCount(0)
   await row(page, 'Migrate the settings database').click()
   await expect(page).toHaveURL(/task=migrate/)
   await row(page, 'Handle quoted fields').click()

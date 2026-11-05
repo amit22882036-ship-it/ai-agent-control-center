@@ -38,7 +38,7 @@ test('capture M9 review screenshots', async ({ page }) => {
   const openBell = async () => { await page.locator('.a-bell').click(); await expect(page.getByRole('dialog', { name: 'Notifications' })).toBeVisible() }
   const reply = async () => {
     await page.getByRole('treeitem', { name: /^Handle quoted fields/ }).hover()
-    await page.locator('.a-row-reply').click()
+    await page.locator('.a-askreply').click()
     await page.getByRole('complementary', { name: 'Task details' }).getByLabel('Your answer').fill('Keep them, and escape quotes inside quoted fields.')
   }
   await shot('m9-01-bell-panel-light', 'work', 'light', { prepare: openBell })
