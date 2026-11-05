@@ -198,7 +198,7 @@ function detail(pathname, search, tasks, projects, agents, providers) {
 // undefined to fall through. Every backend request is recorded in `log.requests` with its body.
 // `providers` is the GET /providers/onboarding answer (or a function returning it); null answers 503.
 // `notices` is the GET /providers/notifications answer, the same way.
-export async function openApp(page, { backend = 'online', path = '/', tasks = contract.all, taskPages = null, projects = PROJECTS,
+export async function openApp(page, { backend = 'online', path = '/?ui=classic', tasks = contract.all, taskPages = null, projects = PROJECTS,
   agents = {}, api = null, providers = DEFAULT_ONBOARDING, notices = [] } = {}) {
   const log = { backend: [], external: [], requests: [] }
   await page.addInitScript(fakeEventSource)

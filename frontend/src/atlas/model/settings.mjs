@@ -1,5 +1,6 @@
 // What the Settings page says, from what the browser and the backend report. Pure.
 import { desktopNotificationPrerequisite } from '../../notificationGuidance.js'
+import { API_HOST } from '../../apiClient.mjs'
 
 export const SETTINGS_SECTIONS = [['appearance', 'Appearance'], ['interface', 'Interface'], ['notifications', 'Notifications'],
   ['keyboard', 'Keyboard'], ['accessibility', 'Accessibility'], ['about', 'About and diagnostics']]
@@ -67,9 +68,9 @@ export function supervisionView(resource) {
 // A plain-text summary to paste into a bug report: states only, never task text, paths or names.
 export function diagnosticsText({ live, connection, supervision, notifications, connections, appearance, userAgent, now = new Date() }) {
   return [
-    'Control Center diagnostics (Atlas preview)',
+    'Control Center diagnostics (Lumen interface)',
     `Time: ${now.toISOString()}`,
-    `Backend: 127.0.0.1:8000 · ${connection.label} · live updates ${live.transport === 'live' ? 'connected' : 'not connected'}`,
+    `Backend: ${API_HOST} · ${connection.label} · live updates ${live.transport === 'live' ? 'connected' : 'not connected'}`,
     `Last summary read: ${live.receivedAt ? new Date(live.receivedAt).toISOString() : 'none'}`,
     `Process supervision: ${supervision.data?.status || 'not known'}`,
     `Tools read: ${connections.data ? 'yes' : 'no'}${connections.error ? ` (last read failed: ${connections.error})` : ''}`,

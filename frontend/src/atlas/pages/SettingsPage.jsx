@@ -7,7 +7,7 @@ import { rovingTarget } from '../a11y.mjs'
 import { connectionView } from '../status.mjs'
 import { THEME_LABELS } from '../vocabulary.mjs'
 import { exitAtlas } from '../uiMode.mjs'
-import { API_BASE } from '../../apiClient.mjs'
+import { API_BASE, API_HOST } from '../../apiClient.mjs'
 import { useLiveResource } from '../hooks'
 import { INSPECTOR, readInspectorWidth, saveInspectorWidth } from '../layout.mjs'
 import { KEY_GROUPS, KEY_NOTE, SETTINGS_SECTIONS, diagnosticsText, notificationView, settingsSection, supervisionView } from '../model/settings.mjs'
@@ -79,9 +79,9 @@ export default function SettingsPage({ appearance, live, navigate, route, notifi
         </Card>
         <Card className="a-section" id="atlas-settings-interface" titleId="atlas-settings-interface-h" title="Interface">
           <div className="a-rows">
-            <div className="a-row"><div><b>Atlas preview</b><small>You are previewing the new interface. Classic view stays the default: opening the
-              app without an Atlas address always shows Classic view.</small></div>
-              <Button icon="swap" onClick={() => exitAtlas()}>Return to Classic view</Button></div>
+            <div className="a-row"><div><b>Classic interface</b><small>The earlier interface stays available as a fallback with every function. It
+              opens in this window; its own button brings you back here.</small></div>
+              <Button icon="swap" onClick={() => exitAtlas()}>Open Classic interface</Button></div>
             <div className="a-row"><div><b>Details panel width</b><small>{width} px{width === INSPECTOR.default ? ' (default)' : ''}. Drag the panel’s edge in Work, or use
               the arrow keys on it. Saved in this browser.</small></div>
               <Button disabled={width === INSPECTOR.default} onClick={() => { saveInspectorWidth(INSPECTOR.default); setWidth(INSPECTOR.default) }}>Reset to default</Button></div>
@@ -133,8 +133,8 @@ export default function SettingsPage({ appearance, live, navigate, route, notifi
         </Card>
         <Card className="a-section" id="atlas-settings-about" titleId="atlas-settings-about-h" title="About and diagnostics">
           <dl className="a-kv">
-            <dt>Interface</dt><dd>Atlas preview. Classic view is the default and keeps every function.</dd>
-            <dt>Backend</dt><dd>127.0.0.1:8000 · {connection.label}. {connection.detail}</dd>
+            <dt>Interface</dt><dd>Lumen. The Classic interface remains available as a fallback.</dd>
+            <dt>Backend</dt><dd>{API_HOST} · {connection.label}. {connection.detail}</dd>
             <dt>Process supervision</dt><dd className={supervised.tone === 'alert' ? 'a-tone-alert-text' : undefined}>{supervised.text}</dd>
             <dt>Tools</dt><dd>{connections.data ? (attention?.any ? 'Some need attention (see Connections).' : 'Read; none needs attention.') : connections.error ? 'Couldn’t be read.' : 'Reading…'}</dd>
             <dt>Design reference</dt><dd><button type="button" className="a-btn a-btn--ghost a-btn--sm" onClick={() => navigate('gallery')}>Open the design gallery</button></dd>

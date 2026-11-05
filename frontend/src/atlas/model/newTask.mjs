@@ -5,6 +5,7 @@ import { autonomyEligible, creationPayload } from '../../autonomousCreation.mjs'
 import { chosenConfig, initialChoice, selection, selectionReady } from '../../modelPresentation.mjs'
 import { permissionFor, submissionProblem } from '../../onboardingPresentation.mjs'
 import { providerLabel, selectable, stateLabel, stateOf, statusFor } from '../../providerPresentation.mjs'
+import { accessSummary } from './access.mjs'
 
 export const LEAD_TOOLS = ['claude', 'codex', 'gemini', 'mock']
 
@@ -21,8 +22,8 @@ export const TEMPLATES = [
 export const INITIAL_HELPERS = false
 
 export function emptyDraft() {
-  return { text: '', projectId: null, provider: 'mock', sandbox: 'read-only', picker: initialChoice(), autonomous: INITIAL_HELPERS,
-    allocation: 'explicit', autoProviders: [] }
+  return { text: '', projectId: null, provider: 'mock', sandbox: 'read-only', fullConfirmed: false, helperAccess: 'workspace-write',
+    picker: initialChoice(), autonomous: INITIAL_HELPERS, allocation: 'explicit', autoProviders: [] }
 }
 
 export function addTemplate(text, template) {
@@ -61,12 +62,14 @@ export function draftView(draft, { policy, statuses, catalog, projects = [] }) {
   else if (!project) problem = 'Choose a project to start.'
   else if (!tool.usable) problem = `${providerLabel(draft.provider)} can’t start now: ${tool.note}`
   else if (!modelReady) problem = chosen?.needsAttempt ? 'Confirm the explicit attempt for the unverified model, or choose another model.' : 'Choose an available model.'
+  else if (real && draft.sandbox === 'full-access' && !draft.fullConfirmed) problem = 'Confirm Full Access to start, or choose Workspace.'
   else if (auto && draft.autoProviders.length === 0) problem = 'Check at least one tool for automatic choice.'
   else if (auto && revokedAuto.length) problem = submissionProblem(policy, 'mock', revokedAuto)
   const lead = providerLabel(draft.provider)
   const where = project ? project.name : 'the chosen project'
   const summary = !real ? [`Mock simulates one agent in ${where}. No AI tool runs and no helpers are brought in.`] : [
-    `${lead} (${config.model || 'provider default model'}${config.effort ? `, ${config.effort} effort` : ''}) leads this task in a private copy of ${where} and ${draft.sandbox === 'workspace-write' ? 'may edit files there' : 'can only read files'}.`,
+    `${lead} (${config.model || 'provider default model'}${config.effort ? `, ${config.effort} effort` : ''}) leads this task in a private copy of ${where} and ${accessSummary(draft.sandbox)}.`,
+    ...(helpers && draft.sandbox === 'full-access' ? [draft.helperAccess === 'full-access' ? 'Its helpers also get Full Access.' : 'Its helpers work with Workspace access, not Full Access.'] : []),
     !canLead ? `It works alone: only Claude Code and Codex can lead helpers.`
       : !helpers ? 'It works alone. No helper creation is authorized for this task.'
         : 'It may bring in helpers for parts of the work if it decides that helps. It is not required to.',
@@ -82,5 +85,5 @@ export function draftView(draft, { policy, statuses, catalog, projects = [] }) {
 export function newTaskPayload(draft, view) {
   return creationPayload(draft.text, draft.provider, draft.sandbox, draft.autonomous, null, view.project.project_id,
     view.config.model || undefined, { effort: view.config.effort, attempt: view.config.attempt,
-      autoProviders: draft.allocation === 'auto' ? draft.autoProviders : null })
+      autoProviders: draft.allocation === 'auto' ? draft.autoProviders : null, helperAccess: draft.helperAccess })
 }

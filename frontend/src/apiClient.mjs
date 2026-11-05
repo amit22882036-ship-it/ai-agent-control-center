@@ -1,4 +1,11 @@
-export const API_BASE = 'http://127.0.0.1:8000'
+// The backend's origin. The desktop app serves this interface from the backend itself and is built
+// with VITE_API_BASE=same-origin; development and the browser tests use the fixed local port.
+const configuredBase = typeof import.meta !== 'undefined' && import.meta.env ? import.meta.env.VITE_API_BASE : undefined
+export const API_BASE = configuredBase === 'same-origin' && typeof window !== 'undefined' && /^https?:/.test(window.location?.origin || '')
+  ? window.location.origin
+  : (configuredBase && configuredBase !== 'same-origin' ? configuredBase : 'http://127.0.0.1:8000')
+// The address as people read it (no scheme), for diagnostics.
+export const API_HOST = API_BASE.replace(/^https?:\/\//, '')
 export const CSRF_HEADER = 'X-Control-Center-CSRF'
 export const CSRF_TOKEN_PATH = '/security/csrf-token'
 const UNSAFE_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE'])

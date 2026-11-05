@@ -25,7 +25,7 @@ test('a helper is added under the current agent with the classic child payload',
   await dialog.getByLabel('What should the helper do?').fill('Add a totals row to the summary')
   await dialog.getByRole('radio', { name: /Codex/ }).check()
   await dialog.getByLabel('Model', { exact: true }).selectOption('GPT-5.5')
-  await dialog.getByRole('radio', { name: 'Can edit' }).check()
+  await dialog.getByRole('radio', { name: 'Workspace', exact: true }).check()
   await submit.evaluate((button) => { button.click(); button.click() })
   await expect(dialog).toBeHidden()
   await expect(inspector.getByText('Helper started. Its task appears under this one.')).toBeVisible()

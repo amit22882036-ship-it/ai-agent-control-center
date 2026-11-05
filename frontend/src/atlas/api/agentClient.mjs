@@ -83,7 +83,24 @@ export const agentActions = {
   // Process ownership.
   refreshDiagnostics: (executionId, options) => send('POST', `/executions/${encode(executionId)}/diagnostics`, undefined, options),
   attest: (executionId, body, options) => send('POST', `/executions/${encode(executionId)}/attestation`, body, options),
+  // Project organization and lifecycle (schema v39). Names and order are presentation only; the
+  // Trash moves the real folder, and a permanent deletion removes it after a typed confirmation.
+  renameProject: (projectId, name, options) => send('PATCH', `/projects/${encode(projectId)}`, { name }, options),
+  reorderProjects: (projectIds, options) => send('PUT', '/projects/order', { project_ids: projectIds }, options),
+  hideProject: (projectId, options) => send('POST', `/projects/${encode(projectId)}/hide`, undefined, options),
+  unhideProject: (projectId, options) => send('POST', `/projects/${encode(projectId)}/unhide`, undefined, options),
+  stopProjectWork: (projectId, options) => send('POST', `/projects/${encode(projectId)}/stop-work`, undefined, options),
+  trashProject: (projectId, options) => send('POST', `/projects/${encode(projectId)}/trash`, undefined, options),
+  restoreProject: (projectId, targetPath, options) => send('POST', `/projects/${encode(projectId)}/restore`,
+    targetPath ? { target_path: targetPath } : {}, options),
+  deleteProject: (projectId, confirmName, options) => send('DELETE', `/projects/${encode(projectId)}`, { confirm_name: confirmName }, options),
+  // A Task's display title only; its instructions and history are unchanged.
+  renameTask: (taskId, title, options) => send('PATCH', `${task(taskId)}`, { title }, options),
 }
+
+// The lifecycle preview is a read (GET), but it is asked for at a moment the person chose, not kept
+// live: it runs local Git reads, so it is fetched once per dialog.
+export const projectLifecycle = (projectId, options) => send('GET', `/projects/${encode(projectId)}/lifecycle`, undefined, options)
 
 export const OFFLINE_MESSAGE = 'The backend could not be reached. Nothing is assumed; retry when it is available.'
 

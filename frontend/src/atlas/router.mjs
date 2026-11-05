@@ -47,7 +47,7 @@ export function routeKey(route) {
 export function documentTitle(route) {
   const tool = connectionTool(route)
   const title = route.name === 'not-found' ? 'Page not found' : tool ? `${TOOLS[tool].label} · Connections` : ROUTES[route.name].title
-  return `${title} · Control Center (Atlas preview)`
+  return `${title} · AI Agent Control Center`
 }
 
 // Which top-level navigation item a route belongs to (New task and Task pages open from Work).

@@ -11,7 +11,7 @@ import ProcessOwnership from './ProcessOwnership'
 import RemovalSection from './RemovalSection'
 import { isRemoved } from './agentRemoval.mjs'
 import { agentName, executionLabel } from './agentPresentation.mjs'
-import { apiFetch } from './apiClient.mjs'
+import { apiFetch, API_BASE } from './apiClient.mjs'
 import ProviderControls from './ProviderControls'
 import AgentModelSettings from './AgentModelSettings'
 import AutoAllocationPanel from './AutoAllocationPanel'
@@ -61,7 +61,7 @@ function AgentDetails({ agentId, onClose, onStopped, refreshVersion, agents, onS
   async function instructionFields(override) {
     const plan = instructionPlan(agent, models.catalog, override)
     if (plan.defaults) {
-      const response = await apiFetch(`http://127.0.0.1:8000/agents/${agentId}/defaults`, {
+      const response = await apiFetch(`${API_BASE}/agents/${agentId}/defaults`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(plan.defaults) })
       const data = await response.json().catch(() => ({}))
       if (!response.ok) throw new Error(refusalMessage(data, 'The agent defaults could not be changed.'))
@@ -74,7 +74,7 @@ function AgentDetails({ agentId, onClose, onStopped, refreshVersion, agents, onS
     setStoppingBranch(true)
     setBranchError('')
     try {
-      const response = await apiFetch(`http://127.0.0.1:8000/agents/${agentId}/stop-branch`, { method: 'POST' })
+      const response = await apiFetch(`${API_BASE}/agents/${agentId}/stop-branch`, { method: 'POST' })
       const result = await response.json().catch(() => ({}))
       if (!response.ok) {
         throw new Error(typeof result.detail === 'string' ? result.detail : 'Unable to stop branch. Please try again.')
@@ -97,7 +97,7 @@ function AgentDetails({ agentId, onClose, onStopped, refreshVersion, agents, onS
     setSimilarAction(disable ? 'disabling' : 'enabling')
     setSimilarError('')
     try {
-      const response = await apiFetch(`http://127.0.0.1:8000/agents/${agentId}/decide-similar${disable ? '/disable' : ''}`, {
+      const response = await apiFetch(`${API_BASE}/agents/${agentId}/decide-similar${disable ? '/disable' : ''}`, {
         method: 'POST',
       })
       const result = await response.json().catch(() => ({}))
@@ -123,7 +123,7 @@ function AgentDetails({ agentId, onClose, onStopped, refreshVersion, agents, onS
     setAlwaysAction(disable ? 'disabling' : 'enabling')
     setAlwaysError('')
     try {
-      const response = await apiFetch(`http://127.0.0.1:8000/agents/${agentId}/decide-always${disable ? '/disable' : ''}`, {
+      const response = await apiFetch(`${API_BASE}/agents/${agentId}/decide-always${disable ? '/disable' : ''}`, {
         method: 'POST',
       })
       const result = await response.json().catch(() => ({}))
@@ -149,7 +149,7 @@ function AgentDetails({ agentId, onClose, onStopped, refreshVersion, agents, onS
     setDeciding(true)
     setDecideError('')
     try {
-      const response = await apiFetch(`http://127.0.0.1:8000/agents/${agentId}/decide`, {
+      const response = await apiFetch(`${API_BASE}/agents/${agentId}/decide`, {
         method: 'POST',
       })
       if (!response.ok) {
@@ -178,7 +178,7 @@ function AgentDetails({ agentId, onClose, onStopped, refreshVersion, agents, onS
     setReplyError('')
     try {
       const fields = await instructionFields(replyOverride)
-      const response = await apiFetch(`http://127.0.0.1:8000/agents/${agentId}/reply`, {
+      const response = await apiFetch(`${API_BASE}/agents/${agentId}/reply`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ answer, ...fields }),
@@ -208,7 +208,7 @@ function AgentDetails({ agentId, onClose, onStopped, refreshVersion, agents, onS
     setRedirectError('')
     try {
       const fields = await instructionFields(redirectOverride)
-      const response = await apiFetch(`http://127.0.0.1:8000/agents/${agentId}/redirect`, {
+      const response = await apiFetch(`${API_BASE}/agents/${agentId}/redirect`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ instruction, ...fields }),
@@ -235,7 +235,7 @@ function AgentDetails({ agentId, onClose, onStopped, refreshVersion, agents, onS
     setStopping(true)
     setStopError('')
     try {
-      const response = await apiFetch(`http://127.0.0.1:8000/agents/${agentId}/stop`, {
+      const response = await apiFetch(`${API_BASE}/agents/${agentId}/stop`, {
         method: 'POST',
       })
       if (!response.ok) {
@@ -259,7 +259,7 @@ function AgentDetails({ agentId, onClose, onStopped, refreshVersion, agents, onS
 
     async function fetchDetails() {
       try {
-        const response = await fetch(`http://127.0.0.1:8000/agents/${agentId}?include_output=false`, {
+        const response = await fetch(`${API_BASE}/agents/${agentId}?include_output=false`, {
           signal: controller.signal,
         })
         if (!response.ok) {
@@ -273,7 +273,7 @@ function AgentDetails({ agentId, onClose, onStopped, refreshVersion, agents, onS
           setError('')
         }
         try {
-          const activityResponse = await fetch(`http://127.0.0.1:8000/agents/${encodeURIComponent(agentId)}/activity`, { signal: controller.signal })
+          const activityResponse = await fetch(`${API_BASE}/agents/${encodeURIComponent(agentId)}/activity`, { signal: controller.signal })
           if (!activityResponse.ok) throw new Error('Unable to load work activity.')
           const projection = await activityResponse.json()
           if (!controller.signal.aborted) { setActivity(projection); setActivityError('') }

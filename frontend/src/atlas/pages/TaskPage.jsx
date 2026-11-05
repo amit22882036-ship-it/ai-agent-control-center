@@ -11,6 +11,7 @@ import { deriveWorkspace, inBranch, nowView, whoView } from '../model/workList.m
 import { projectDirectory, projectLabel } from '../model/projects.mjs'
 import { assignmentsView, controlState, pauseHeld, progressView, resultView, when } from '../model/taskPage.mjs'
 import { lastWork } from '../workContext'
+import TaskTitle from '../components/task/TaskTitle'
 
 const EMPTY = emptyStore()
 const encode = encodeURIComponent
@@ -113,7 +114,8 @@ export default function TaskPage({ live, route, navigate }) {
     </nav>
     <header className="a-thead">
       <div className="a-thead-main">
-        <h1 className="a-title a-bidi" dir="auto" tabIndex={-1} data-page-heading>{task.title || 'Untitled task'}</h1>
+        <TaskTitle taskId={taskId} title={task.title} as="h1" className="a-title" headingProps={{ tabIndex: -1, 'data-page-heading': true }}
+          onRenamed={refresh} />
         <div className="a-tmeta">
           <span><Icon name="folder" size={14} /><span className="a-bidi" dir="auto">{projectName(task.projectId)}</span></span>
           <span>{task.parentId ? 'Helper task' : 'Top-level task'}</span>

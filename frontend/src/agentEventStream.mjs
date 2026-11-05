@@ -1,3 +1,4 @@
+import { API_BASE } from './apiClient.mjs'
 // At most one REST request is in flight, with one trailing refresh if invalidated.
 export function createRefreshQueue(refresh, timers = globalThis) {
   let timer = null
@@ -53,7 +54,7 @@ export function connectAgentEvents({ refresh, onStatus = () => {}, EventSourceCl
   fallback()
   if (EventSourceClass) {
     try {
-      source = new EventSourceClass('http://127.0.0.1:8000/events')
+      source = new EventSourceClass(`${API_BASE}/events`)
       source.onopen = () => {
         if (disposed) return
         timers.clearInterval(polling)

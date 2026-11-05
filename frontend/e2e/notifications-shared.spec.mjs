@@ -104,7 +104,7 @@ function workspace({ classicPages = false } = {}) {
 }
 
 async function classic(page, ws) {
-  const log = await openApp(page, { path: '/', taskPages: ws.taskPages, api: ws.api })
+  const log = await openApp(page, { path: '/?ui=classic', taskPages: ws.taskPages, api: ws.api })
   await expect(page.getByRole('heading', { level: 1, name: 'Agent Workspace' })).toBeVisible()
   return log
 }
@@ -213,9 +213,9 @@ test('switching the same tab from Classic to Atlas hands over the lock without l
   const ws = workspace()
   const log = await classic(page, ws)
   await claimedIn(page, log)
-  await page.getByRole('button', { name: 'Atlas preview' }).click()
+  await page.getByRole('button', { name: 'New interface' }).click()
   await expect(page.locator('.atlas h1')).toHaveText('Work')
-  await page.locator('.a-nav').getByRole('link', { name: 'Settings' }).click()
+  await page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: 'Settings' }).click()
   await expect(page.getByText('As browser notifications from this page')).toBeVisible()
   ws.ask()
   await change(page)
@@ -228,7 +228,7 @@ test('initial loading, a lost backend and a refused notification never leave a s
   let online = true
   let slow = true
   const ws = workspace()
-  const log = await openApp(page, { path: '/', taskPages: ws.taskPages, api: async (entry) => {
+  const log = await openApp(page, { path: '/?ui=classic', taskPages: ws.taskPages, api: async (entry) => {
     if (!online && entry.path !== '/security/csrf-token') return { status: 503, body: { detail: 'unavailable' } }
     if (slow && entry.method === 'GET' && entry.path === '/workspace') { await new Promise((resolve) => setTimeout(resolve, 2500)); slow = false }
     return ws.api(entry)

@@ -11,7 +11,9 @@ import './styles/map.css'
 import './styles/task.css'
 import './styles/connections.css'
 import './styles/notifications.css'
+import './styles/lumen.css'
 import TopBar from './shell/TopBar'
+import Rail from './shell/Rail'
 import WorkPage from './pages/WorkPage'
 import ConnectionsPage from './pages/ConnectionsPage'
 import NewTaskPage from './pages/NewTaskPage'
@@ -20,19 +22,21 @@ import TaskPage from './pages/TaskPage'
 import SettingsPage from './pages/SettingsPage'
 import GalleryPage from './pages/GalleryPage'
 import NotFoundPage from './pages/NotFoundPage'
-import { useAppearance, useAtlasRoute, useConnections, useLiveStatus, useNotificationPreference, useProviderNotices, useTaskFeed } from './hooks'
+import { useAppearance, useAtlasRoute, useConnections, useLiveResource, useLiveStatus, useNotificationPreference, useProviderNotices, useTaskFeed } from './hooks'
 import { useBrowserNotifications } from './notifications'
 import { emptyStore } from './model/tasks.mjs'
-import { deriveWorkspace } from './model/workList.mjs'
+import { deriveWorkspace, projectStats } from './model/workList.mjs'
+import { projectDirectory } from './model/projects.mjs'
+import { API_BASE } from '../apiClient.mjs'
 import { attentionInView, attentionItems, attentionSummary, stepAttention } from './model/attention.mjs'
-import { attentionOf } from './model/connections.mjs'
+import { attentionOf, attentionText } from './model/connections.mjs'
 import { lastWork, requestReply } from './workContext'
 import { pageShortcut } from './keys.mjs'
 import { documentTitle, routeKey } from './router.mjs'
 import { agentActions } from './api/agentClient.mjs'
 import { exitAtlas } from './uiMode.mjs'
 
-// The Atlas preview shell (milestone M1). It is loaded only after the person opts in, and it
+// The Lumen application shell (the code is still named Atlas). It is the default interface, and it
 // owns the single event connection while it is on screen (the classic interface is unmounted).
 const EMPTY = emptyStore()
 
@@ -53,6 +57,10 @@ export default function AtlasApp() {
   const summary = { ...attentionSummary(attention, live.overview, feed.store ? store : null), known: Boolean(feed.readAt),
     stale: Boolean(feed.stale) || live.reachable === false }
   const notices = useProviderNotices(live, route.name === 'connections')
+  // The registered projects, in the person's order, for the rail (re-read with every live update).
+  const projectsResource = useLiveResource(`${API_BASE}/projects`, live.version)
+  const directory = useMemo(() => projectDirectory(projectsResource), [projectsResource])
+  const projectFacts = useCallback((id) => projectStats(store, derived, id), [store, derived])
   // Opening a Task from outside Work keeps the Work view the person had (project, filters, view).
   const showTask = useCallback((taskId, { reply = false } = {}) => {
     if (reply) requestReply(taskId)
@@ -123,7 +131,8 @@ export default function AtlasApp() {
   }, [route.name, navigate, markPush])
 
   let page
-  if (route.name === 'work') page = <WorkPage live={live} route={route} navigate={navigate} feed={feed} derived={derived} attention={summary} />
+  if (route.name === 'work') page = <WorkPage live={live} route={route} navigate={navigate} feed={feed} derived={derived} attention={summary}
+    projectsResource={projectsResource} />
   else if (route.name === 'new') page = <NewTaskPage live={live} navigate={navigate} route={route} />
   else if (route.name === 'projects') page = <ProjectsPage live={live} navigate={navigate} />
   else if (route.name === 'task') page = <TaskPage key={route.params?.id || 'none'} live={live} navigate={navigate} route={route} />
@@ -133,10 +142,16 @@ export default function AtlasApp() {
   else if (route.name === 'gallery') page = <GalleryPage />
   else page = <NotFoundPage requested={route.requested} navigate={navigate} />
 
+  const toolsText = tools.length ? 'A tool needs attention' : ''
+  const toolsName = attentionText(toolAttention)
   return <div className="atlas">
-    <div className="a-app">
+    <div className="a-app a-app--lumen">
       <button type="button" className="a-skip" onClick={() => main.current?.focus()}>Skip to content</button>
-      <TopBar route={route} live={live} appearance={appearance} markPush={markPush} onClassic={() => exitAtlas()} connections={connections}
+      <div className="a-ground" aria-hidden="true" />
+      <Rail route={route} markPush={markPush} directory={directory} projectFacts={projectFacts} needs={summary.reported || 0}
+        toolsText={toolsText} toolsName={toolsName} currentProject={route.name === 'work' ? route.params?.project || null : null}
+        onClassic={() => exitAtlas(undefined, { agentId: null })} />
+      <TopBar live={live} appearance={appearance} markPush={markPush}
         attention={{ summary, onNext: nextQuestion, panel: { attention, tools, notices, preference: notifications, delivery,
           onReply: (taskId) => showTask(taskId, { reply: true }), onShow: (taskId) => showTask(taskId),
           onShowAll: () => { markPush(); navigate('work', { ...(route.name === 'work' ? route.params : lastWork()), filter: 'needs' }) },

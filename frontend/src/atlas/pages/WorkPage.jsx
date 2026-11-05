@@ -7,8 +7,6 @@ import TaskTree from '../components/work/TaskTree'
 import TaskMap from '../components/work/TaskMap'
 import TaskInspector from '../components/work/TaskInspector'
 import ColorFilter from '../components/work/ColorFilter'
-import { API_BASE } from '../../apiClient.mjs'
-import { useLiveResource } from '../hooks'
 import { emptyStore, pathTo } from '../model/tasks.mjs'
 import { reconcile } from '../model/selection.mjs'
 import { COLOR_VALUES, FILTERS, familyCounts, flatRows, inBranch, visibleRows } from '../model/workList.mjs'
@@ -63,7 +61,7 @@ function AttentionBar({ ids, selectedId, derived, summary, filtered, complete, o
 // Work: every task family as a List and as a Map, two views of the same Tasks. Selection, filters,
 // project, colours, focus, the view and the side list live in the address, so Back/Forward and
 // reloads restore them; both views share the open branches and the details panel.
-export default function WorkPage({ live, route, navigate, feed, derived, attention }) {
+export default function WorkPage({ live, route, navigate, feed, derived, attention, projectsResource }) {
   // The shell owns the canonical feed and its derived workspace (the attention list uses them too).
   const store = feed.store || EMPTY
   // Actions check the latest store when they run, not the one drawn when a form opened.
@@ -72,7 +70,7 @@ export default function WorkPage({ live, route, navigate, feed, derived, attenti
   const getStore = useCallback(() => storeRef.current, [])
   // The registered projects (GET /projects) are the authoritative list; they are re-read with the
   // shared connection's updates, so a project registered meanwhile appears without a reload.
-  const projectsResource = useLiveResource(`${API_BASE}/projects`, live.version)
+  // The shell's own read of GET /projects (one read per change for the whole app).
   const directory = useMemo(() => projectDirectory(projectsResource), [projectsResource])
   const projectName = useCallback((id) => projectLabel(directory, id), [directory])
   const params = useMemo(() => route.params || {}, [route.params])

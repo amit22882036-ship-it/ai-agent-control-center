@@ -304,7 +304,8 @@ test('the project menu lists every registered project, and an unavailable list i
   const projects = [{ project_id: 'p1', name: 'Release planning' }, { project_id: 'p2', name: 'Docs site' }]
   await openWork(page, { tasks: showcase(), projects })
   await page.getByRole('button', { name: 'All projects' }).click()
-  await expect(page.getByRole('menuitem')).toHaveText(['All projects', 'Docs site', 'Release planning'])
+  // In the person's own order (the backend's), not by name.
+  await expect(page.getByRole('menuitem')).toHaveText(['All projects', 'Release planning', 'Docs site'])
   await page.getByRole('menuitem', { name: 'Docs site' }).click() // registered, but no loaded task uses it
   await expect(page).toHaveURL(/project=p2/)
   await expect(page.getByText('No loaded tasks in Docs site.')).toBeVisible()

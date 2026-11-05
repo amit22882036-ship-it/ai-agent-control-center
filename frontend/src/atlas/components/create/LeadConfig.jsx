@@ -1,4 +1,6 @@
 import { useId } from 'react'
+import Icon from '../Icon'
+import { ACCESS_LEVELS, FULL_ACCESS_WARNING, accessText } from '../../model/access.mjs'
 import { Button } from '../primitives'
 import { TextField } from '../controls'
 import { Check, GroupedSelect } from '../agent/fields'
@@ -48,7 +50,8 @@ export function ToolCards({ value, onChange, policy, statuses, disabled, tools =
 
 // Model, effort and file access for one agent, from its provider's catalog. Unavailable models
 // stay visible but cannot be chosen; an unverified one needs an explicit attempt.
-export function LeadSettings({ provider, models, picker, onPicker, sandbox, onSandbox, disabled }) {
+export function LeadSettings({ provider, models, picker, onPicker, sandbox, onSandbox, disabled, fullConfirmed = false, onFullConfirmed = () => {},
+  helpers = false, helperAccess = 'workspace-write', onHelperAccess = () => {} }) {
   if (provider === 'mock') return null
   const catalog = models.catalog
   const groups = groupModels(catalog)
@@ -77,10 +80,16 @@ export function LeadSettings({ provider, models, picker, onPicker, sandbox, onSa
         : <div className="a-lc-choice"><span className="a-lc-l">Reasoning effort</span><span className="a-lc-v">Provider default</span></div>}
       <small className="a-fine">{efforts.note}</small>
     </div>
-    <div className="a-lc">
-      <Choice label="File access" value={sandbox} disabled={disabled} onChange={onSandbox}
-        options={[{ value: 'read-only', label: 'Read only' }, { value: 'workspace-write', label: 'Can edit' }]} />
-      <small className="a-fine">Only in its private copy of the project.</small>
+    <div className="a-lc-wide a-access">
+      <Choice label="Access" value={sandbox} disabled={disabled} onChange={onSandbox} options={ACCESS_LEVELS} />
+      <p className="a-fine a-access-text">{accessText(provider, sandbox)}</p>
+      {sandbox === 'full-access' && <div className="a-access-full" role="group" aria-label="Full Access">
+        <p className="a-access-warn"><Icon name="shield" size={15} />{FULL_ACCESS_WARNING}</p>
+        <Check tone="warn" checked={fullConfirmed} disabled={disabled} onChange={onFullConfirmed}>
+          I choose Full Access for this task.</Check>
+        {helpers && <Choice label="Its helpers get" value={helperAccess} disabled={disabled} onChange={onHelperAccess}
+          options={[{ value: 'workspace-write', label: 'Workspace' }, { value: 'full-access', label: 'Full Access too' }]} />}
+      </div>}
     </div>
     {(limitation || chosen.needsAttempt) && <div className="a-lc-wide">
       {limitation && <p className="a-fine">{limitation}</p>}

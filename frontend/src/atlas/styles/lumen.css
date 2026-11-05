@@ -1,0 +1,210 @@
+/* Lumen: the production art direction, layered over the Atlas component styles. A mist ground,
+   glass surfaces that catch a soft highlight, Bricolage Grotesque, and light reserved for what is
+   really happening: agents producing output (their colour) and work that needs a person (amber).
+   Motion uses critically damped springs; reduced motion and reduced transparency are honoured.
+   Every rule is scoped to .atlas, and state rules keep three class-level selectors. */
+
+/* ------------------------------------------------------------------ ground and shell */
+.atlas { background: var(--a-bg); font-optical-sizing: auto; }
+.atlas .a-ground { position: fixed; inset: 0; z-index: 0; pointer-events: none;
+  background:
+    radial-gradient(60% 50% at 82% -6%, color-mix(in srgb, var(--a-accent) 10%, transparent), transparent 70%),
+    radial-gradient(48% 42% at 6% 104%, color-mix(in srgb, var(--a-ask-fill) 9%, transparent), transparent 72%),
+    linear-gradient(168deg, var(--a-ground-1), var(--a-ground-2)); }
+.atlas .a-app.a-app--lumen { position: relative; z-index: 1; grid-template-columns: minmax(0, 1fr); padding-left: 84px;
+  transition: padding-left .5s var(--a-spring); }
+:root.a-rail-pinned .atlas .a-app.a-app--lumen { padding-left: 276px; }
+
+/* ------------------------------------------------------------------ rail */
+.atlas .a-rail { position: fixed; z-index: 40; left: 12px; top: 12px; bottom: 12px; width: 60px; display: flex; flex-direction: column;
+  gap: 2px; padding: 8px; overflow: hidden auto; scrollbar-width: none; border-radius: 26px; background: var(--a-rail);
+  backdrop-filter: var(--a-blur); -webkit-backdrop-filter: var(--a-blur); box-shadow: var(--a-shadow-2);
+  transition: width .46s var(--a-spring), box-shadow .3s ease, background-color .3s ease; }
+.atlas .a-rail.is-open { width: 252px; box-shadow: var(--a-shadow-3); background: var(--a-glass-3); }
+.atlas .a-rail-nav, .atlas .a-rail-projects, .atlas .a-rail-foot { display: flex; flex-direction: column; gap: 2px; position: relative; z-index: 1; }
+.atlas .a-rail-puck { position: absolute; left: 8px; right: 8px; top: 8px; height: 46px; border-radius: 16px; pointer-events: none; opacity: 0;
+  background: var(--a-glass-3); box-shadow: 0 1px 2px rgba(14, 19, 32, .08), 0 0 0 1px var(--a-line);
+  transition: transform .5s var(--a-spring), height .3s ease, opacity .2s ease; }
+.atlas .a-rail .a-rail-link { position: relative; display: grid; grid-template-columns: 44px minmax(0, 1fr); align-items: center; flex: none;
+  min-height: 46px; border-radius: 16px; color: var(--a-text-2); text-decoration: none; text-align: left; width: 100%;
+  transition: color .2s ease, background-color .2s ease, transform .18s var(--a-spring); }
+.atlas .a-rail .a-rail-link:hover { color: var(--a-text); background: var(--a-hover); }
+.atlas .a-rail .a-rail-link:active { transform: scale(.97); }
+.atlas .a-rail .a-rail-link[aria-current="page"] { color: var(--a-text); }
+.atlas .a-rail .a-rail-link:focus-visible { outline: 2px solid var(--a-accent); outline-offset: -2px; border-radius: 16px; }
+.atlas .a-rail-icon { position: relative; justify-self: center; display: grid; place-items: center; }
+.atlas .a-rail-dot { position: absolute; right: -4px; top: -3px; width: 8px; height: 8px; border-radius: 50%; background: var(--a-ask-fill);
+  box-shadow: 0 0 0 2px var(--a-glass-2); transition: opacity .2s ease; }
+.atlas .a-rail.is-open .a-rail-dot { opacity: 0; }
+.atlas .a-rail-text { display: grid; min-width: 0; padding-right: 10px; white-space: nowrap; opacity: 0; transform: translateX(-8px);
+  transition: opacity .14s ease, transform .3s var(--a-spring); }
+.atlas .a-rail.is-open .a-rail-text { opacity: 1; transform: none;
+  transition: opacity .26s ease calc(50ms + var(--i, 0) * 20ms), transform .5s var(--a-spring) calc(30ms + var(--i, 0) * 20ms); }
+.atlas .a-rail-text b { font-weight: 640; font-size: 14px; letter-spacing: -.008em; overflow: hidden; text-overflow: ellipsis; }
+.atlas .a-rail-text small { font-size: 11.5px; color: var(--a-text-3); overflow: hidden; text-overflow: ellipsis; }
+.atlas .a-rail .a-rail-link.has-mark small { color: var(--a-ask); font-weight: 650; }
+.atlas .a-rail-sep { flex: none; height: 1px; margin: 8px 10px; background: var(--a-line-2); }
+.atlas .a-rail-head { display: grid; grid-template-columns: 0 minmax(0, 1fr); height: 22px; padding-left: 12px; align-items: center;
+  font-size: 10.5px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--a-text-4); }
+.atlas .a-rail-head .a-rail-text { padding: 0; }
+.atlas .a-rail-tile { justify-self: center; display: grid; place-items: center; width: 30px; height: 30px; border-radius: 10px;
+  font: 720 13px/1 var(--a-display); color: var(--a-text-2); background: var(--a-sunken); box-shadow: inset 0 0 0 1.4px var(--a-line-2);
+  transition: box-shadow .3s ease, background-color .3s ease; }
+.atlas .a-rail .a-rail-project.is-live .a-rail-tile { color: var(--a-text); background: color-mix(in srgb, var(--a-live) 20%, var(--a-glass-3));
+  box-shadow: inset 0 0 0 1.4px color-mix(in srgb, var(--a-live) 62%, transparent), 0 0 14px -2px color-mix(in srgb, var(--a-live) 45%, transparent); }
+.atlas .a-rail .a-rail-project.is-need .a-rail-tile { color: var(--a-ask); background: color-mix(in srgb, var(--a-ask-fill) 15%, var(--a-glass-3));
+  box-shadow: inset 0 0 0 1.6px var(--a-ask-fill); }
+.atlas .a-rail .a-rail-project.is-need small { color: var(--a-ask); font-weight: 650; }
+.atlas .a-rail .a-rail-project[aria-current="true"] .a-rail-tile { box-shadow: 0 0 0 2px var(--a-glass-3), 0 0 0 3.5px var(--a-ink); }
+.atlas .a-rail .a-rail-link.a-rail-muted { color: var(--a-text-3); }
+.atlas .a-rail-foot .a-rail-link[aria-pressed="true"] { color: var(--a-text); }
+.atlas .a-rail .a-sp { flex: 1; min-height: 12px; }
+
+/* ------------------------------------------------------------------ top bar */
+.atlas .a-app--lumen .a-topbar { margin: 12px 12px 0 0; min-height: 56px; border: 0; border-radius: 22px; background: var(--a-rail);
+  backdrop-filter: var(--a-blur); -webkit-backdrop-filter: var(--a-blur); box-shadow: var(--a-shadow-1); }
+.atlas .a-app--lumen .a-brand { gap: 11px; margin-right: 12px; }
+.atlas .a-app--lumen .a-brand-name { font: 720 16.5px/1 var(--a-display); letter-spacing: -.03em; font-variation-settings: 'opsz' 48; }
+.atlas .a-app--lumen .a-needs { height: 36px; border-radius: 999px; padding: 0 14px 0 11px; background: color-mix(in srgb, var(--a-ask-fill) 13%, var(--a-glass-3)); }
+.atlas .a-app--lumen .a-topbar .a-btn--primary { height: 38px; border-radius: 999px; padding: 0 16px 0 13px; box-shadow: 0 6px 16px -8px rgba(14, 19, 32, .6); }
+.atlas .a-app--lumen .a-iconbtn { border-radius: 999px; }
+.atlas .a-app--lumen .a-main { padding: 0 12px 0 0; }
+
+/* ------------------------------------------------------------------ type and surfaces */
+.atlas .a-title, .atlas .a-dialog-title, .atlas .a-card-title, .atlas .a-empty-title { font-family: var(--a-display); }
+.atlas .a-title { font-size: 34px; font-weight: 760; letter-spacing: -.04em; font-variation-settings: 'opsz' 96; line-height: 1.06; }
+.atlas .a-subtitle { max-width: 72ch; }
+.atlas .a-card { border-radius: var(--a-r-xl); background: var(--a-surface); border-color: var(--a-line); box-shadow: var(--a-shadow-1);
+  backdrop-filter: var(--a-blur); -webkit-backdrop-filter: var(--a-blur); }
+.atlas .a-btn { border-radius: 999px; transition: background-color .2s ease, transform .16s var(--a-spring), box-shadow .2s ease; }
+.atlas .a-btn.a-btn--sm { border-radius: 999px; }
+.atlas .a-btn:active:not(:disabled) { transform: scale(.97); }
+.atlas .a-btn.a-btn--danger { color: var(--a-fail); border-color: color-mix(in srgb, var(--a-fail) 30%, transparent); }
+.atlas .a-dialog .a-btn.a-btn--danger:not(:disabled) { background: #B3261E; color: #fff; border-color: #B3261E; }
+.atlas .a-input, .atlas .a-textarea { border-radius: 12px; }
+.atlas .a-notice { border-radius: 16px; }
+.atlas .a-menu { border-radius: 18px; background: var(--a-glass-3); backdrop-filter: var(--a-blur); -webkit-backdrop-filter: var(--a-blur); box-shadow: var(--a-shadow-3); }
+.atlas .a-dialog { border-radius: 28px; background: var(--a-glass-3); backdrop-filter: var(--a-blur); -webkit-backdrop-filter: var(--a-blur); box-shadow: var(--a-shadow-3); }
+.atlas .a-dialog::backdrop { background: var(--a-veil); backdrop-filter: blur(8px); }
+.atlas .a-dialog[open] { animation: atlas-materialize .42s var(--a-spring); }
+@keyframes atlas-materialize { from { opacity: 0; transform: translateY(10px) scale(.97); filter: blur(4px); } to { opacity: 1; transform: none; filter: none; } }
+
+/* Work: families read as glass cards over the mist; the map keeps its own ground transparent. */
+.atlas .a-app--lumen .a-whead { border-bottom-color: var(--a-line); background: var(--a-surface-2); }
+.atlas .a-app--lumen .a-outline { background: transparent; }
+.atlas .a-app--lumen .a-ol-sec { background: transparent; backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); }
+.atlas .a-app--lumen .a-tcard { border-radius: 20px; border-color: transparent; box-shadow: var(--a-shadow-1); }
+.atlas .a-app--lumen .a-tcard:hover { box-shadow: var(--a-shadow-2); }
+.atlas .a-app--lumen .a-find { border-radius: 999px; background: var(--a-glass-2); }
+.atlas .a-app--lumen .a-inspector { border-radius: 24px; margin: 12px 0 12px 12px; border: 0; background: var(--a-glass-3);
+  backdrop-filter: var(--a-blur); -webkit-backdrop-filter: var(--a-blur); box-shadow: var(--a-shadow-2); }
+
+/* ------------------------------------------------------------------ projects */
+.atlas .a-projects .a-plates { list-style: none; display: grid; gap: 10px; margin: 6px 0 18px; }
+.atlas .a-plate { position: relative; transition: transform .38s var(--a-spring); }
+.atlas .a-plates.is-sorting { user-select: none; -webkit-user-select: none; }
+.atlas .a-plates.is-sorting .a-plate.is-lifted { transition: none; z-index: 5; }
+.atlas .a-plate-glass { display: grid; grid-template-columns: 34px 132px minmax(0, 1fr) auto auto; align-items: center; gap: 14px;
+  padding: 10px 12px 10px 6px; border-radius: 24px; background: var(--a-surface); box-shadow: var(--a-shadow-1);
+  backdrop-filter: var(--a-blur); -webkit-backdrop-filter: var(--a-blur); transition: box-shadow .3s ease, background-color .3s ease; }
+.atlas .a-plate:hover .a-plate-glass { box-shadow: var(--a-shadow-2); }
+.atlas .a-plates .a-plate.is-lifted .a-plate-glass { background: var(--a-glass-3); box-shadow: var(--a-shadow-3); cursor: grabbing; }
+.atlas .a-plates .a-plate.is-grabbed .a-plate-glass { box-shadow: 0 0 0 2px var(--a-accent), var(--a-shadow-2); }
+.atlas .a-plate-handle { width: 34px; height: 54px; border-radius: 14px; color: var(--a-text-4); cursor: grab; touch-action: none; }
+.atlas .a-plate .a-plate-handle:hover { color: var(--a-text); background: var(--a-hover-2); }
+.atlas .a-plate .a-plate-handle[aria-pressed="true"] { color: #fff; background: var(--a-accent); }
+.atlas .a-plate-pic { display: block; width: 132px; height: 64px; padding: 6px; border-radius: 14px; overflow: hidden;
+  background-color: var(--a-sunken); background-image: radial-gradient(var(--a-dot) 1px, transparent 1.2px); background-size: 12px 12px;
+  box-shadow: inset 0 0 0 1px var(--a-line); }
+.atlas .a-plate .a-plate-pic:hover { box-shadow: inset 0 0 0 1px var(--a-line-2); }
+.atlas .a-plate-pic .a-pv-svg { width: 100%; height: 100%; }
+.atlas .a-plate-pic.a-plate-pic--empty { display: grid; place-items: center; text-align: center; padding: 6px; }
+.atlas .a-plate-text { display: grid; gap: 3px; min-width: 0; }
+.atlas .a-plate-name { justify-self: start; max-width: 100%; font: 680 19px/1.2 var(--a-display); letter-spacing: -.022em; color: var(--a-text);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; border-radius: 6px; }
+.atlas .a-plate .a-plate-name:hover { text-decoration: underline; text-underline-offset: 3px; text-decoration-color: var(--a-line-2); }
+.atlas .a-plate-path { font-size: 11.5px; color: var(--a-text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.atlas .a-plate-stats { display: flex; gap: 12px; font-size: 12.5px; color: var(--a-text-2); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.atlas .a-plate-need { color: var(--a-ask); font-weight: 680; }
+.atlas .a-plate-actions { display: flex; align-items: center; gap: 2px; }
+.atlas .a-projects-note { margin: -8px 0 18px 4px; }
+
+.atlas .a-shelf { margin-top: 10px; border-radius: 22px; background: var(--a-surface-2); box-shadow: inset 0 0 0 1px var(--a-line); }
+.atlas .a-shelf-head { display: flex; align-items: center; gap: 11px; width: 100%; padding: 14px 18px; border-radius: 22px; text-align: left; color: var(--a-text); }
+.atlas .a-shelf .a-shelf-head:hover:not(.a-shelf-head--static) { background: var(--a-hover); }
+.atlas .a-shelf-count { min-width: 22px; height: 22px; padding: 0 7px; display: inline-grid; place-items: center; border-radius: 11px;
+  background: var(--a-hover-2); font-size: 12px; font-weight: 700; }
+.atlas .a-shelf-note { flex: 1; min-width: 0; font-size: 12.5px; color: var(--a-text-3); }
+.atlas .a-shelf-list { list-style: none; display: grid; gap: 2px; padding: 0 8px 10px; }
+.atlas .a-shelf-list li { display: grid; grid-template-columns: minmax(120px, 220px) minmax(0, 1fr) auto auto; align-items: center; gap: 12px;
+  padding: 8px 10px; border-radius: 14px; }
+.atlas .a-shelf-list li:hover { background: var(--a-hover); }
+.atlas .a-shelf-list li.is-incomplete .a-shelf-path { color: var(--a-fail); }
+.atlas .a-shelf-name { font-weight: 650; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.atlas .a-shelf-path { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Lifecycle dialogs: what moves, what goes, what stays. */
+.atlas .a-life { display: grid; gap: 14px; }
+.atlas .a-life-move { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 14px 16px; border-radius: 18px; background: var(--a-sunken); }
+.atlas .a-life-folder { display: inline-flex; align-items: center; gap: 8px; min-width: 0; font-weight: 620; }
+.atlas .a-life-folder .a-mono { overflow-wrap: anywhere; }
+.atlas .a-life-folder.a-life-folder--trash { padding: 6px 12px; border-radius: 999px; background: var(--a-glass-3); box-shadow: var(--a-shadow-1); }
+.atlas .a-life-head { font: 700 12px/1.3 var(--a-font); letter-spacing: .06em; text-transform: uppercase; color: var(--a-text-3); }
+.atlas .a-life-facts { list-style: none; display: grid; gap: 6px; }
+.atlas .a-life-facts li { position: relative; padding-left: 18px; line-height: 1.45; }
+.atlas .a-life-facts li::before { content: ""; position: absolute; left: 4px; top: .6em; width: 6px; height: 6px; border-radius: 50%; background: var(--a-text-4); }
+.atlas .a-life-facts.a-life-facts--danger li::before { background: var(--a-fail); }
+.atlas .a-life-remotes { display: grid; gap: 6px; }
+.atlas .a-life-remote { display: flex; align-items: center; gap: 8px; min-width: 0; font-size: 13px; color: var(--a-text-2); }
+.atlas .a-life-remote .a-mono { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Inline renaming */
+.atlas .a-irename { position: relative; display: inline-flex; align-items: center; gap: 6px; min-width: 0; max-width: 100%; }
+.atlas .a-irename-input { min-width: 0; width: min(440px, 100%); height: 34px; padding: 0 12px; border-radius: 10px; font: 650 16px/1 var(--a-display);
+  color: var(--a-text); background: var(--a-glass-3); box-shadow: 0 0 0 2px var(--a-accent), 0 0 0 6px var(--a-accent-soft); }
+.atlas .a-irename-ok { width: 30px; height: 30px; border-radius: 999px; color: var(--a-on-ink); background: var(--a-ink); }
+.atlas .a-irename-error { position: absolute; left: 0; top: calc(100% + 4px); font-size: 12px; color: var(--a-fail); white-space: nowrap; }
+
+/* ------------------------------------------------------------------ responsive and motion */
+@media (max-width: 1100px) {
+  .atlas .a-plate-glass { grid-template-columns: 34px minmax(0, 1fr) auto; }
+  .atlas .a-plate-glass .a-plate-pic, .atlas .a-plate-glass .a-plate-stats { display: none; }
+}
+@media (max-width: 760px) {
+  .atlas .a-app.a-app--lumen { padding-left: 76px; }
+  :root.a-rail-pinned .atlas .a-app.a-app--lumen { padding-left: 76px; }
+  .atlas .a-shelf-list li { grid-template-columns: minmax(0, 1fr) auto; }
+  .atlas .a-shelf-list li .a-shelf-path { display: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .atlas .a-rail, .atlas .a-rail-text, .atlas .a-rail-puck, .atlas .a-plate, .atlas .a-app.a-app--lumen { transition: none; }
+  .atlas .a-rail-text { transform: none; }
+  .atlas .a-dialog[open] { animation: none; }
+}
+
+/* Task titles with an inline Rename */
+.atlas .a-ttitle { display: inline-flex; align-items: center; gap: 6px; min-width: 0; max-width: 100%; }
+.atlas .a-ttitle > :first-child { min-width: 0; }
+.atlas .a-ttitle .a-ttitle-edit { flex: none; width: 28px; height: 28px; border-radius: 999px; color: var(--a-text-4); opacity: 0;
+  transition: opacity .18s ease, background-color .18s ease; }
+.atlas .a-ttitle:hover .a-ttitle-edit, .atlas .a-ttitle .a-ttitle-edit:focus-visible { opacity: 1; }
+.atlas .a-ttitle .a-ttitle-edit:hover { color: var(--a-text); background: var(--a-hover-2); }
+@media (hover: none) { .atlas .a-ttitle .a-ttitle-edit { opacity: 1; } }
+
+/* Access levels in New Task */
+.atlas .a-access { display: grid; gap: 8px; }
+.atlas .a-access-text { max-width: 76ch; }
+.atlas .a-access-full { display: grid; gap: 10px; padding: 14px 16px; border-radius: 16px; background: var(--a-fail-soft);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--a-fail) 28%, transparent); }
+.atlas .a-access-warn { display: flex; gap: 8px; align-items: flex-start; color: var(--a-text); font-weight: 560; line-height: 1.45; }
+.atlas .a-access-warn .a-icon { margin-top: 2px; color: var(--a-fail); }
+.atlas .a-plate-quiet { font-size: 12px; color: var(--a-text-3); }
+.atlas .a-plate .a-plate-stats.a-pstats { display: flex; gap: 14px; }
+.atlas .a-plate .a-plate-stats.a-pstats span { display: grid; justify-items: start; font-size: 11.5px; color: var(--a-text-3); }
+.atlas .a-plate .a-plate-stats.a-pstats b { font: 700 18px/1.1 var(--a-display); color: var(--a-text); }
+.atlas .a-plate .a-plate-stats.a-pstats .a-plate-need b { color: var(--a-ask); }
+.atlas .a-plate-pic { position: relative; }
+.atlas .a-plate-pic .a-pthumb-note { right: 4px; bottom: 3px; font-size: 10px; padding: 0 5px; }
+.atlas .a-projects-find { margin-bottom: 12px; }
+/* Headings receive focus after a navigation (for screen readers); they are not controls, so no ring. */
+.atlas [data-page-heading]:focus, .atlas [data-page-heading]:focus-visible { outline: none; box-shadow: none; }

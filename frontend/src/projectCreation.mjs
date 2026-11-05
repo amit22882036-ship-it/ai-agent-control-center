@@ -1,6 +1,6 @@
-import { apiFetch } from './apiClient.mjs'
+import { apiFetch, API_BASE } from './apiClient.mjs'
 
-const base = 'http://127.0.0.1:8000'
+const base = API_BASE
 
 export async function projectRequest(path, { signal, body } = {}, fetcher = apiFetch) {
   const response = await fetcher(`${base}${path}`, {

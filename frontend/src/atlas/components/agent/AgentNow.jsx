@@ -10,7 +10,7 @@ import { formatHash } from '../../router.mjs'
 import { onReplyRequest, takeReply } from '../../workContext'
 import { chosenConfig, defaultNeedsAttempt, emptyOverride, initialChoice, instructionPlan, instructionReady,
   selectionReady } from '../../../modelPresentation.mjs'
-import { PROVIDER_IDS, accessOptions, blockingText, changePayload, conditionText, preservedText, providerLabel,
+import { ACCESS_LABELS, PROVIDER_IDS, accessOptions, blockingText, changePayload, conditionText, preservedText, providerLabel,
   resumeText } from '../../../providerPresentation.mjs'
 
 // A draft remembers the agent it was written for. If the task's agent changes before it is sent,
@@ -246,7 +246,7 @@ export function ProviderChange({ scope }) {
           options={PROVIDER_IDS.filter((value) => value !== 'mock').map((value) => ({ value, label: providerLabel(value) }))} />
         <ModelChoice provider={provider} models={target} value={pick} onChange={setPick} disabled={busy} />
         <PlainSelect label="Access" value={sandbox} disabled={busy} onChange={setSandbox}
-          options={accessOptions(detail.sandbox).map((value) => ({ value, label: value === 'read-only' ? 'Read only' : 'Workspace write' }))} />
+          options={accessOptions(detail.sandbox).map((value) => ({ value, label: ACCESS_LABELS[value] }))} />
         <div className="a-act-row">
           <Button type="submit" disabled={busy || !ready} aria-busy={runner.busy === 'provider' || undefined}>{runner.busy === 'provider' ? 'Changing…' : 'Change'}</Button>
         </div>

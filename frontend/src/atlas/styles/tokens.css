@@ -1,13 +1,13 @@
-/* Atlas design tokens. Everything is scoped to the .atlas root, so the classic interface keeps its
-   own tokens. The appearance attribute is shared with the classic interface (data-theme on <html>).
-   The classic names at the end (--surface, --accent ...) map leaked classic element rules to Atlas
-   colours while Atlas is on screen. */
-@font-face { font-family: 'Atlas Hanken Grotesk'; font-style: normal; font-weight: 400 700; font-display: swap;
-  src: url('../fonts/hanken-grotesk-latin.woff2') format('woff2');
+/* Lumen design tokens (the interface's code is still named Atlas). Everything is scoped to the
+   .atlas root, so the classic interface keeps its own tokens. The appearance attribute is shared
+   with the classic interface (data-theme on <html>). The classic names at the end (--surface,
+   --accent ...) map leaked classic element rules to Lumen colours while Lumen is on screen. */
+@font-face { font-family: 'Atlas Bricolage Grotesque'; font-style: normal; font-weight: 200 800; font-display: swap;
+  src: url('../fonts/bricolage-grotesque-latin.woff2') format('woff2-variations');
   unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
-@font-face { font-family: 'Atlas Hanken Grotesk'; font-style: normal; font-weight: 400 700; font-display: swap;
-  src: url('../fonts/hanken-grotesk-latin-ext.woff2') format('woff2');
-  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C4, U+2113, U+2C60-2C7F, U+A720-A7FF; }
+@font-face { font-family: 'Atlas Bricolage Grotesque'; font-style: normal; font-weight: 200 800; font-display: swap;
+  src: url('../fonts/bricolage-grotesque-latin-ext.woff2') format('woff2-variations');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF; }
 @font-face { font-family: 'Atlas Heebo'; font-style: normal; font-weight: 400 700; font-display: swap;
   src: url('../fonts/heebo-hebrew.woff2') format('woff2');
   unicode-range: U+0307-0308, U+0590-05FF, U+200C-2010, U+20AA, U+25CC, U+FB1D-FB4F; }
@@ -18,55 +18,88 @@
   src: url('../fonts/jetbrains-mono-latin-ext.woff2') format('woff2');
   unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C4, U+2113, U+2C60-2C7F, U+A720-A7FF; }
 
+/* Daylight: a mist ground, white glass and deep ink. Light means an agent is producing output;
+   amber means a person is needed; everything else stays quiet. */
 .atlas {
   color-scheme: light;
-  --a-font: 'Atlas Hanken Grotesk', 'Atlas Heebo', 'Segoe UI', system-ui, sans-serif;
+  --a-font: 'Atlas Bricolage Grotesque', 'Atlas Heebo', 'Segoe UI Variable Text', 'Segoe UI', system-ui, sans-serif;
+  --a-display: 'Atlas Bricolage Grotesque', 'Atlas Heebo', 'Segoe UI Variable Display', 'Segoe UI', system-ui, sans-serif;
   --a-mono: 'Atlas JetBrains Mono', ui-monospace, Consolas, monospace;
-  --a-ease: cubic-bezier(.2, .75, .2, 1);
-  --a-r: 10px; --a-r-sm: 7px; --a-r-lg: 14px; --a-r-xl: 16px;
-  --a-bg: #F3F2EE; --a-rail: #FAF9F6; --a-surface: #FFFFFF; --a-surface-2: #FBFAF8; --a-sunken: #EFEDE8;
-  --a-hover: #F5F3EF; --a-hover-2: #EBE8E2;
-  --a-line: #E3E0D9; --a-line-2: #D1CDC4; --a-line-3: #EEEBE5;
-  --a-text: #18191C; --a-text-2: #4D5058; --a-text-3: #63666E; --a-text-4: #A2A4AB;
-  --a-ink: #18191C; --a-on-ink: #FFFFFF;
-  --a-accent: #3858D6; --a-accent-soft: rgba(56, 88, 214, .08); --a-accent-line: rgba(56, 88, 214, .38);
-  --a-thread: #CBB494; --a-thread-soft: #E6DACB;
-  --a-work: #127A50; --a-work-soft: rgba(18, 122, 80, .12);
-  --a-ask: #8F5B00; --a-ask-fill: #F0B232; --a-ask-soft: #FEF4DA; --a-ask-line: #EED18A;
-  --a-block: #A84C25; --a-fail: #C23232; --a-fail-soft: #FCEDEB;
-  --a-map: #F7F6F2; --a-dot: rgba(140, 112, 72, .16);
-  --a-shadow-1: 0 1px 2px rgba(24, 25, 28, .05), 0 2px 8px rgba(24, 25, 28, .04);
-  --a-shadow-2: 0 12px 32px rgba(24, 25, 28, .12), 0 2px 8px rgba(24, 25, 28, .06);
-  --a-shadow-3: 0 28px 72px rgba(24, 25, 28, .2), 0 6px 18px rgba(24, 25, 28, .08);
-  --a-agent-neutral: #BCC0C7; --a-agent-violet: #B9A7F2; --a-agent-blue: #97B4F3; --a-agent-cyan: #86D2DC;
-  --a-agent-green: #91D3A6; --a-agent-yellow: #EBD17E; --a-agent-orange: #F2B07E; --a-agent-red: #EF9A9A; --a-agent-pink: #EFA3CC;
+  --a-ease: cubic-bezier(.2, .8, .2, 1);
+  /* Critically damped springs (no overshoot) for what the interface moves; a little give only
+     after something the person dragged and dropped. */
+  --a-spring: linear(0, 0.157 4.6%, 0.48 11.5%, 0.73 19.2%, 0.877 27.5%, 0.953 37%, 0.986 48.5%, 1);
+  --a-spring-give: linear(0, 0.21 5%, 0.65 13%, 0.94 21%, 1.04 29%, 1.05 36%, 1.02 46%, 1);
+  --a-r: 12px; --a-r-sm: 9px; --a-r-lg: 18px; --a-r-xl: 24px; --a-r-2xl: 30px;
+  --a-bg: #EAEEF4; --a-ground-1: #F4F6FA; --a-ground-2: #E2E8F0;
+  --a-rail: rgba(255, 255, 255, .74); --a-surface: rgba(255, 255, 255, .86); --a-surface-2: rgba(255, 255, 255, .64);
+  --a-sunken: rgba(14, 19, 32, .045);
+  --a-glass: rgba(255, 255, 255, .58); --a-glass-2: rgba(255, 255, 255, .78); --a-glass-3: rgba(255, 255, 255, .96);
+  --a-blur: blur(22px) saturate(165%);
+  --a-edge: rgba(255, 255, 255, .9);
+  --a-hover: rgba(14, 19, 32, .04); --a-hover-2: rgba(14, 19, 32, .07);
+  --a-line: rgba(14, 19, 32, .08); --a-line-2: rgba(14, 19, 32, .15); --a-line-3: rgba(14, 19, 32, .05);
+  --a-text: #0E1320; --a-text-2: #454E63; --a-text-3: #5F687D; --a-text-4: #98A0B2;
+  --a-ink: #0E1320; --a-on-ink: #F7F8FB;
+  --a-accent: #2F55E4; --a-accent-soft: rgba(47, 85, 228, .09); --a-accent-line: rgba(47, 85, 228, .4);
+  --a-thread: #AEB8CB; --a-thread-soft: #D7DDE8;
+  --a-work: #13865A; --a-work-soft: rgba(19, 134, 90, .13); --a-live: #2BB673;
+  --a-ask: #A35600; --a-ask-fill: #F08A00; --a-ask-soft: rgba(255, 168, 38, .14); --a-ask-line: rgba(240, 138, 0, .42);
+  --a-ask-light: rgba(255, 168, 38, .55);
+  --a-block: #B4501F; --a-fail: #C9372F; --a-fail-soft: rgba(209, 63, 55, .1);
+  --a-map: transparent; --a-dot: rgba(70, 86, 120, .14);
+  --a-shadow-1: 0 1px 0 rgba(255, 255, 255, .8) inset, 0 0 0 1px rgba(14, 19, 32, .05), 0 6px 18px -10px rgba(20, 32, 70, .28);
+  --a-shadow-2: 0 1px 0 rgba(255, 255, 255, .85) inset, 0 0 0 1px rgba(14, 19, 32, .06), 0 22px 50px -26px rgba(20, 32, 70, .42), 0 3px 8px -3px rgba(20, 32, 70, .12);
+  --a-shadow-3: 0 1px 0 rgba(255, 255, 255, .85) inset, 0 0 0 1px rgba(14, 19, 32, .07), 0 40px 90px -36px rgba(20, 32, 70, .5), 0 8px 18px -8px rgba(20, 32, 70, .16);
+  --a-spec: rgba(255, 255, 255, .55);
+  --a-veil: rgba(234, 238, 246, .62);
+  --a-agent-neutral: #B9C0CC; --a-agent-violet: #A994F4; --a-agent-blue: #7FA2F6; --a-agent-cyan: #6FCBD8;
+  --a-agent-green: #7FCF98; --a-agent-yellow: #E8C766; --a-agent-orange: #F2A66E; --a-agent-red: #EE8E8E; --a-agent-pink: #EE97C4;
   --canvas: var(--a-bg); --surface: var(--a-surface); --raised: var(--a-hover-2); --text: var(--a-text);
   --muted: var(--a-text-3); --line: var(--a-line); --accent: var(--a-accent); --motion: 150ms;
 }
+/* Night: the same glass after dark. */
 :root[data-theme="dark"] .atlas {
   color-scheme: dark;
-  --a-bg: #0E0F12; --a-rail: #121317; --a-surface: #16171B; --a-surface-2: #191A1F; --a-sunken: #111216;
-  --a-hover: #1B1C21; --a-hover-2: #24252B;
-  --a-line: #25272D; --a-line-2: #34373F; --a-line-3: #1E1F24;
-  --a-text: #ECEDF0; --a-text-2: #ACAFB7; --a-text-3: #8A8E97; --a-text-4: #565A63;
-  --a-ink: #ECEDF0; --a-on-ink: #121316;
-  --a-accent: #90A7FF; --a-accent-soft: rgba(144, 167, 255, .10); --a-accent-line: rgba(144, 167, 255, .45);
-  --a-thread: #5E5241; --a-thread-soft: #3A3329;
-  --a-work: #48D08C; --a-work-soft: rgba(72, 208, 140, .14);
-  --a-ask: #F4BF52; --a-ask-fill: #F4BF52; --a-ask-soft: rgba(244, 191, 82, .08); --a-ask-line: rgba(244, 191, 82, .32);
-  --a-block: #F0925F; --a-fail: #FF726C; --a-fail-soft: rgba(255, 114, 108, .10);
-  --a-map: #111216; --a-dot: rgba(214, 190, 156, .08);
-  --a-shadow-1: 0 1px 2px rgba(0, 0, 0, .35);
-  --a-shadow-2: 0 14px 36px rgba(0, 0, 0, .5), 0 2px 8px rgba(0, 0, 0, .3);
-  --a-shadow-3: 0 30px 80px rgba(0, 0, 0, .6), 0 6px 18px rgba(0, 0, 0, .4);
+  --a-bg: #0C0F16; --a-ground-1: #131824; --a-ground-2: #090B11;
+  --a-rail: rgba(24, 29, 41, .76); --a-surface: rgba(28, 33, 46, .82); --a-surface-2: rgba(28, 33, 46, .58);
+  --a-sunken: rgba(255, 255, 255, .04);
+  --a-glass: rgba(28, 33, 46, .52); --a-glass-2: rgba(32, 38, 53, .78); --a-glass-3: rgba(34, 40, 55, .97);
+  --a-edge: rgba(255, 255, 255, .1);
+  --a-hover: rgba(255, 255, 255, .05); --a-hover-2: rgba(255, 255, 255, .085);
+  --a-line: rgba(255, 255, 255, .08); --a-line-2: rgba(255, 255, 255, .15); --a-line-3: rgba(255, 255, 255, .05);
+  --a-text: #EEF1F8; --a-text-2: #AEB6C8; --a-text-3: #8E96AB; --a-text-4: #5D657A;
+  --a-ink: #EEF1F8; --a-on-ink: #10131B;
+  --a-accent: #93AAFF; --a-accent-soft: rgba(147, 170, 255, .12); --a-accent-line: rgba(147, 170, 255, .45);
+  --a-thread: #3E4659; --a-thread-soft: #2A3040;
+  --a-work: #5CCF8F; --a-work-soft: rgba(92, 207, 143, .15); --a-live: #5CCF8F;
+  --a-ask: #FFC266; --a-ask-fill: #FFB03C; --a-ask-soft: rgba(255, 176, 60, .1); --a-ask-line: rgba(255, 176, 60, .38);
+  --a-ask-light: rgba(255, 168, 38, .42);
+  --a-block: #F0925F; --a-fail: #FF7468; --a-fail-soft: rgba(255, 116, 104, .1);
+  --a-dot: rgba(214, 222, 240, .07);
+  --a-shadow-1: 0 1px 0 rgba(255, 255, 255, .05) inset, 0 0 0 1px rgba(255, 255, 255, .06), 0 8px 20px -12px rgba(0, 0, 0, .8);
+  --a-shadow-2: 0 1px 0 rgba(255, 255, 255, .07) inset, 0 0 0 1px rgba(255, 255, 255, .06), 0 26px 60px -28px rgba(0, 0, 0, .85);
+  --a-shadow-3: 0 1px 0 rgba(255, 255, 255, .08) inset, 0 0 0 1px rgba(255, 255, 255, .07), 0 44px 100px -40px rgba(0, 0, 0, .9);
+  --a-spec: rgba(255, 255, 255, .07);
+  --a-veil: rgba(8, 10, 16, .6);
 }
 /* Before the appearance preference is applied (the classic code sets data-theme on mount). */
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme]) .atlas {
     color-scheme: dark;
-    --a-bg: #0E0F12; --a-rail: #121317; --a-surface: #16171B; --a-surface-2: #191A1F; --a-sunken: #111216;
-    --a-hover: #1B1C21; --a-hover-2: #24252B; --a-line: #25272D; --a-line-2: #34373F; --a-line-3: #1E1F24;
-    --a-text: #ECEDF0; --a-text-2: #ACAFB7; --a-text-3: #8A8E97; --a-text-4: #565A63; --a-ink: #ECEDF0; --a-on-ink: #121316;
-    --a-accent: #90A7FF; --a-accent-soft: rgba(144, 167, 255, .10); --a-accent-line: rgba(144, 167, 255, .45);
+    --a-bg: #0C0F16; --a-ground-1: #131824; --a-ground-2: #090B11;
+    --a-rail: rgba(24, 29, 41, .76); --a-surface: rgba(28, 33, 46, .82); --a-surface-2: rgba(28, 33, 46, .58); --a-sunken: rgba(255, 255, 255, .04);
+    --a-glass: rgba(28, 33, 46, .52); --a-glass-2: rgba(32, 38, 53, .78); --a-glass-3: rgba(34, 40, 55, .97);
+    --a-hover: rgba(255, 255, 255, .05); --a-hover-2: rgba(255, 255, 255, .085);
+    --a-line: rgba(255, 255, 255, .08); --a-line-2: rgba(255, 255, 255, .15); --a-line-3: rgba(255, 255, 255, .05);
+    --a-text: #EEF1F8; --a-text-2: #AEB6C8; --a-text-3: #8E96AB; --a-text-4: #5D657A; --a-ink: #EEF1F8; --a-on-ink: #10131B;
+    --a-accent: #93AAFF; --a-accent-soft: rgba(147, 170, 255, .12); --a-accent-line: rgba(147, 170, 255, .45);
+    --a-spec: rgba(255, 255, 255, .07); --a-veil: rgba(8, 10, 16, .6);
   }
+}
+@media (prefers-contrast: more) {
+  .atlas { --a-line: rgba(14, 19, 32, .24); --a-line-2: rgba(14, 19, 32, .36); --a-text-3: #454E63; --a-surface: #FFFFFF; --a-glass-2: #FFFFFF; }
+}
+@media (prefers-reduced-transparency: reduce) {
+  .atlas { --a-surface: var(--a-glass-3); --a-glass: var(--a-glass-3); --a-glass-2: var(--a-glass-3); --a-rail: var(--a-glass-3); --a-blur: none; }
 }

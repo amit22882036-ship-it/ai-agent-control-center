@@ -162,7 +162,9 @@ export default function NewTaskPage({ live, navigate, route }) {
             <Button size="sm" variant="ghost" onClick={() => context.refreshPolicy()}>Try again</Button></p>}
           {context.statusError && <p className="a-fine">{context.statusError}</p>}
           <LeadSettings provider={draft.provider} models={models} picker={draft.picker} onPicker={(picker) => update({ picker })}
-            sandbox={draft.sandbox} onSandbox={(sandbox) => update({ sandbox })} disabled={starting} />
+            sandbox={draft.sandbox} onSandbox={(sandbox) => update({ sandbox, fullConfirmed: false })} disabled={starting}
+            fullConfirmed={draft.fullConfirmed} onFullConfirmed={(fullConfirmed) => update({ fullConfirmed })}
+            helpers={view.helpers} helperAccess={draft.helperAccess} onHelperAccess={(helperAccess) => update({ helperAccess })} />
         </section>
         <HelpersSection draft={draft} view={view} update={update} policy={context.policy} statuses={context.statuses} disabled={starting} />
       </div>

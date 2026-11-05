@@ -16,10 +16,16 @@ function memoryStorage(initial = {}) {
 }
 const brokenStorage = { getItem() { throw new Error('denied') }, setItem() { throw new Error('denied') } }
 
-test('the classic interface is the default; only an Atlas route opens Atlas', () => {
-  for (const hash of ['', '#', '#workspace', '#agents/1', '#/'.slice(0, 1)]) assert.equal(resolveUi({ hash }), 'classic', hash)
-  for (const hash of ['#/', '#/work', '#/settings?section=appearance', '#/unknown']) assert.equal(resolveUi({ hash }), 'atlas', hash)
-  assert.equal(resolveUi(undefined), 'classic')
+test('the new interface is the default; only the Classic marker opens Classic', () => {
+  for (const hash of ['', '#', '#workspace', '#/', '#/work', '#/settings?section=appearance', '#/unknown']) {
+    assert.equal(resolveUi({ hash, search: '' }), 'atlas', hash)
+  }
+  for (const search of ['?ui=classic', '?debug=1&ui=classic', '?ui=classic&x=1']) {
+    assert.equal(resolveUi({ hash: '#workspace', search }), 'classic', search)
+    assert.equal(resolveUi({ hash: '#/work', search }), 'classic', search)
+  }
+  for (const search of ['?ui=classical', '?xui=classic', '?ui=']) assert.equal(resolveUi({ search }), 'atlas', search)
+  assert.equal(resolveUi(undefined), 'atlas')
 })
 
 test('entering Atlas reopens the last route of this tab, and storage failures fall back safely', () => {
@@ -37,9 +43,10 @@ test('entering Atlas reopens the last route of this tab, and storage failures fa
   assert.doesNotThrow(() => rememberAtlasHash('#/work', brokenStorage))
 })
 
-test('leaving Atlas keeps the path and query, adds a history entry and notifies the root', () => {
-  assert.equal(classicUrl({ pathname: '/', search: '', hash: '#/work' }), '/')
-  assert.equal(classicUrl({ pathname: '/app/', search: '?debug=1', hash: '#/settings' }), '/app/?debug=1')
+test('leaving for Classic keeps the path and query, adds a history entry and notifies the root', () => {
+  assert.equal(classicUrl({ pathname: '/', search: '', hash: '#/work' }), '/?ui=classic')
+  assert.equal(classicUrl({ pathname: '/app/', search: '?debug=1', hash: '#/settings' }), '/app/?debug=1&ui=classic')
+  assert.equal(classicUrl({ pathname: '/', search: '?ui=classic', hash: '' }), '/?ui=classic')
   const pushed = []
   const events = []
   const win = {
@@ -50,12 +57,15 @@ test('leaving Atlas keeps the path and query, adds a history entry and notifies 
     dispatchEvent: (event) => events.push(event.type),
   }
   exitAtlas(win)
-  assert.deepEqual(pushed, ['/?x=1'])
+  assert.deepEqual(pushed, ['/?x=1&ui=classic'])
   assert.deepEqual(events, [UI_EVENT])
   assert.equal(win.sessionStorage.getItem(LAST_ROUTE_KEY), '#/settings')
-  const entering = { location: { hash: '' }, sessionStorage: win.sessionStorage }
+  const entered = []
+  const entering = { location: { pathname: '/', search: '?x=1&ui=classic', hash: '#workspace' }, sessionStorage: win.sessionStorage,
+    history: { pushState: (state, title, url) => entered.push(url) }, Event: win.Event, dispatchEvent: (event) => events.push(event.type) }
   enterAtlas(entering)
-  assert.equal(entering.location.hash, '#/settings')
+  assert.deepEqual(entered, ['/?x=1#/settings'])
+  assert.deepEqual(events, [UI_EVENT, UI_EVENT])
 })
 
 test('routes parse, format and round-trip; unknown routes are explicit', () => {
@@ -75,8 +85,8 @@ test('routes parse, format and round-trip; unknown routes are explicit', () => {
   assert.equal(navSection(parseHash('#/new')), 'work')
   assert.equal(navSection(parseHash('#/gallery')), null)
   assert.equal(routeKey(parseHash('#/zzz')), 'not-found:zzz')
-  assert.equal(documentTitle(parseHash('#/settings')), 'Settings · Control Center (Atlas preview)')
-  assert.equal(documentTitle(parseHash('#/zzz')), 'Page not found · Control Center (Atlas preview)')
+  assert.equal(documentTitle(parseHash('#/settings')), 'Settings · AI Agent Control Center')
+  assert.equal(documentTitle(parseHash('#/zzz')), 'Page not found · AI Agent Control Center')
 })
 
 test('workspace totals show only reported values; missing counts are never zero', () => {

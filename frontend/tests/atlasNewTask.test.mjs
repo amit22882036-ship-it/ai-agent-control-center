@@ -86,3 +86,16 @@ test('Atlas starts with helpers off, without changing the classic default', asyn
   assert.deepEqual(newTaskPayload(fresh, view), { project_id: 'p1', task: 'Fix the parser', agent_type: 'claude', sandbox: 'read-only',
     autonomous: false, model: 'Sonnet 4.6' })
 })
+
+test('Full Access needs an explicit confirmation and sends the helpers’ access only when chosen', async () => {
+  const { creationPayload } = await import('../src/autonomousCreation.mjs')
+  const { accessText, accessSummary } = await import('../src/atlas/model/access.mjs')
+  const full = creationPayload('Fix it', 'claude', 'full-access', true, null, 'p1', undefined, { helperAccess: 'workspace-write' })
+  assert.equal(full.sandbox, 'full-access')
+  assert.equal(full.helper_access, 'workspace-write')
+  assert.equal(creationPayload('Fix it', 'claude', 'full-access', false, null, 'p1', undefined, { helperAccess: 'full-access' }).helper_access, undefined)
+  assert.equal(creationPayload('Fix it', 'codex', 'workspace-write', true, null, 'p1', undefined, { helperAccess: 'full-access' }).helper_access, undefined)
+  assert.match(accessText('claude', 'workspace-write'), /cannot confine/)
+  assert.match(accessText('codex', 'workspace-write'), /tests, builds and Git/)
+  assert.equal(accessSummary('full-access'), 'has Full Access (not sandboxed)')
+})

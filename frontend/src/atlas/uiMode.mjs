@@ -1,15 +1,16 @@
-// Which interface renders. Atlas is an explicit opt-in preview: it renders only while the URL
-// carries an Atlas route (a hash that starts with "#/"). Every other URL shows the classic
-// interface, which stays the default. Leaving Atlas removes the hash, so Back returns to Atlas.
+// Which interface renders. The Lumen interface (the code is still named Atlas) is the default;
+// the classic interface stays one step away as a fallback and renders only while the address
+// carries `ui=classic` in its query string. Leaving Classic removes that marker again.
 export const UI_EVENT = 'control-center:ui-change'
 export const LAST_ROUTE_KEY = 'control-center.atlas.last-route'
 export const DEFAULT_ATLAS_HASH = '#/work'
+const CLASSIC = /(^|[?&])ui=classic(?=&|$)/
 
 export function resolveUi(location) {
-  return /^#\//.test(location?.hash || '') ? 'atlas' : 'classic'
+  return CLASSIC.test(location?.search || '') ? 'classic' : 'atlas'
 }
 
-// The Atlas route to open from the classic interface: the one last used in this tab, if valid.
+// The route to open when leaving Classic: the one last used in this tab, if valid.
 export function atlasEntryHash(storage) {
   let saved = null
   try { saved = (storage ?? globalThis.sessionStorage)?.getItem(LAST_ROUTE_KEY) } catch { /* Storage is optional. */ }
@@ -17,17 +18,26 @@ export function atlasEntryHash(storage) {
 }
 
 export function rememberAtlasHash(hash, storage) {
-  if (resolveUi({ hash }) !== 'atlas') return
+  if (!/^#\//.test(hash || '')) return
   try { (storage ?? globalThis.sessionStorage)?.setItem(LAST_ROUTE_KEY, hash) } catch { /* Storage is optional. */ }
 }
 
-// The classic URL keeps the path and query string and drops only the Atlas route.
+function withoutClassic(search) {
+  const kept = String(search || '').replace(/^\?/, '').split('&').filter((part) => part && part !== 'ui=classic')
+  return kept.length ? `?${kept.join('&')}` : ''
+}
+
+// The classic URL keeps the path and the other query parameters, adds the Classic marker and drops
+// only the Lumen route.
 export function classicUrl(location) {
-  return `${location.pathname || '/'}${location.search || ''}`
+  const search = withoutClassic(location.search)
+  return `${location.pathname || '/'}${search ? `${search}&` : '?'}ui=classic`
 }
 
 export function enterAtlas(win = globalThis) {
-  win.location.hash = atlasEntryHash(win.sessionStorage)
+  const { pathname, search } = win.location
+  win.history.pushState(null, '', `${pathname || '/'}${withoutClassic(search)}${atlasEntryHash(win.sessionStorage)}`)
+  win.dispatchEvent(new win.Event(UI_EVENT))
 }
 
 // Leaving Atlas from a selected task can carry its current agent to Classic, which then opens with

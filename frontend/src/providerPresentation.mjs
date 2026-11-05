@@ -139,9 +139,12 @@ export function preservedText(condition, resume) {
 }
 
 // Access may stay or narrow on a provider change; it never widens.
+// An existing agent's access may only stay or narrow.
 export function accessOptions(current) {
+  if (current === 'full-access') return ['full-access', 'workspace-write', 'read-only']
   return current === 'workspace-write' ? ['workspace-write', 'read-only'] : ['read-only']
 }
+export const ACCESS_LABELS = { 'read-only': 'Read only', 'workspace-write': 'Workspace write', 'full-access': 'Full Access' }
 export function changeEligible(agent) {
   return Boolean(agent && agent.status === 'waiting' && agent.agent_type !== 'mock' && !agent.autonomous && !agent.managed
     && ['user', 'provider'].includes(agent.waiting_context?.kind))

@@ -19,7 +19,7 @@ export default function WorkspaceBar({ agents, search, onSearch, notifications, 
       <button type="button" className={`close-button${view === 'providers' ? ' active' : ''}`} aria-current={view === 'providers' ? 'page' : undefined}
         onClick={() => onView?.('providers')}>AI Providers</button>
       {/* Opt-in only: the classic interface stays the default. */}
-      <button type="button" className="close-button" title="Open the new Atlas interface (preview)" onClick={() => enterAtlas()}>Atlas preview</button>
+      <button type="button" className="close-button" title="Return to the new interface" onClick={() => enterAtlas()}>New interface</button>
     </nav>
     <div className="bar-actions">
       <ThemeControl />

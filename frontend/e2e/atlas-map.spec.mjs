@@ -226,15 +226,15 @@ test('Projects show a picture of each project’s hierarchy and open its Map', a
   await page.goto('about:blank')
   await page.clock.setFixedTime(NOW)
   await openApp(page, { path: '/#/projects', tasks: showcase(), projects: PROJECTS })
-  const release = page.locator('.a-pcard').filter({ hasText: 'Release planning' })
+  const release = page.locator('.a-plate').filter({ hasText: 'Release planning' })
   await expect(release.locator('.a-pv-svg circle')).toHaveCount(10) // every loaded task of its six families, as a dot
   await expect(release.locator('.a-pv-svg path')).toHaveCount(4) // the four parent_task_id links among them
-  await expect(page.locator('.a-pcard').filter({ hasText: 'Docs site' })).toContainText('No tasks yet')
+  await expect(page.locator('.a-plate').filter({ hasText: 'Docs site' })).toContainText('No tasks yet')
   await release.getByRole('button', { name: /^Open Release planning in the map/ }).click()
   await expect(page).toHaveURL(/#\/work\?lens=map&project=p1$/)
   await expect(mapTree(page).getByRole('treeitem')).toHaveCount(10)
   await page.goBack()
-  await page.locator('.a-pcard').filter({ hasText: 'Release planning' }).getByRole('button', { name: 'Open map' }).click()
+  await page.locator('.a-plate').filter({ hasText: 'Release planning' }).getByRole('button', { name: 'Open map' }).click()
   await expect(page).toHaveURL(/lens=map&project=p1/)
 })
 
@@ -243,7 +243,7 @@ test('a project with a very large family gets a bounded picture that says what i
   await page.clock.setFixedTime(NOW)
   const started = Date.now()
   await openApp(page, { path: '/#/projects', tasks: large({ families: 2, width: 600 }), projects: PROJECTS })
-  const card = page.locator('.a-pcard').filter({ hasText: 'Release planning' })
+  const card = page.locator('.a-plate').filter({ hasText: 'Release planning' })
   await expect(card.locator('.a-pv-svg')).toBeVisible()
   const elapsed = Date.now() - started
   const shapes = await card.locator('.a-pv-svg .a-pv-n').count()

@@ -4,7 +4,7 @@ import './index.css'
 import App from './App.jsx'
 import UiRoot from './atlas/UiRoot.jsx'
 
-// The classic interface is the default; the Atlas preview renders only for Atlas addresses (#/...).
+// The Lumen interface is the default; the classic interface renders only for addresses marked ui=classic.
 createRoot(document.getElementById('root')).render(
   <StrictMode>
     <UiRoot classic={App} />

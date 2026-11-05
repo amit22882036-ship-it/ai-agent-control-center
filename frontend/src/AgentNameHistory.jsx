@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { nameHistoryTime } from './agentIdentity.mjs'
+import { API_BASE } from './apiClient.mjs'
 
 export default function AgentNameHistory({ agentId, refreshVersion }) {
   const [open, setOpen] = useState(false)
@@ -13,7 +14,7 @@ export default function AgentNameHistory({ agentId, refreshVersion }) {
       setLoading(true)
       setError('')
       try {
-        const response = await fetch(`http://127.0.0.1:8000/agents/${encodeURIComponent(agentId)}/name-history`, { signal: controller.signal })
+        const response = await fetch(`${API_BASE}/agents/${encodeURIComponent(agentId)}/name-history`, { signal: controller.signal })
         const data = await response.json()
         if (!response.ok) throw new Error(data.detail || 'Unable to load name history.')
         if (!controller.signal.aborted) setHistory(data.history)

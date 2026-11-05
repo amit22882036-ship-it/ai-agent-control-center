@@ -19,7 +19,7 @@ function subscribe(callback) {
 export default function UiRoot({ classic: Classic }) {
   const ui = useSyncExternalStore(subscribe, () => resolveUi(window.location))
   if (ui === 'atlas') {
-    return <Suspense fallback={<p className="message" role="status">Loading the Atlas preview…</p>}><AtlasApp /></Suspense>
+    return <Suspense fallback={<p className="message" role="status">Loading…</p>}><AtlasApp /></Suspense>
   }
   return <Classic />
 }

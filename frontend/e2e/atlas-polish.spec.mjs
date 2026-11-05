@@ -63,7 +63,7 @@ test('every screen reflows from 1600 pixels down to 320 (400 % text) without sid
 test('at 250 % text the top bar keeps every action with its name, the bell panel fits and New task stacks', async ({ page }) => {
   await page.setViewportSize({ width: 512, height: 800 })
   await open(page, 'work')
-  for (const name of ['New task', 'Classic view', /^Notifications/, '1 needs you. Go to the next one']) {
+  for (const name of ['New task', /^Notifications/, '1 needs you. Go to the next one']) {
     await expect(page.locator('.a-topbar').getByRole(typeof name === 'string' && name === 'New task' ? 'link' : 'button', { name }).first()).toBeVisible()
   }
   await expect(page.locator('.a-topbar').getByRole('link', { name: 'Control Center' })).toBeVisible()
@@ -179,7 +179,7 @@ test('state survives moving between screens: project, selection in both views, p
   await expect(page).toHaveURL(/project=p1/)
   await expect(page).toHaveURL(/lens=map/)
   await expect(page).toHaveURL(/task=quoted/)
-  await page.locator('.a-nav').getByRole('link', { name: 'Settings' }).click()
+  await page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: 'Settings' }).click()
   await page.getByRole('radio', { name: /Dark/ }).click()
   await page.reload()
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark')

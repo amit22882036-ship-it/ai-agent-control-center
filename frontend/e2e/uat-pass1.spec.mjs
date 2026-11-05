@@ -43,7 +43,7 @@ test('a project lookup that fails says so honestly, and a later success replaces
   await page.waitForTimeout(500)
   await expect(row(page, 'Build the CSV import pipeline')).toContainText('Release planning')
   failing = false
-  await page.locator('.a-nav').getByRole('link', { name: 'Projects' }).click()
+  await page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: 'Projects' }).click()
   await page.getByRole('button', { name: 'Show its work' }).first().click()
   await expect(page).toHaveURL(/project=p1/)
   await expect(row(page, 'Build the CSV import pipeline')).toContainText('Release planning')

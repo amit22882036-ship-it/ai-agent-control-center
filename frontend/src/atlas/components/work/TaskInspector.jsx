@@ -17,6 +17,7 @@ import { classicHandoffAgent } from '../../model/agentTarget.mjs'
 import { AgentFooterActions, AgentNowPanels, AgentSettingsPanels, AgentStopResult } from '../agent/AgentPanels'
 import { useAgentScope } from '../agent/useAgentScope'
 import { OutputHistory } from '../agent/OutputHistory'
+import TaskTitle from '../task/TaskTitle'
 
 const TABS = [{ id: 'now', label: 'Now' }, { id: 'activity', label: 'Activity' }, { id: 'output', label: 'Output' }, { id: 'settings', label: 'Settings' }]
 const AGENT_STATUS = { running: 'Working', waiting: 'Waiting', finished: 'Finished', stopped: 'Stopped' }
@@ -115,7 +116,7 @@ function Family({ store, derived, id, onSelect, onShowInMap, lens }) {
   </>
 }
 
-function NowTab({ store, derived, id, projectName, onSelect, task, activity, now, handoff, agent, onShowInMap, lens, onOpenTask }) {
+function NowTab({ store, derived, id, projectName, onSelect, task, activity, now, handoff, agent, onShowInMap, lens, onOpenTask, onRenamed }) {
   const data = store.tasks[id]
   const parent = data.parentId ? store.tasks[data.parentId] : null
   const children = derived.forest.children[id] || []
@@ -130,7 +131,7 @@ function NowTab({ store, derived, id, projectName, onSelect, task, activity, now
     <section className="a-blk" aria-labelledby={`resp-${id}`}>
       <h3 id={`resp-${id}`}>Responsible for</h3>
       <div className="a-resp">
-        <div className="a-rt a-bidi" dir="auto">{data.title || 'Untitled task'}</div>
+        <TaskTitle taskId={id} title={data.title} className="a-rt" onRenamed={onRenamed} />
         {description && <p className="a-rd a-bidi" dir="auto">{clip(description, 600)}</p>}
         <div className="a-rm"><Icon name="folder" size={13} /><span className="a-bidi" dir="auto">{projectName(data.projectId)}</span>
           {parent && <> · delegated by <button type="button" className="a-link a-bidi" dir="auto" onClick={() => onSelect(parent.id)}>{clip(parent.title, 48)}</button></>}
@@ -303,7 +304,7 @@ export default function TaskInspector({ store, derived, taskId, selection, proje
     <div {...tabPanelProps(idBase, tab)} className="a-insp-panel">
       <AgentStopResult agent={agentScope} />
       {tab === 'now' && <NowTab store={store} derived={derived} id={taskId} projectName={projectName} onSelect={onSelect} task={task} activity={activity.data} now={now}
-        handoff={handoff} agent={agentScope} onShowInMap={onShowInMap} lens={lens} onOpenTask={onOpenTask} />}
+        handoff={handoff} agent={agentScope} onShowInMap={onShowInMap} lens={lens} onOpenTask={onOpenTask}  onRenamed={onRefresh} />}
       {tab === 'activity' && <ActivityTab store={store} derived={derived} id={taskId} activity={activity} assignments={assignments} />}
       {tab === 'output' && (agentScope.agentId ? <OutputHistory key={agentScope.agentId} agentId={agentScope.agentId} version={version}
         historical={agentScope.target.kind !== 'current'} /> : <EmptyState icon="layers" title="No output yet">No agent has worked on this task.</EmptyState>)}

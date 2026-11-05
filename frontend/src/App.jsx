@@ -13,6 +13,7 @@ import { readLayout, layoutKey } from './panelLayout.mjs'
 import { clearClassicHandoff, peekClassicHandoff } from './atlas/uiMode.mjs'
 import './App.css'
 import './hierarchy.css'
+import { API_BASE } from './apiClient.mjs'
 
 function App() {
   const [layout, setLayout] = useState(() => readLayout())
@@ -56,7 +57,7 @@ function App() {
         let after = 0, data
         const collected = []
         for (let page = 0; page < pagesRef.current; page++) {
-          const response = await fetch(`http://127.0.0.1:8000/workspace?limit=500&after=${after}`, { signal: controller.signal })
+          const response = await fetch(`${API_BASE}/workspace?limit=500&after=${after}`, { signal: controller.signal })
           if (!response.ok) throw new Error('Unable to fetch agents')
           data = await response.json()
           collected.push(...data.agents)

@@ -1,3 +1,4 @@
+import { API_BASE } from './apiClient.mjs'
 export const OUTPUT_BATCH = 300
 export const OUTPUT_WINDOW = 2000
 
@@ -17,7 +18,7 @@ export function outputQuery(state, direction = 'live') {
   const params = new URLSearchParams({ limit: OUTPUT_BATCH })
   if (direction === 'older' && state.items.length) params.set('before', state.items[0].seq)
   else if (direction === 'live' && state.cursor !== null) params.set('after', state.cursor)
-  return `http://127.0.0.1:8000/agents/${state.agentId}/output?${params}`
+  return `${API_BASE}/agents/${state.agentId}/output?${params}`
 }
 
 export function mergeOutput(state, page, direction = 'live') {

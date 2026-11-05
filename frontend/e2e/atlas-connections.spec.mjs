@@ -52,7 +52,7 @@ test('a calm set of tools shows no attention mark, and a tool page is its own ad
   await open(page, 'work', { providers: onboarding({ gemini: { state: 'disabled', enabled: false, allowed: false } }) })
   const nav = page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: 'Connections', exact: true })
   await expect(nav).toBeVisible()
-  await expect(page.locator('.a-nav-mark')).toHaveCount(0)
+  await expect(page.locator('.a-rail-link[data-section="connections"] .a-rail-dot')).toHaveCount(0)
   await nav.click()
   await expect(heading(page)).toHaveText('Connections')
   await page.getByRole('article', { name: 'Claude Code' }).getByRole('link', { name: 'Claude Code', exact: true }).click()
@@ -314,7 +314,7 @@ test('when the tools can’t be read at all nothing is assumed about any of them
   await open(page, 'connections', { providers: null })
   await expect(page.getByRole('alert')).toContainText('Your tools couldn’t be read')
   await expect(page.getByRole('article')).toHaveCount(0)
-  await expect(page.locator('.a-nav-mark')).toHaveCount(0)
+  await expect(page.locator('.a-rail-link[data-section="connections"] .a-rail-dot')).toHaveCount(0)
 })
 
 test('New Task and an agent’s settings lead to the tool in Connections', async ({ page }) => {

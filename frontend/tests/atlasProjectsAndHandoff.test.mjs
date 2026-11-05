@@ -15,9 +15,12 @@ function memory() {
 }
 
 test('registered projects come from GET /projects, including projects without loaded tasks', () => {
+  // The backend's order is the person's order; it is kept as it is (not sorted by name).
   const directory = projectDirectory({ data: { projects: [{ project_id: 'p2', name: 'Docs site' }, { project_id: 'p1', name: 'Release planning' }, { bad: true }] }, error: null })
   assert.equal(directory.state, 'ready')
   assert.deepEqual(directory.projects.map((p) => p.name), ['Docs site', 'Release planning'])
+  const reversed = projectDirectory({ data: { projects: [{ project_id: 'p1', name: 'Release planning' }, { project_id: 'p2', name: 'Docs site' }] }, error: null })
+  assert.deepEqual(reversed.projects.map((p) => p.name), ['Release planning', 'Docs site'])
   const menu = projectMenu(directory, null)
   assert.deepEqual(menu.filter((item) => !item.separator).map((item) => [item.label, Boolean(item.checked)]),
     [['All projects', true], ['Docs site', false], ['Release planning', false]])
@@ -89,4 +92,28 @@ test('a captured target that is no longer current is detected', () => {
       agent: { ...node.agent, agent_id: 'tester-2' } }) })
   assert.equal(targetStillCurrent(replaced, 'tests', captured), false)
   assert.equal(targetStillCurrent(store, 'tests', { agentId: null }), false)
+})
+
+test('hidden projects keep their data, follow the others in menus and are excluded from navigation', async () => {
+  const { visibleProjects } = await import('../src/atlas/model/projects.mjs')
+  const directory = projectDirectory({ data: { projects: [
+    { project_id: 'p1', name: 'Release planning', sort_order: 0 }, { project_id: 'p2', name: 'Archive', sort_order: 1, hidden: true },
+    { project_id: 'p3', name: 'Docs site', sort_order: 2 }] }, error: null })
+  assert.deepEqual([...directory.hiddenIds], ['p2'])
+  assert.deepEqual(visibleProjects(directory).map((p) => p.id), ['p1', 'p3'])
+  const menu = projectMenu(directory, 'p2').filter((item) => !item.separator)
+  assert.deepEqual(menu.map((item) => item.label), ['All projects', 'Release planning', 'Docs site', 'Hidden projects', 'Archive'])
+  assert.equal(menu.find((item) => item.label === 'Archive').checked, true)
+  assert.equal(projectLabel(directory, 'p2'), 'Archive')
+})
+
+test('reordering moves one project and keeps hidden projects in place', async () => {
+  const { moveProject, dropProject } = await import('../src/atlas/model/projects.mjs')
+  assert.deepEqual(moveProject(['a', 'b', 'c'], 'c', -1), ['a', 'c', 'b'])
+  assert.deepEqual(moveProject(['a', 'b', 'c'], 'a', -1), ['a', 'b', 'c'])
+  assert.deepEqual(moveProject(['a', 'b', 'c'], 'a', 5), ['b', 'c', 'a'])
+  assert.deepEqual(moveProject(['a', 'b'], 'missing', 1), ['a', 'b'])
+  // h is hidden: visible a, b, c reorder around it.
+  assert.deepEqual(dropProject(['a', 'h', 'b', 'c'], ['a', 'b', 'c'], 'c', 0), ['c', 'h', 'a', 'b'])
+  assert.deepEqual(dropProject(['a', 'h', 'b', 'c'], ['a', 'b', 'c'], 'a', 9), ['b', 'h', 'c', 'a'])
 })

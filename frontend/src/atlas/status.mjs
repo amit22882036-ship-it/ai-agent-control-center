@@ -1,3 +1,4 @@
+import { API_HOST } from '../apiClient.mjs'
 // What the Atlas shell may say about the backend. Only values the backend reported are shown: a
 // missing or malformed count is "not available", never zero.
 export const OVERVIEW_FIELDS = [
@@ -30,7 +31,7 @@ export function connectionView({ transport, reachable }) {
     return { tone: 'pending', label: 'Connecting', detail: 'Contacting the Control Center backend.' }
   }
   if (!reachable) {
-    return { tone: 'offline', label: 'Backend unavailable', detail: 'The backend at 127.0.0.1:8000 is not answering. Retrying automatically.' }
+    return { tone: 'offline', label: 'Backend unavailable', detail: `The backend at ${API_HOST} is not answering. Retrying automatically.` }
   }
   if (transport === 'live') return { tone: 'live', label: 'Live', detail: 'Changes arrive as they happen.' }
   return { tone: 'polling', label: 'Polling', detail: 'Live updates are unavailable, so the dashboard checks every 2 seconds.' }

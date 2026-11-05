@@ -4,6 +4,7 @@ __pycache__/
 *.egg-info/
 build/
 dist/
+dist-desktop/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
@@ -58,3 +59,7 @@ logs/
 .cache/
 *.tmp
 coverage/
+
+# Desktop packaging outputs
+desktop/out/
+desktop/.pyi-work/

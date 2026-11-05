@@ -164,7 +164,7 @@ export function TechnicalSection({ detail, taskId }) {
       <dt>Provider session</dt><dd className="a-mono">{detail.session_id || 'Not available'}</dd>
       <dt>Provider</dt><dd>{providerLabel(detail.agent_type)}</dd>
       <dt>Model</dt><dd>{detail.model || 'Provider default'}</dd>
-      <dt>Access</dt><dd>{detail.sandbox === 'workspace-write' ? 'Workspace write' : detail.sandbox === 'read-only' ? 'Read only' : 'Not applicable'}</dd>
+      <dt>Access</dt><dd>{detail.sandbox === 'full-access' ? 'Full Access (not sandboxed)' : detail.sandbox === 'workspace-write' ? 'Workspace write' : detail.sandbox === 'read-only' ? 'Read only' : 'Not applicable'}</dd>
       {changes.length > 0 && <><dt>Provider changes</dt><dd>{changes.map((change) =>
         `${providerLabel(change.from_provider)}${change.from_model ? ` (${change.from_model})` : ''} → ${providerLabel(change.to_provider)}${change.to_model ? ` (${change.to_model})` : ''}${change.session_retained ? ', session kept' : ', new session'}`).join('; ')}</dd></>}
       <dt>Internal status</dt><dd>{detail.status}</dd>

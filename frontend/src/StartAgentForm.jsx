@@ -7,14 +7,14 @@ import useModelCatalog from './useModelCatalog'
 import { chosenConfig, initialChoice, selectionReady } from './modelPresentation.mjs'
 import { AUTO_SUMMARY, providerChoices } from './allocationPresentation.mjs'
 import { initialAutonomousChoice, autonomyEligible, creationPayload } from './autonomousCreation.mjs'
-import { apiFetch } from './apiClient.mjs'
+import { apiFetch, API_BASE } from './apiClient.mjs'
 import { PROVIDER_IDS, capabilityReason, providerLabel, selectable, stateLabel, stateOf, stateTone, statusFor } from './providerPresentation.mjs'
 import { defaultChoice, defaultText, permissionFor, submissionProblem, unavailableProviders } from './onboardingPresentation.mjs'
 
 // Explicit local checks (installation, version, sign-in, billing route); never a model request.
 async function loadProviders() {
   try {
-    const response = await apiFetch('http://127.0.0.1:8000/providers/check', { method: 'POST' })
+    const response = await apiFetch(`${API_BASE}/providers/check`, { method: 'POST' })
     const data = await response.json().catch(() => ({}))
     return response.ok && Array.isArray(data.providers) ? data.providers : null
   } catch {
@@ -26,7 +26,7 @@ async function loadProviders() {
 // could not be loaded, which permits no real provider (see permissionFor).
 async function loadPolicy() {
   try {
-    const response = await apiFetch('http://127.0.0.1:8000/provider-policy')
+    const response = await apiFetch(`${API_BASE}/provider-policy`)
     const data = await response.json().catch(() => ({}))
     return response.ok && Array.isArray(data.allowed) ? data : null
   } catch {
@@ -148,7 +148,7 @@ export default function StartAgentForm({
         if (problem) throw new Error(problem)
       }
       const path = child ? `/agents/${encodeURIComponent(parentId)}/children/start` : '/agents/start'
-      const response = await apiFetch(`http://127.0.0.1:8000${path}`, {
+      const response = await apiFetch(`${API_BASE}${path}`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(creationPayload(task, agentType, sandbox, autonomous, parentId, child ? undefined : project.project_id,
           config.model || undefined, { effort: config.effort, attempt: config.attempt,
