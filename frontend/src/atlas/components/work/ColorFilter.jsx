@@ -37,7 +37,7 @@ export default function ColorFilter({ selected, onChange }) {
         <span>Any colour</span>{chosen.length === 0 && <Icon name="check" size={14} />}</button>
       <div role="separator" className="a-menu-sep" />
       {COLOR_VALUES.map((value) => <label key={value} className="a-check a-colorpick">
-        <input type="checkbox" checked={selected.has(value)} onChange={() => toggle(value)} />
+        <input type="checkbox" name="colour" value={value} checked={selected.has(value)} onChange={() => toggle(value)} />
         <span className="a-swatch-dot a-swatch-dot--sm" data-color={value} aria-hidden="true" /><span>{name(value)}</span>
       </label>)}
       <p className="a-fine a-colorpop-note">The colour of the agent each task shows. Removed agents and tasks without an agent have no colour.</p>

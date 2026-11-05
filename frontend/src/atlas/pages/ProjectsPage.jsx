@@ -122,7 +122,7 @@ export default function ProjectsPage({ live, navigate }) {
       actions={<Button variant="primary" icon="plus" onClick={() => setAdding(true)}>Add project</Button>}>
       {hidden.length ? 'Show a hidden project below, or add another.' : 'Add a local Git repository to start working in it.'}</EmptyState>}
     {ready && visible.length > 1 && <label className="a-find a-find--page a-projects-find"><Icon name="search" size={14} />
-      <input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Find a project" aria-label="Find a project" dir="auto" /></label>}
+      <input type="search" name="project-find" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Find a project" aria-label="Find a project" dir="auto" /></label>}
     {ready && q && !shown.length && <p className="a-fine">No project matches.</p>}
     {ready && shown.length > 0 && <ProjectPlates projects={shown} reorderable={!q} order={order} stats={stats} renderPicture={picture}
       onCommit={commitOrder} onRename={rename} announce={announce}

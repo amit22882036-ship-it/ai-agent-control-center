@@ -42,7 +42,7 @@ export function HelpersSection({ draft, view, update, policy, statuses, disabled
               const on = draft.autoProviders.includes(provider)
               return <label key={provider} className={`a-pchip${on ? ' is-on' : ''}${state.allowed ? '' : ' is-off'}`}>
                 {/* A tool that lost its permission can still be cleared, never newly chosen. */}
-                <input type="checkbox" checked={on} disabled={disabled || (!state.allowed && !on)}
+                <input type="checkbox" name="helper-tools" value={provider} checked={on} disabled={disabled || (!state.allowed && !on)}
                   onChange={(event) => update({ autoProviders: event.target.checked ? [...draft.autoProviders, provider] : draft.autoProviders.filter((item) => item !== provider) })} />
                 <span className="a-tool-mark a-tool-mark--sm" data-color={TOOL_COLOR[provider]} aria-hidden="true">{TOOLS[provider].mark}</span>
                 {providerLabel(provider)}{state.allowed ? (state.usable ? '' : ' (not ready)') : ' (not allowed)'}

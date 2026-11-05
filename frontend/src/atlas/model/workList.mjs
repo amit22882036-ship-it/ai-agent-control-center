@@ -182,8 +182,15 @@ export function markedPaths(store, derived) {
 // says how many of its children are not shown (`hiddenChildren`).
 // `changed` (a predicate) is used by the "changed" scope: Tasks whose record changed since the
 // person last looked.
+// `hold` (a Task id) stays listed with its loaded path whatever the scope and the pruning say: the
+// Task the person is looking at keeps its row when a live change takes it out of the scope (it
+// finishes, stops needing them, or is no longer "changed"). The page holds a Task only while the
+// view it was listed in is unchanged, so a scope the person picks still leaves it out.
+// `holdSection` keeps the held Task's family in the section it was in when the hold began, so
+// neither its row nor its neighbours move while the person looks at it; such a family is marked
+// `kept` and isn't counted in a section it no longer belongs to.
 export function visibleRows(store, derived, { expanded = new Set(), filter = 'all', project = null, query = '', colors = null, focus = null,
-  prune = null, marked = null, changed = null } = {}) {
+  prune = null, marked = null, changed = null, hold = null, holdSection = null } = {}) {
   const q = query.trim().toLowerCase()
   const colorSet = colors && colors.size ? colors : null
   const scoped = TASK_SCOPES.has(filter)
@@ -192,8 +199,14 @@ export function visibleRows(store, derived, { expanded = new Set(), filter = 'al
   const matches = (id) => (!q || searchText(store, derived, id).includes(q)) && (!colorSet || colorSet.has(rowColor(derived, id)))
     && (!scoped || taskCategory(derived, id) === filter) && (!changedScope || changed(id))
   const { forest } = derived
+  const held = new Set()
+  if (hold && store.tasks[hold]) {
+    let id = hold
+    while (id && !held.has(id)) { held.add(id); id = forest.parent[id] }
+  }
   const keep = new Set()
   if (narrowing) {
+    for (const id of held) keep.add(id)
     for (const id of Object.keys(store.tasks)) {
       if (!matches(id)) continue
       keep.add(id)
@@ -208,7 +221,7 @@ export function visibleRows(store, derived, { expanded = new Set(), filter = 'al
       let children = (forest.children[id] || []).filter((child) => !narrowing || keep.has(child))
       let hiddenChildren = 0
       if (!narrowing && prune?.has(id) && marked) {
-        const shown = children.filter((child) => marked.has(child))
+        const shown = children.filter((child) => marked.has(child) || held.has(child))
         hiddenChildren = children.length - shown.length
         children = shown
       }
@@ -238,11 +251,13 @@ export function visibleRows(store, derived, { expanded = new Set(), filter = 'al
   let shown = 0
   for (const family of derived.families) {
     if (project && family.projectId !== project) continue
-    if (!inFilter(derived, family, filter)) continue
+    const holding = held.has(family.topId)
+    if (!holding && !inFilter(derived, family, filter)) continue
     if (narrowing && !keep.has(family.topId)) continue
     const rows = familyRows(family.topId)
     shown += rows.length
-    byKey[family.section].families.push({ ...family, rows })
+    const sectionKey = holding && byKey[holdSection] ? holdSection : family.section
+    byKey[sectionKey].families.push({ ...family, rows, kept: sectionKey !== family.section })
   }
   return { sections: sections.filter((section) => section.families.length), shown, searching: narrowing, focus: null }
 }

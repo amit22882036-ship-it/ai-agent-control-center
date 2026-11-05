@@ -23,7 +23,7 @@ export default function RenameField({ value, label, maxLength = 100, onSave, onD
     else setError(result?.message || 'The name could not be saved.')
   }
   return <span className={`a-irename ${className}`}>
-    <input ref={input} className="a-irename-input" value={text} maxLength={maxLength} dir="auto" aria-label={label}
+    <input ref={input} name="rename" className="a-irename-input" value={text} maxLength={maxLength} dir="auto" aria-label={label}
       readOnly={busy} aria-invalid={error ? true : undefined} aria-describedby={error ? 'a-irename-error' : undefined}
       onChange={(event) => { setText(event.target.value); setError('') }}
       onKeyDown={(event) => {

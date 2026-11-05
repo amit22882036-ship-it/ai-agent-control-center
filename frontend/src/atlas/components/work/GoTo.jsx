@@ -105,7 +105,7 @@ export default function GoTo({ open, onClose, store, derived, projects, recent, 
     {open && <>
     <div className="a-goto-field">
       <Icon name="search" size={18} />
-      <input ref={input} type="text" role="combobox" aria-expanded="true" aria-controls={`${id}-list`} aria-autocomplete="list"
+      <input ref={input} type="text" name="go-to" role="combobox" aria-expanded="true" aria-controls={`${id}-list`} aria-autocomplete="list"
         aria-activedescendant={flat.length ? `${id}-o${current}` : undefined} aria-label="Go to a task, project or page"
         placeholder="Go to a task, project or page…" value={query} dir="auto"
         onChange={(event) => { setQuery(event.target.value); setActive(0) }} onKeyDown={onKeyDown} />

@@ -85,6 +85,39 @@ test('sheet rows: sections, history by day, hidden-task rows, and sheet edges', 
   assert.ok(!folded.some((row) => row.kind === 'day'))
 })
 
+test('the selected task keeps its row: a held task outlives its scope and pruning, and a folded history still lists its family', () => {
+  const { store, derived } = load(showcase())
+  // "report" is working; in the "Need you" scope it is not listed unless it is held.
+  const scoped = visibleRows(store, derived, { filter: 'needs' })
+  assert.ok(!flatRows(scoped).some((row) => row.id === 'report'))
+  const held = visibleRows(store, derived, { filter: 'needs', hold: 'report' })
+  const rows = flatRows(held)
+  assert.ok(rows.some((row) => row.id === 'report'))
+  // With its path, so the tree stays whole.
+  for (const row of rows) if (row.parentId) assert.ok(rows.some((other) => other.id === row.parentId), `${row.id} has its lead`)
+  // Pruning to what needs you keeps the held task too.
+  const marked = markedPaths(store, derived)
+  const pruned = visibleRows(store, derived, { expanded: new Set(['csv', 'cli']), prune: new Set(['csv']), marked, hold: 'report' })
+  assert.ok(flatRows(pruned).some((row) => row.id === 'report'))
+  // A finished family is listed under a folded History when it holds the selection; the rest stays folded.
+  const view = visibleRows(store, derived, {})
+  const done = view.sections.find((section) => section.key === 'done')
+  const folded = sheetRows(view, store, derived, { now: NOW, finishedOpen: false, keep: 'rename' })
+  assert.ok(folded.some((row) => row.id === 'rename'))
+  const reveal = folded.find((row) => row.kind === 'reveal')
+  if (done.families.length > 1) assert.equal(reveal.count, done.families.length - 1)
+  else assert.equal(reveal, undefined)
+  assert.ok(!folded.some((row) => row.kind === 'day'))
+  // Held in the section it was in when the hold began: a family that finished stays in Open, marked
+  // as kept there, and Open's count doesn't include it.
+  const pinned = visibleRows(store, derived, { hold: 'rename', holdSection: 'active' })
+  const open = pinned.sections.find((section) => section.key === 'active')
+  assert.ok(open.families.some((family) => family.topId === 'rename' && family.kept))
+  assert.ok(!pinned.sections.some((section) => section.key === 'done' && section.families.some((family) => family.topId === 'rename')))
+  const sheet = sheetRows(pinned, store, derived, { now: NOW })
+  assert.equal(sheet.find((row) => row.key === 'section:active').count, open.families.length - 1)
+})
+
 test('history days are named plainly and families sort by their latest recorded change', () => {
   const day = (iso) => dayLabel(Date.parse(iso), NOW)
   assert.equal(day('2026-10-29T09:00:00Z').label, 'Today')

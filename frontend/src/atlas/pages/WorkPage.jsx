@@ -117,6 +117,15 @@ export default function WorkPage({ live, route, navigate, feed, derived, attenti
   const loadedCount = Object.keys(store.tasks).length
   const large = loadedCount > SMALL
   const marked = useMemo(() => markedPaths(store, derived), [store, derived])
+  // The view the person chose: scope, project, search, colours and focus.
+  const viewKey = `${filter}|${project}|${query}|${colorParam}|${focus}`
+  // The selected Task is held in the view it was listed in: a live change (it finishes, its question
+  // is answered, it is no longer "changed") never takes its row away, folds its branch shut or moves
+  // its family to another section while the person looks at it. Choosing another view or another
+  // Task lets go, and the family then moves to where it belongs.
+  const [held, setHeld] = useState({ id: null, key: '', section: null })
+  const holdId = selectedId && held.id === selectedId && held.key === viewKey && store.tasks[selectedId] ? selectedId : null
+  const holdPath = useMemo(() => (holdId ? new Set(pathTo(derived.forest, holdId)) : null), [holdId, derived])
   // Branches: in a small workspace every open family starts expanded; in a large one families are
   // one line each, and a family that needs the person opens only along the path to what needs them.
   // Finished families start closed. The person's own choices always win.
@@ -128,12 +137,13 @@ export default function WorkPage({ live, route, navigate, feed, derived, attenti
         const choice = overrides.has(id) ? overrides.get(id) : undefined
         let fallback = family.section !== 'done' && !large
         if (large && family.section === 'needs') fallback = marked.has(id)
+        if (holdPath?.has(id)) fallback = true
         if (choice ?? fallback) open.add(id)
         if (large && family.section === 'needs' && choice !== true) pruned.add(id)
       }
     }
     return { expanded: open, prune: pruned }
-  }, [derived, overrides, large, marked])
+  }, [derived, overrides, large, marked, holdPath])
 
   // Opening a task (from the address, Back/Forward or a link) reveals the loaded path to it once;
   // collapsing a branch afterwards is the person's choice.
@@ -151,13 +161,13 @@ export default function WorkPage({ live, route, navigate, feed, derived, attenti
     const base = changedSince(store, seen)
     return (id) => id !== selectedId && base(id)
   }, [store, seen, selectedId])
-  const view = useMemo(() => visibleRows(store, derived, { expanded, filter, project, query, colors, focus, prune, marked, changed }),
-    [store, derived, expanded, filter, project, query, colors, focus, prune, marked, changed])
+  const holdSection = holdId ? held.section : null
+  const view = useMemo(() => visibleRows(store, derived, { expanded, filter, project, query, colors, focus, prune, marked, changed, hold: holdId, holdSection }),
+    [store, derived, expanded, filter, project, query, colors, focus, prune, marked, changed, holdId, holdSection])
   const familyTotals = familyCounts(derived, project)
   const finishedOpen = finishedChoice ?? (familyTotals.done + familyTotals.canceled <= 6 || filter === 'done' || filter === 'canceled')
-  const rows = useMemo(() => (lens === 'list' || side ? sheetRows(view, store, derived, { now, finishedOpen, complete: store.complete }) : []),
-    [lens, side, view, store, derived, now, finishedOpen])
-  const viewKey = `${filter}|${project}|${query}|${colorParam}|${focus}`
+  const rows = useMemo(() => (lens === 'list' || side ? sheetRows(view, store, derived, { now, finishedOpen, complete: store.complete, keep: selectedId }) : []),
+    [lens, side, view, store, derived, now, finishedOpen, selectedId])
   const layout = useMemo(() => (lens === 'map' ? mapLayout(view, derived, { chips: (id, row) => {
     const task = store.tasks[id]
     const loaded = (derived.forest.children[id] || []).length
@@ -173,6 +183,12 @@ export default function WorkPage({ live, route, navigate, feed, derived, attenti
   const selection = reconcile({ taskId: selectedId, focusId: null, expanded: [] }, store).status
   const shownIds = new Set(flatRows(view).map((row) => row.id))
   const selectedHidden = selection === 'present' && !shownIds.has(selectedId)
+  // Hold the selection from the first render that lists it in this view (see `held` above), and let
+  // go of a hold that no longer applies, so returning to an earlier view doesn't bring it back.
+  if (selectedId && holdId !== selectedId && store.tasks[selectedId] && shownIds.has(selectedId)) {
+    const top = derived.forest.rootOf[selectedId]
+    setHeld({ id: selectedId, key: viewKey, section: view.sections.find((section) => section.families.some((family) => family.topId === top))?.key ?? null })
+  } else if (held.id && !holdId && !(selectedId && shownIds.has(selectedId))) setHeld({ id: null, key: '', section: null })
 
   const go = useCallback((patch) => navigate('work', { ...params, ...patch }), [navigate, params])
   // Selecting a Task outside a focused branch leaves the focus, so the selection is never hidden.
@@ -338,7 +354,7 @@ export default function WorkPage({ live, route, navigate, feed, derived, attenti
         <ColorFilter selected={colors} onChange={(next) => go({ colors: [...next].join(',') || undefined })} />
         <label className="a-find">
           <Icon name="search" size={14} />
-          <input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Find in loaded tasks"
+          <input type="search" name="work-find" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Find in loaded tasks"
             aria-label="Find in loaded tasks" dir="auto" onKeyDown={(event) => { if (event.key === 'Escape' && query) { event.stopPropagation(); setQuery('') } }} />
         </label>
         <Segmented label="View as" size="sm" className="a-lens" value={lens} onChange={(value) => switchLens(value)} options={LENSES} />

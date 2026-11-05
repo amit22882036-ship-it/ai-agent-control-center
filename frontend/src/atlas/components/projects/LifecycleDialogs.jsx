@@ -107,7 +107,7 @@ export function RestoreDialog({ project, onClose, onDone, initialRefusal }) {
     {refusal && <Notice tone="warn" title={refusal.message}>{refusal.reasons.join(' ')}</Notice>}
     <label className="a-field">
       <span className="a-field-label">Restore to</span>
-      <input className="a-input a-mono" value={target} onChange={(event) => setTarget(event.target.value)} spellCheck={false}
+      <input className="a-input a-mono" name="restore-to" value={target} onChange={(event) => setTarget(event.target.value)} spellCheck={false}
         aria-label="Folder to restore the project to" />
       <span className="a-fine">A folder that does not exist yet, on the same drive.</span>
     </label>
@@ -148,7 +148,7 @@ export function DeleteDialog({ project, onClose, onDone }) {
       {warnings.length > 0 && <Notice tone="warn" title="Some of this exists only on this computer">{warnings.join(' ')}</Notice>}
       <label className="a-field">
         <span className="a-field-label">Type <b className="a-bidi" dir="auto">{project.name}</b> to confirm</span>
-        <input className="a-input" value={typed} onChange={(event) => setTyped(event.target.value)} dir="auto" autoComplete="off"
+        <input className="a-input" name="confirm-name" value={typed} onChange={(event) => setTyped(event.target.value)} dir="auto" autoComplete="off"
           aria-label={`Type ${project.name} to confirm the permanent deletion`} />
       </label>
     </div>}

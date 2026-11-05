@@ -13,6 +13,7 @@ export function settingsSection(params) {
 export const KEY_GROUPS = [
   ['Everywhere', [
     ['New task', 'N'],
+    ['Go to a task, project or page', 'Ctrl K · /'],
     ['Move between controls', 'Tab · Shift Tab'],
     ['Activate a button or link', 'Enter · Space'],
     ['Move within tabs, choices and menus', '← → ↑ ↓'],
@@ -28,6 +29,7 @@ export const KEY_GROUPS = [
     ['Leave a focused branch', 'Esc'],
     ['Next or previous task that needs you', 'A · Shift A'],
     ['Reply to the selected task’s question', 'R'],
+    ['List: move a screen down or up', 'Page Down · Page Up'],
     ['Map: zoom in or out', '+ · −'],
     ['Map: move the view', 'Shift ← → ↑ ↓'],
     ['Map: move between tasks, expand or collapse', '← → ↑ ↓'],

@@ -125,6 +125,65 @@ test('a live change never moves the selected row or the scroll position, even wh
   await expect(row(page, 'Brand new family 2')).toBeVisible()
 })
 
+test('at the top of a long list, work arriving above keeps the selected row still; with nothing selected, it shows', async ({ page }) => {
+  const data = busy({ families: 200 })
+  let extra = []
+  const arrive = (count, prefix) => Array.from({ length: count }, (_, index) => node(`${prefix}-${index}`, null, { title: `Arrived ${prefix} ${index}`, project_id: 'p1',
+    created_at: '2026-10-29T12:04:00.000Z', updated_at: '2026-10-29T12:04:00.000Z', status: 'in_progress', responsibility_awaiting: true }))
+  const pages = () => ({ ...data, tasks: [...extra, ...data.tasks], total: data.tasks.length + extra.length })
+  await openWork(page, { tasks: data, taskPages: pages })
+  const id = await page.locator('.a-sheet .a-row--root').nth(2).getAttribute('data-id')
+  await page.locator(`.a-sheet [data-id="${id}"]`).click()
+  await page.waitForTimeout(150)
+  const top = () => page.locator(`.a-sheet [data-id="${id}"]`).evaluate((element) => element.getBoundingClientRect().top)
+  const before = await top()
+  extra = arrive(2, 'a')
+  await announceChange(page)
+  await expect.poll(() => page.evaluate(() => document.querySelector('.a-sheet').scrollTop)).toBeGreaterThan(50)
+  expect(Math.abs((await top()) - before)).toBeLessThan(3)
+  // Nothing selected and at the top: what arrives is shown where it lands.
+  extra = []
+  await openWork(page, { tasks: data, taskPages: pages })
+  extra = arrive(1, 'b')
+  await announceChange(page)
+  await expect(row(page, 'Arrived b 0')).toBeVisible()
+  expect(await page.evaluate(() => document.querySelector('.a-sheet').scrollTop)).toBe(0)
+})
+
+test('the task you are looking at keeps its row when it finishes, even in a scope it leaves and with history folded', async ({ page }) => {
+  const data = showcase()
+  let finished = false
+  // The Hebrew-titled task finishes: its agent's assignment ends as completed.
+  const finish = (task) => (task.task_id !== 'hebrew' || !finished ? task : { ...task, status: 'completed', updated_at: '2026-10-29T12:04:00.000Z',
+    assignment: { current: null, last_ended: { assignment_id: 'as-he', agent_id: 'he', assigned_at: '2026-10-29T11:25:00.000Z', ended_at: '2026-10-29T12:04:00.000Z',
+      ended_reason: 'completed' }, count: 1, previous_agent_ids: ['he'] }, agent: { ...task.agent, status: 'finished', role: 'last' } })
+  await page.addInitScript(() => localStorage.setItem('control-center.atlas.finished-open', 'closed'))
+  await openWork(page, { tasks: data, taskPages: () => ({ ...data, tasks: data.tasks.map(finish) }) }, '?filter=working')
+  const hebrew = page.locator('.a-sheet [data-id="hebrew"]')
+  await hebrew.click()
+  await expect(hebrew).toHaveAttribute('aria-selected', 'true')
+  const before = await hebrew.evaluate((element) => element.getBoundingClientRect().top)
+  finished = true
+  await announceChange(page)
+  await expect(strip(page).getByRole('button', { name: /Done$/ })).toHaveText(/^2/)
+  // Still listed, still selected, in the same place on screen.
+  await expect(hebrew).toHaveAttribute('aria-selected', 'true')
+  await expect(hebrew.locator('.a-c-now')).toContainText(/Completed|Done|Finished/)
+  expect(Math.abs((await hebrew.evaluate((element) => element.getBoundingClientRect().top)) - before)).toBeLessThan(3)
+  // A scope the person picks still leaves it out, and coming back doesn't bring it back.
+  await strip(page).getByRole('button', { name: /Waiting$/ }).click()
+  await expect(hebrew).toHaveCount(0)
+  await expect(page.getByText('The selected task is hidden by the current view')).toBeVisible()
+  await strip(page).getByRole('button', { name: /Working$/ }).click()
+  await expect(page.locator('.a-sheet [data-id="report"]')).toBeVisible()
+  await expect(hebrew).toHaveCount(0)
+  // In all work, with history folded, the finished family is listed under History and the rest stays folded.
+  await strip(page).getByRole('button', { name: /Working$/ }).click()
+  await expect(page).not.toHaveURL(/filter=/)
+  await expect(hebrew).toHaveAttribute('aria-selected', 'true')
+  await expect(page.locator('.a-sheet-reveal button')).toHaveText(/1 more task family in history/)
+})
+
 test('changes since you last looked are marked, can be shown on their own, and cleared', async ({ page }) => {
   const data = showcase()
   await page.addInitScript(() => localStorage.setItem('control-center.atlas.seen', JSON.stringify({ since: '2026-10-29T01:00:00.000Z', opened: {} })))

@@ -1,4 +1,4 @@
-import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import Icon from '../Icon'
 import { Avatar, StatusBead } from '../identity'
 import { Button } from '../primitives'
@@ -98,8 +98,9 @@ const TaskRow = memo(function TaskRow({ entry, top, height, store, derived, proj
         {top0 && !compact && <span className="a-sub">
           <span className="a-pdot" style={{ '--hue': entry.hue }} aria-hidden="true" />
           <span className="a-bidi" dir="auto">{projectName(task.projectId)}</span>
-          {' · '}{childCount ? `${childCount} helper${childCount === 1 ? '' : 's'}` : 'no helpers'}
-          {placement && <span className="a-placement"> · {placement}</span>}
+          {/* A flex line drops a leading space, so the separator starts with a no-break space. */}
+          {' · '}{childCount ? `${childCount} helper${childCount === 1 ? '' : 's'}` : 'no helpers'}
+          {placement && <span className="a-placement">{' · '}{placement}</span>}
         </span>}
       </span>
       {hiddenAttention && <span className="a-attn-dot" title="Something in this branch needs you" />}
@@ -133,15 +134,16 @@ function Plain({ entry, top, height, onToggleFinished, onShowAll, compact }) {
     return <div className={`a-sheet-sec a-sheet-sec--${entry.section}`} role="none" data-key={entry.key} style={style}>
       {entry.section === 'needs' && <StatusBead state="ask" size={14} decorative />}
       <span className="a-sheet-sec-label">{entry.label}</span><span className="a-ol-n a-num">{entry.count}</span>
-      {entry.collapsible && <button type="button" className="a-sheet-sec-toggle" tabIndex={-1} aria-hidden="true" onClick={() => onToggleFinished(!entry.open)}>
-        {entry.open ? 'Hide' : 'Show'}</button>}
+      {/* Folded, the history row below offers it; opened, the heading folds it away again. */}
+      {entry.collapsible && entry.open && <button type="button" className="a-sheet-sec-toggle" tabIndex={-1} aria-hidden="true" onClick={() => onToggleFinished(false)}>
+        Fold away</button>}
     </div>
   }
   if (entry.kind === 'day') return <div className={`a-sheet-day${entry.first ? ' is-first' : ''}${entry.last ? ' is-last' : ''}`} role="none" data-key={entry.key} style={style}><span>{entry.label}</span></div>
   if (entry.kind === 'reveal') {
     return <div className="a-sheet-reveal" role="none" data-key={entry.key} style={style}>
       <button type="button" tabIndex={-1} aria-hidden="true" onClick={() => onToggleFinished(true)}>
-        <Icon name="down" size={14} />{entry.count} task {entry.count === 1 ? 'family' : 'families'} in history{compact ? '' : ' · show them by day'}</button>
+        <Icon name="down" size={14} />{entry.count} {entry.more ? 'more ' : ''}task {entry.count === 1 ? 'family' : 'families'} in history{compact ? '' : ' · show them by day'}</button>
     </div>
   }
   if (entry.kind === 'more') {
@@ -170,6 +172,12 @@ export default function WorkSheet({ rows, viewKey, store, derived, projectName, 
   const pendingFlip = useRef(null)
   // A row the keyboard moved to, focused as soon as it is drawn (a long jump draws it a frame later).
   const pendingFocus = useRef(null)
+  // The row the person just opened or closed (a branch, its hidden tasks, History) stays under the
+  // pointer when the rows change because of it.
+  const acted = useRef(null)
+  const toggleRow = useCallback((id, open) => { acted.current = { key: `task:${id}`, at: performance.now() }; onToggle(id, open) }, [onToggle])
+  const showAllRow = useCallback((id) => { acted.current = { key: `task:${id}`, at: performance.now() }; onShowAll(id) }, [onShowAll])
+  const toggleHistory = useCallback((open) => { acted.current = { key: 'section:done', at: performance.now() }; onToggleFinished(open) }, [onToggleFinished])
   const [port, setPort] = useState({ top: 0, height: 900 })
   const [scale, setScale] = useState(1)
 
@@ -209,18 +217,28 @@ export default function WorkSheet({ rows, viewKey, store, derived, projectName, 
     }
     const scrollBefore = lastScroll.current
     const viewport = element.clientHeight
-    // The anchor: the selected row when it was on screen, otherwise the first row fully on screen.
+    const onScreen = (index) => index !== undefined && before.tops[index] >= scrollBefore - 1 && before.tops[index] < scrollBefore + viewport
+    // The anchor: the row the person just acted on; else the selected row when it was on screen;
+    // else the first row fully on screen. The first two hold at any scroll position. The last one
+    // holds once the person has scrolled: at the very top, new work arriving above is shown.
     let anchor = null
+    let held = false
+    const action = acted.current
+    acted.current = null
     const selectedBefore = selectedId ? before.keyIndex.get(`task:${selectedId}`) : undefined
-    if (selectedBefore !== undefined && before.tops[selectedBefore] >= scrollBefore && before.tops[selectedBefore] < scrollBefore + viewport) {
+    if (action && performance.now() - action.at < 1500 && onScreen(before.keyIndex.get(action.key))) {
+      anchor = action.key
+      held = true
+    } else if (onScreen(selectedBefore)) {
       anchor = `task:${selectedId}`
+      held = true
     } else {
       for (let i = 0; i < before.rows.length; i += 1) {
         if (before.tops[i] >= scrollBefore) { anchor = before.rows[i].key; break }
       }
     }
     let scrollAfter = element.scrollTop
-    if (anchor && keyIndex.has(anchor) && scrollBefore > 0) {
+    if (anchor && keyIndex.has(anchor) && (held || scrollBefore > 0)) {
       const offset = before.tops[before.keyIndex.get(anchor)] - scrollBefore
       const desired = Math.max(0, tops[keyIndex.get(anchor)] - offset)
       if (Math.abs(element.scrollTop - desired) >= 1) element.scrollTop = desired
@@ -334,8 +352,8 @@ export default function WorkSheet({ rows, viewKey, store, derived, projectName, 
         keyboard.current = false
       }
     }
-    if (action.expand) onToggle(action.expand, true)
-    if (action.collapse) onToggle(action.collapse, false)
+    if (action.expand) toggleRow(action.expand, true)
+    if (action.collapse) toggleRow(action.collapse, false)
     if (action.select) onSelect(action.select)
   }
 
@@ -353,10 +371,10 @@ export default function WorkSheet({ rows, viewKey, store, derived, projectName, 
     if (entry.kind === 'family' || entry.kind === 'member') {
       shown.push(<TaskRow key={entry.key} entry={{ ...entry, hue: hueOf?.(store.tasks[entry.id]?.projectId) }} top={tops[i]} height={h} store={store} derived={derived}
         projectName={projectName} now={now} selected={entry.id === selectedId} focused={entry.id === focusTarget}
-        changed={Boolean(changed?.(entry.id))} onSelect={onSelect} onToggle={onToggle} onFocusRow={setFocusId} compact={compact}
+        changed={Boolean(changed?.(entry.id))} onSelect={onSelect} onToggle={toggleRow} onFocusRow={setFocusId} compact={compact}
         onShowInMap={onShowInMap} onOpenTask={onOpenTask} onReply={onReply} />)
     } else {
-      shown.push(<Plain key={entry.key} entry={entry} top={tops[i]} height={h} onToggleFinished={onToggleFinished} onShowAll={onShowAll} compact={compact} />)
+      shown.push(<Plain key={entry.key} entry={entry} top={tops[i]} height={h} onToggleFinished={toggleHistory} onShowAll={showAllRow} compact={compact} />)
     }
   }
   const loaded = Object.values(store.tasks).filter((task) => task.source === 'page').length

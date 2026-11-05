@@ -61,18 +61,35 @@ export function teamFaces(derived, family, limit = 4) {
 
 // The flat row sequence. `finishedOpen` says whether the Finished section lists its families or
 // only offers to; finished families are grouped by the day they last changed, newest first.
-export function sheetRows(view, store, derived, { now = Date.now(), finishedOpen = true, complete = true } = {}) {
+// `keep` (the selected Task's id) keeps that Task's family listed under a folded History, so the
+// row the person is looking at never vanishes when its work finishes or is opened from elsewhere.
+export function sheetRows(view, store, derived, { now = Date.now(), finishedOpen = true, complete = true, keep = null } = {}) {
   const rows = []
+  const pushFamily = (family, sectionKey) => {
+    for (const row of family.rows) {
+      rows.push({ kind: row.depth === 0 ? 'family' : 'member', key: `task:${row.id}`, id: row.id, row, family, section: sectionKey })
+      if (row.hiddenChildren > 0) {
+        rows.push({ kind: 'more', key: `more:${row.id}`, id: row.id, depth: row.depth + 1, hidden: row.hiddenChildren, family })
+      }
+    }
+    if (family.summary.notLoaded > 0 && !complete) {
+      rows.push({ kind: 'more', key: `notloaded:${family.topId}`, id: family.topId, depth: 1, notLoaded: family.summary.notLoaded, family })
+    }
+  }
   for (const section of view.sections) {
     const finished = section.key === 'done'
     const families = finished
       ? section.families.map((family) => ({ family, time: familyTime(store, family) })).sort((a, b) => (b.time ?? -1) - (a.time ?? -1))
       : section.families.map((family) => ({ family, time: null }))
     const open = !finished || finishedOpen || view.searching || view.focus
-    rows.push({ kind: 'section', key: `section:${section.key}`, section: section.key, label: section.label, count: section.families.length,
-      collapsible: finished && !view.searching && !view.focus, open })
+    // A family kept in place for the selection is listed here but counted where it now belongs.
+    rows.push({ kind: 'section', key: `section:${section.key}`, section: section.key, label: section.label,
+      count: section.families.reduce((n, family) => n + (family.kept ? 0 : 1), 0), collapsible: finished && !view.searching && !view.focus, open })
     if (!open) {
-      rows.push({ kind: 'reveal', key: `reveal:${section.key}`, section: section.key, count: section.families.length })
+      const kept = keep ? section.families.find((family) => family.rows.some((row) => row.id === keep)) : null
+      if (kept) pushFamily(kept, section.key)
+      const rest = section.families.length - (kept ? 1 : 0)
+      if (rest > 0) rows.push({ kind: 'reveal', key: `reveal:${section.key}`, section: section.key, count: rest, more: Boolean(kept) })
       continue
     }
     let lastDay = null
@@ -84,15 +101,7 @@ export function sheetRows(view, store, derived, { now = Date.now(), finishedOpen
           lastDay = day.key
         }
       }
-      for (const row of family.rows) {
-        rows.push({ kind: row.depth === 0 ? 'family' : 'member', key: `task:${row.id}`, id: row.id, row, family, section: section.key })
-        if (row.hiddenChildren > 0) {
-          rows.push({ kind: 'more', key: `more:${row.id}`, id: row.id, depth: row.depth + 1, hidden: row.hiddenChildren, family })
-        }
-      }
-      if (family.summary.notLoaded > 0 && !complete) {
-        rows.push({ kind: 'more', key: `notloaded:${family.topId}`, id: family.topId, depth: 1, notLoaded: family.summary.notLoaded, family })
-      }
+      pushFamily(family, section.key)
     }
   }
   // Rows between two section headings are drawn as one sheet: mark where each sheet starts and ends.

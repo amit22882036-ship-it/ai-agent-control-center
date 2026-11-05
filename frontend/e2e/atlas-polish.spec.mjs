@@ -147,7 +147,7 @@ test('an unfinished New task is kept when leaving the page and is gone once it s
 test('the keyboard reference matches the shortcuts the pages implement', async ({ page }) => {
   await open(page, 'settings?section=keyboard')
   const keys = page.locator('#atlas-settings-keyboard')
-  for (const [action, combo] of [['New task', 'N'], ['Show the List', 'L'], ['Show the Map', 'M'], ['Focus on the selected task’s branch', 'F'],
+  for (const [action, combo] of [['New task', 'N'], ['Go to a task, project or page', 'Ctrl K · /'], ['Show the List', 'L'], ['Show the Map', 'M'], ['Focus on the selected task’s branch', 'F'],
     ['Open the selected task’s page', 'O'], ['Next or previous task that needs you', 'A · Shift A'], ['Reply to the selected task’s question', 'R']]) {
     await expect(keys.locator('div').filter({ hasText: action }).filter({ has: page.locator('kbd', { hasText: combo }) }).first()).toBeVisible()
   }

@@ -130,7 +130,7 @@ export function ProjectPicker({ directory, value, onChange, onRegistered, disabl
       <span className="a-pjchg">Change<Icon name="down" size={13} stroke={2.2} /></span>
     </button>
     {open && <div className="a-pjpop" role="dialog" aria-label="Choose a project">
-      <label className="a-pjsearch"><Icon name="search" size={15} /><input value={query} onChange={(event) => setQuery(event.target.value)}
+      <label className="a-pjsearch"><Icon name="search" size={15} /><input name="project-pick-find" value={query} onChange={(event) => setQuery(event.target.value)}
         placeholder="Find a project" aria-label="Find a project" dir="auto" autoFocus /></label>
       <div className="a-pjh">Your projects</div>
       {directory.state === 'loading' && <p className="a-fine a-pjnote">Loading projects…</p>}
