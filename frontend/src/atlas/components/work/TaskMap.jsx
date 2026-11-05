@@ -79,12 +79,16 @@ const MapNode = memo(function MapNode({ node, row, info, selected, tabbable, dim
     {row.expanded ? <Icon name="down" size={12} stroke={2.4} /> : <>+{info.hidden}</>}
   </button>
   if (node.kind === 'row') {
-    return <div {...common} className={`a-gr${selected ? ' is-selected' : ''}${dim ? ' is-dim' : ''}${historic ? ' is-historic' : ''}${away ? ' is-away' : ''}${info.status.tone === 'ask' ? ' a-gr--ask' : ''}${info.status.key === 'canceled' ? ' is-canceled' : ''}`}
+    return <div {...common} className={`a-gr${node.shelf ? ' a-gr--shelf' : ''}${selected ? ' is-selected' : ''}${dim ? ' is-dim' : ''}${historic ? ' is-historic' : ''}${away ? ' is-away' : ''}${info.status.tone === 'ask' ? ' a-gr--ask' : ''}${info.status.key === 'canceled' ? ' is-canceled' : ''}`}
       style={{ left: node.x, top: node.y, width: node.w, height: node.h }}>
       <span className="a-gav">{ring && <span className={`a-ring a-ring--${ring}`} />}<Face who={info.who} size={30} />
         {BADGES.has(bead) && <span className="a-gbadge a-gbadge--sm"><StatusBead state={bead} size={13} decorative /></span>}</span>
       <span className="a-grt"><span className="a-t a-bidi" dir="auto">{info.title}</span>
-        <span className={`a-s a-tone-${info.status.tone}`}><span className="a-sr">. </span>{info.status.label}{info.time ? ` · ${info.time}` : ''}</span></span>
+        <span className={`a-s a-tone-${info.status.tone}`}><span className="a-sr">. </span>{info.status.label}{info.time ? ` · ${info.time}` : ''}
+          {node.shelf && info.project ? <span className="a-gr-proj" aria-hidden="true">{' · '}{info.project}</span> : null}</span>
+        {node.shelf && info.strand && <span className="a-gr-strand" aria-hidden="true">
+          <span className="a-strand">{info.strand.marks.map((mark, index) => <i key={index} className={`a-sm a-sm--${mark.category}${mark.lead ? ' is-lead' : ''}`} />)}</span>
+          <span className="a-strand-n a-num">{info.strand.finished}/{info.strand.size}</span></span>}</span>
       <span className="a-sr">. {info.extra}.</span>
       {fold}
     </div>

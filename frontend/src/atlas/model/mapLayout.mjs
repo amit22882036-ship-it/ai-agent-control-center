@@ -13,8 +13,10 @@
 export const MAP = {
   NODE_W: 168, ROOT_H: 132, NODE_H: 122, CHIPS: 26, ROW_W: 216, ROW_H: 54, ROW_GAP: 8, ROW_INDENT: 26,
   GAP_X: 24, GAP_Y: 60, GAP_X_ACROSS: 64, GAP_Y_ACROSS: 18, FAMILY_GAP: 76, FAMILY_ROW_GAP: 70, BAND_GAP: 54, BAND_HEAD: 40, LABEL: 30, PAD: 48,
-  MAX_ROW: 2600, RADIUS: 10,
+  MAX_ROW: 2600, RADIUS: 10, SHELF_W: 272, SHELF_H: 62, SHELF_GAP: 12,
 }
+// From this many families in a band, closed families sit on a shelf (see the band loop).
+const SHELF_FROM = 6
 
 // What an edge says about the Task below it. Colour is never the only signal: the node carries
 // its status in words, and these are just quiet reinforcements.
@@ -156,7 +158,11 @@ export function mapLayout(view, derived, { maxRow = MAP.MAX_ROW, chips = (id, ro
     let rowTop = y + (banded ? MAP.BAND_HEAD : 0) + MAP.LABEL
     let x = MAP.PAD
     let rowBottom = rowTop
-    families.forEach((family, index) => {
+    // At scale, a closed family (one shown node) is a capsule on the band's shelf instead of a
+    // full tile: open branches stand out as trees, and the rest read as a tidy list of families.
+    const shelved = !across && families.length > SHELF_FROM ? families.filter((family) => family.rows.length === 1) : []
+    const shelf = new Set(shelved.map((family) => family.topId))
+    families.filter((family) => !shelf.has(family.topId)).forEach((family, index) => {
       const w = measureFrom(family.topId)
       if (across) {
         // One family per line, each growing to the right.
@@ -180,6 +186,19 @@ export function mapLayout(view, derived, { maxRow = MAP.MAX_ROW, chips = (id, ro
       x += w + MAP.FAMILY_GAP
       maxX = Math.max(maxX, x - MAP.FAMILY_GAP)
     })
+    if (shelved.length) {
+      const columns = Math.max(1, Math.floor((maxRow + MAP.SHELF_GAP) / (MAP.SHELF_W + MAP.SHELF_GAP)))
+      const start = shelved.length === families.length ? rowTop : rowBottom + MAP.FAMILY_ROW_GAP
+      shelved.forEach((family, index) => {
+        const sx = MAP.PAD + (index % columns) * (MAP.SHELF_W + MAP.SHELF_GAP)
+        const sy = start + Math.floor(index / columns) * (MAP.SHELF_H + MAP.SHELF_GAP)
+        const id = family.topId
+        nodes[id] = { id, kind: 'row', shelf: true, x: sx, y: sy, w: MAP.SHELF_W, h: MAP.SHELF_H, depth: 0, parentId: null, topId: id }
+        tops.push(id)
+        rowBottom = Math.max(rowBottom, sy + MAP.SHELF_H)
+        maxX = Math.max(maxX, sx + MAP.SHELF_W)
+      })
+    }
     y = rowBottom + MAP.BAND_GAP
   }
 

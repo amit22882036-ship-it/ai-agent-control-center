@@ -208,6 +208,14 @@
 .atlas .a-sm--canceled { background: repeating-linear-gradient(135deg, color-mix(in srgb, var(--a-text-3) 40%, transparent) 0 2px, transparent 2px 4px); }
 .atlas .a-strand-n { margin-left: 8px; font: 600 11.5px/1 var(--a-mono); color: var(--a-text-3); white-space: nowrap; }
 .atlas .a-sheet .a-row.is-past .a-sm { height: 9px; opacity: .8; }
+/* Map shelf: closed families as capsules, the project and strand under the title. */
+.atlas .a-gr.a-gr--shelf { border-radius: 16px; }
+.atlas .a-gr--shelf .a-grt .a-t { font-size: 12.5px; }
+.atlas .a-gr-proj { color: var(--a-text-4); }
+.atlas .a-gr-strand { display: flex; align-items: center; margin-top: 4px; }
+.atlas .a-gr-strand .a-sm { height: 8px; width: 3px; }
+.atlas .a-gr-strand .a-sm.is-lead { width: 6px; }
+.atlas .a-gr-strand .a-strand-n { font-size: 10px; margin-left: 6px; }
 .atlas .a-gstrand { display: flex; align-items: center; justify-content: center; margin-top: 6px; }
 .atlas .a-gstrand .a-sm { height: 11px; }
 .atlas .a-gstrand .a-strand-n { margin-left: 6px; font-size: 10.5px; }
