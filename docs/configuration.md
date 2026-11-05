@@ -14,6 +14,9 @@ The Control Center needs no configuration for normal use. The backend reads envi
 | `CONTROL_CENTER_DELEGATION_DEPTH` | `4` | Maximum number of Parent-to-Child levels below a root Task |
 | `CONTROL_CENTER_DELEGATION_CHILDREN_PER_PARENT` | `16` | Maximum **unfinished** direct Children of one Parent |
 | `CONTROL_CENTER_DELEGATION_CONCURRENT_CHILDREN` | `4` | Maximum delegated Child workers running at the same time, across the whole backend |
+| `CONTROL_CENTER_TRASH_ROOT` | `%LOCALAPPDATA%\AI Agent Control Center\Trash` | Where Move to Trash puts a project folder on the same drive; on another drive a hidden `.control-center-trash` folder next to the project is used. See [project lifecycle](project-lifecycle.md). |
+| `CONTROL_CENTER_STATIC_DIR` | Not set | A built interface (`frontend\dist-desktop`) that the backend serves at `/`. The desktop app sets it. |
+| `CONTROL_CENTER_DESKTOP_DATA` | `%LOCALAPPDATA%\AI Agent Control Center` | Desktop app only: where it keeps its database, worktrees, Trash and logs. See [desktop app](desktop.md). |
 
 Invalid values fail closed with an error that names the variable. A malformed model name or effort rejects the Codex launch. Blank model and effort values are treated as unset.
 

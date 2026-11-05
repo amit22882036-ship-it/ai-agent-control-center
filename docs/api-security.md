@@ -57,6 +57,8 @@ Viewing an agent does not finalize a process that its watcher thread owns. The w
 
 If a read observes an exited process that has no live watcher, it settles only the visible status. It never runs automatic continuation, structured-execution handoff or delegation scheduling. If an automatic decision would apply, the read leaves the episode untouched for its owner.
 
+Project lifecycle previews (`GET /projects/{id}/lifecycle`) run local, read-only Git commands in the project folder (`remote`, `status`, `branch`, `rev-list`, `stash list`) with optional locks disabled, so a preview never changes the repository and never contacts a remote. Moving to Trash, restoring and deleting are CSRF-protected writes; see [project lifecycle](project-lifecycle.md).
+
 ### Watcher failure
 
 A watcher thread that ends without finalizing its exited process, for example because `process.wait()` raised, leaves no owner.

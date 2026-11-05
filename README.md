@@ -4,11 +4,20 @@ A local platform for orchestrating, monitoring and controlling AI coding agents 
 
 A chat window gives you one model and one conversation. The Control Center instead treats work as **Tasks** owned by **Agents**: a Parent agent can split a request into separate responsibilities, the backend admits **Child agents** under explicit limits, each Child works in its own workspace, and its result comes back only through conflict-checked integration and the Parent's explicit acceptance. Different agents in one hierarchy can run on different providers, models and reasoning efforts.
 
-> **Status:** an open-source engineering project under active development, run locally on Windows. It is not a production service. The [OpenAI Codex CLI](https://github.com/openai/codex) is the provider verified most broadly with real runs. Claude Code has had a short authenticated run in an isolated environment (starts, a reply, a helper started by hand, stops); its autonomous delegation and limit recovery are verified only against fake CLIs. Gemini CLI is tested against fake CLIs only. A Mock provider lets you explore the UI without model usage. See [providers](docs/providers.md) and [limitations](#current-limitations).
+> **Status:** an open-source engineering project under active development, for Windows. It is not a production service. The [OpenAI Codex CLI](https://github.com/openai/codex) is the provider verified most broadly with real runs. Claude Code has had a short authenticated run in an isolated environment; its autonomous delegation and limit recovery are verified only against fake CLIs. Gemini CLI is tested against fake CLIs only. A Mock provider and a demo mode let you explore everything without model usage. See [providers](docs/providers.md) and [limitations](#current-limitations).
 
-![Agent Workspace with a Parent agent, two Child agents and the inspector open](docs/images/agent-workspace.png)
+![The Work list in the Lumen interface: four tasks across three projects, with the navigation rail on the left](docs/images/lumen/work-list.png)
 
-<sub>Illustrative screenshot made with Mock agents and a demo repository, taken before multi-provider support was added. The hierarchy was created manually through the API, so it does not record an autonomous run.</sub>
+<table>
+  <tr>
+    <td width="50%"><img src="docs/images/lumen/work-map.png" alt="The Work Map showing the same tasks as cards grouped under Completed and history"></td>
+    <td width="50%"><img src="docs/images/hierarchy-explorer.png" alt="The classic Hierarchy Explorer showing one Parent agent and two Child agents"></td>
+  </tr>
+  <tr>
+    <td><sub>The Work Map. Both Lumen screenshots come from the installed desktop app with synthetic projects and Mock agents.</sub></td>
+    <td><sub>The classic interface, still available as a fallback. Mock agents with demo data.</sub></td>
+  </tr>
+</table>
 
 ## Why it exists
 
@@ -45,22 +54,15 @@ The Control Center puts that work behind one local backend:
 - Works for promoted proposals and for ordinary delegation through the versioned `control-center.delegation.v3` protocol, which also supports explicit provider, model and effort requests.
 - Per-Task policies with allowed providers and models, preference order and suitability profiles, inherited by subtrees with local overrides; edits are revision-checked. Every decision is recorded with an explanation in the inspector.
 
-**Dashboard (React)**
-- Live status over Server-Sent Events with polling as a fallback, and paginated output history.
-- A three-pane hierarchy view with Task state, planning decisions, Child outcomes, integration evidence and recent activity.
-- An inspector for each agent: provider and model settings, provider waits, allocation decisions, process ownership and removal.
-- An attention panel, light, dark and automatic themes, and optional browser or Windows notifications.
+**Projects and access**
+- Projects can be renamed (the display name only; the folder is never renamed), reordered by dragging or with the keyboard, and hidden without stopping their work; anything that needs you stays visible.
+- A real **Trash**: Move to Trash moves the project folder into the Control Center's Trash on the same drive and blocks new work; Restore moves it back (or to another place if the old one is taken); Delete permanently removes the folder, its task worktrees and its records after you type the project's name. Remote repositories are never touched, links and junctions are never followed, and system and user folders are refused. See [project lifecycle](docs/project-lifecycle.md).
+- Three access levels for real agents, **Read only**, **Workspace** and **Full Access**, mapped to each provider's own documented controls and explained per provider before anything starts. Full Access is an explicit choice, and helpers of a Full Access lead get Workspace unless you allow more. See [agent access](docs/agent-access.md).
 
-<table>
-  <tr>
-    <td width="50%"><img src="docs/images/hierarchy-explorer.png" alt="Hierarchy Explorer showing one Parent agent and two Child agents"></td>
-    <td width="50%"><img src="docs/images/new-agent.png" alt="Earlier version of the New agent form with Project, task, agent type, access and Autonomous mode"></td>
-  </tr>
-  <tr>
-    <td><sub>Hierarchy Explorer. Mock agents with demo data.</sub></td>
-    <td><sub>An earlier version of the New agent form (Codex and Mock only); the current form also offers Claude Code, Gemini CLI, model and effort selection, and Auto allocation for Children.</sub></td>
-  </tr>
-</table>
+**Interface (React) and desktop app**
+- **Lumen**, the default interface: a navigation rail, a Work list and Work Map of every task family, task pages, an inspector for each agent, Connections (AI Providers), Settings and notifications. The classic interface stays one click away. See [Lumen](docs/lumen-parity.md).
+- Live status over Server-Sent Events with polling as a fallback, and paginated output history.
+- A **Windows desktop app** with an installer: it starts and stops its own backend, keeps data per user, asks before quitting while agents work, and can keep them working from the tray. See [desktop app](docs/desktop.md).
 
 A real autonomous run with Codex has been verified end to end. A natural-language request led one Parent to promote two Children. Both Children completed, both results were integrated and accepted, and the Parent finished after its own test run passed. The [verification notes](docs/dashboard.md#verification) list exactly what was and was not covered.
 
@@ -79,17 +81,19 @@ Each real provider uses the CLI you installed and signed in to on your own machi
 
 ```mermaid
 flowchart LR
-    UI[React dashboard<br/>localhost:5173] -->|REST + CSRF token| API[FastAPI backend<br/>127.0.0.1:8000]
+    Shell[Desktop app<br/>Electron] -->|starts, stops| API
+    UI[Lumen interface<br/>served by the backend] -->|REST + CSRF token| API[FastAPI backend<br/>127.0.0.1, free port]
     API -->|SSE invalidations| UI
-    API --> Core[Task, agent, orchestration<br/>and allocation core]
+    API --> Core[Task, agent, orchestration,<br/>allocation and project lifecycle core]
     Core --> DB[(SQLite state and history)]
     Core --> WS[Git Task worktrees]
     Core --> Workers[Codex / Claude Code / Gemini CLI / Mock<br/>processes in Windows Job Objects]
     Workers -->|structured events / output| Core
 ```
 
-- **Frontend:** React 19, Vite 8 and plain CSS. Tests run on Node's built-in test runner.
+- **Frontend:** React 19, Vite 8 and plain CSS. Unit tests run on Node's built-in test runner; browser tests use Playwright with synthetic data.
 - **Backend:** Python, FastAPI, Uvicorn, SQLite and standard-library process and thread management. No ORM and no task queue.
+- **Desktop:** Electron around the backend, which PyInstaller packages as one program; an NSIS installer per user. The backend serves the interface, so window, API and live updates share one local origin.
 - **Provider adapters:** one contract for locating, checking, launching and parsing each CLI. The prompt is sent on stdin, and only validated, fixed CLI options are passed as arguments. Lifecycle, admission, supervision and recovery stay in the backend.
 - **Orchestration:** planning, promotion, delegation, allocation, materialization and integration are durable, journaled steps with idempotent identities, rechecked at every admission boundary.
 - **Single process:** run one backend process. Live process registries and the event broker are in memory.
@@ -108,11 +112,27 @@ These are the problems that took most of the design work. The linked documents e
 | Orphaned processes | Each execution runs in a Windows Job Object that kills its whole tree on Stop, shutdown or backend crash, and launch fails closed if supervision cannot be established. When an end cannot be proven, the Task stays held, and the inspector offers a recorded human attestation only when fresh diagnostics allow it. See [process supervision](docs/process-supervision.md). |
 | Local API exposed to the browser | Host and Origin checks, a per-process CSRF token and JSON-only bodies block other websites. GET requests have no side effects. See [API security](docs/api-security.md). |
 
-## Quick start (Windows)
+## Install the desktop app (Windows)
 
-The backend and the frontend are started separately; there is no installer or one-click launcher yet. The commands below are PowerShell. Run them in order: each block assumes the directory left by the previous one.
+The installer is built from this repository; no release is published yet.
 
-### 1. Prerequisites
+1. Build it once from the repository root in PowerShell (needs the prerequisites from [Run from source](#run-from-source) below):
+
+   ```powershell
+   .\desktop\build.ps1
+   ```
+
+2. Run `desktop\out\AI-Agent-Control-Center-Setup-0.9.0.exe`. It installs for your Windows user only (no administrator rights) and adds Start menu and desktop shortcuts. The installer is not signed, so Windows SmartScreen asks before the first run.
+3. Open **AI Agent Control Center**. The app starts its own backend on a free local port; no PowerShell window, npm or manual backend is needed.
+4. Register a project (an existing Git repository with at least one commit) from **New task**, then start a Mock agent to try it, or a real one after installing and signing in to a provider CLI ([step 6 below](#6-install-and-sign-in-to-a-provider-cli-real-agents-only)).
+
+Data lives in `%LOCALAPPDATA%\AI Agent Control Center` and is kept when you uninstall (Settings, Apps, or the uninstaller in the install folder). To look around without any real project or model usage, start the app with `--demo`: it uses a separate database with three synthetic repositories and finished Mock agents. Details: [desktop app](docs/desktop.md).
+
+## Run from source
+
+For development, run the backend and the interface separately. The commands below are PowerShell. Run them in order: each block assumes the directory left by the previous one.
+
+#### 1. Prerequisites
 
 - **Windows 10 or 11.** Agent launching and process supervision are Windows-only for now; on other platforms launches are refused with `Process supervision unavailable`.
 - **Git**, on `PATH`, with `user.name` and `user.email` configured.
@@ -129,7 +149,7 @@ node --version
 npm --version
 ```
 
-### 2. Clone the repository
+#### 2. Clone the repository
 
 Choose a parent folder, for example your home directory:
 
@@ -141,7 +161,7 @@ cd .\ai-agent-control-center
 
 The rest of the setup runs from this repository root.
 
-### 3. Create the Python virtual environment
+#### 3. Create the Python virtual environment
 
 ```powershell
 python -m venv .venv
@@ -149,13 +169,13 @@ python -m venv .venv
 
 The commands below call `.venv\Scripts\python.exe` directly, so you do not need to activate the environment.
 
-### 4. Install backend dependencies
+#### 4. Install backend dependencies
 
 ```powershell
 .\.venv\Scripts\python.exe -m pip install -r backend\requirements.txt
 ```
 
-### 5. Install frontend dependencies
+#### 5. Install frontend dependencies
 
 ```powershell
 cd .\frontend
@@ -163,7 +183,7 @@ npm ci
 cd ..
 ```
 
-### 6. Install and sign in to a provider CLI (real agents only)
+#### 6. Install and sign in to a provider CLI (real agents only)
 
 The Control Center uses whatever account is signed in on **your** machine. Model usage is billed to, or counted against, your own plan. For Codex:
 
@@ -175,11 +195,11 @@ codex login status
 
 `codex login` opens a browser so you can sign in. The backend launches Codex through npm's global launcher at `%APPDATA%\npm\codex.cmd`, which is where `npm install -g` puts it by default; if you changed npm's global prefix, real agents report that Codex was not found.
 
-Claude Code (`%USERPROFILE%\.local\bin\claude.exe` or `%APPDATA%\npm\claude.cmd`) and Gemini CLI (`%APPDATA%\npm\gemini.cmd`) are installed and signed in with their own official instructions, or from **AI Providers** in the top navigation: it shows what is missing and offers reviewed install, update, sign-in and sign-out operations that run only after you approve them (Gemini CLI's sign-in and Claude Code's native installer stay manual steps). AI Providers is also where you choose which providers agents may use. Their supported sign-in routes and billing checks are described in [providers](docs/providers.md).
+Claude Code (`%USERPROFILE%\.local\bin\claude.exe` or `%APPDATA%\npm\claude.cmd`) and Gemini CLI (`%APPDATA%\npm\gemini.cmd`) are installed and signed in with their own official instructions, or from **Connections** in the rail (**AI Providers** in the classic interface): it shows what is missing and offers reviewed install, update, sign-in and sign-out operations that run only after you approve them (Gemini CLI's sign-in and Claude Code's native installer stay manual steps). Connections is also where you choose which providers agents may use. Their supported sign-in routes and billing checks are described in [providers](docs/providers.md).
 
 No Control Center configuration is required. Optional settings are listed in [configuration](docs/configuration.md).
 
-### 7. Start the backend (window 1)
+#### 7. Start the backend (window 1)
 
 Open a PowerShell window in the repository root and keep it running:
 
@@ -190,7 +210,7 @@ cd .\backend
 
 When Uvicorn prints `Application startup complete`, the API is ready. You can confirm it at <http://127.0.0.1:8000/health>.
 
-### 8. Start the frontend (window 2)
+#### 8. Start the frontend (window 2)
 
 Open a **second** PowerShell window in the repository root and keep it running:
 
@@ -199,20 +219,18 @@ cd .\frontend
 npm run dev -- --host 127.0.0.1 --port 5173 --strictPort
 ```
 
-### 9. Open the dashboard
+#### 9. Open the interface
 
 Go to <http://127.0.0.1:5173>.
 
 | Port | What runs there | Used for |
 | --- | --- | --- |
-| `5173` | Vite dev server for the React dashboard | The page you open in the browser |
+| `5173` | Vite dev server for the React interface | The page you open in the browser |
 | `8000` | FastAPI backend | REST API, live events, local API docs at `/docs` |
 
-The dashboard always calls the backend at `127.0.0.1:8000`, so the backend must run on that port. Both servers listen only on `127.0.0.1`.
+In development the interface calls the backend at `127.0.0.1:8000`, so the backend must run on that port. Both servers listen only on `127.0.0.1`. The interface opens in **Lumen**; **Open the classic interface** at the bottom of the rail switches to the classic one, and **New interface** there switches back. Both use the same backend and data.
 
-The dashboard opens in **Classic view**, the default. **Atlas**, the redesigned interface (Stage 2J), is an opt-in preview: choose **Atlas preview** in the top bar, and **Classic view** in Atlas to return. Both use the same backend and data. See [Atlas migration](docs/atlas-migration.md) for what it covers and [Atlas readiness review](docs/atlas-m11-readiness.md) for what is still unverified.
-
-### 10. Register an existing Git project
+#### 10. Register an existing Git project
 
 Agents work on a registered Project, which must be an existing Git repository with at least one commit. For a first try, create a small sandbox repository in a third window:
 
@@ -225,35 +243,35 @@ git add README.md
 git commit -m "Initial commit"
 ```
 
-In the dashboard, choose **New agent**, then **Add existing project**. Enter a name and the repository's absolute path, for example `C:\Users\<you>\control-center-sandbox`, and choose **Register project**.
+In **New task**, choose **Add a project…** in the project list, enter a name and the repository's absolute path, for example `C:\Users\<you>\control-center-sandbox`, and register it.
 
 Agents never edit this folder directly. Each Task works in its own snapshot under `%LOCALAPPDATA%\AI Agent Control Center\task-workspaces`, and changes come back only through integration.
 
-### 11. Start a Mock agent
+#### 11. Start a Mock agent
 
-In **New agent**, select your Project and choose **Mock**. Enter any short assignment and start the agent. Mock agents simulate progress and output so you can try Stop, the output view and the hierarchy. They do not run the assignment and use no model.
+In **New task**, select your Project and the **Mock** tool, enter any short request and start. Mock agents simulate progress and output so you can try Stop, the output view and the Work Map. They do not run the request and use no model.
 
-### 12. Start a real agent
+#### 12. Start a real agent
 
-In **New agent**, choose a ready provider, optionally a model and effort, and keep **Read only** access for a first run. Turn **Autonomous mode** off unless you want the agent to be able to create Child agents: it is on by default for new Codex and Claude Code root agents, and autonomous runs can use noticeably more model usage. Enter a request in plain language, for example:
+In **New task**, choose a ready tool, optionally a model and effort, and keep **Read only** access for a first run. Leave **Let the lead bring in helpers** off unless you want the agent to be able to start helper agents: autonomous runs can use noticeably more model usage. Enter a request in plain language, for example:
 
 ```text
 Summarize what this repository contains and suggest one small improvement.
 ```
 
-Choose **Workspace write** only when you want the agent to change files in its isolated Task workspace.
+Choose **Workspace** only when you want the agent to change files in its isolated Task workspace, and **Full Access** only when you accept what the page says it allows for that tool.
 
-### Stopping and restarting
+#### Stopping and restarting
 
 Press `Ctrl+C` in each window, then run the commands from steps 7 and 8 again. Stopping the backend also stops any running agents. History stays in the database, but running work does not resume automatically.
 
-If the backend window ever had environment variables set for an experiment, such as `CONTROL_CENTER_DB_PATH` for a test database or the delegation limits, the dashboard will use those settings until they are cleared. Before restarting the backend for normal use, check:
+If the backend window ever had environment variables set for an experiment, such as `CONTROL_CENTER_DB_PATH` for a test database or the delegation limits, the backend will use those settings until they are cleared. Before restarting the backend for normal use, check:
 
 ```powershell
 Get-ChildItem Env:CONTROL_CENTER_*
 ```
 
-Clear any you did not intend to keep, for example `Remove-Item Env:CONTROL_CENTER_DB_PATH`, or open a new PowerShell window. [Troubleshooting](docs/configuration.md#troubleshooting) covers port conflicts and other common problems.
+Clear any you did not intend to keep, for example `Remove-Item Env:CONTROL_CENTER_DB_PATH`, or open a new PowerShell window. [Troubleshooting](docs/configuration.md#troubleshooting) covers port conflicts and other common problems. The development backend and the desktop app use different databases (`data\control_center.sqlite3` and `%LOCALAPPDATA%\AI Agent Control Center\control_center.sqlite3`).
 
 ## Configuration
 
@@ -261,23 +279,23 @@ Everything has a working default, and environment variables are read by the back
 
 ## Current limitations
 
-- **Under active development.** Real-provider end-to-end validation is not complete: Claude Code has had one short authenticated run (no autonomous delegation, integration or limit recovery); Gemini CLI, multi-provider hierarchies and Auto allocation have been exercised only with fake CLIs and isolated databases.
+- **Under active development.** Real-provider end-to-end validation is not complete: Claude Code has had one short authenticated run (no autonomous delegation, integration or limit recovery); Gemini CLI, multi-provider hierarchies, Auto allocation and Full Access have been exercised only with fake CLIs and isolated databases.
 - **Gemini model selection.** Gemini CLI documents no way to disable its model fallback and does not report which model produced a response, so selecting a specific Gemini model is refused; only Auto routing or its default model run.
-- **Local and single-user.** The backend has no user authentication. Its [local API guards](docs/api-security.md) block other websites, but any program running as your Windows user can call it. Do not expose it to a network. Production security and deployment have not been validated.
-- **Windows only for real agents.** Launching and Job Object supervision are implemented and tested on Windows. Other operating systems are not a supported target.
-- **Model usage costs.** Real agents use your provider plan, and autonomous runs can start several agents and continuations. The Control Center has no token or spending budget, never estimates usage, and resumes after a usage limit only when you choose Resume. Billing checks reduce, but cannot eliminate, the risk of provider charges.
-- **Ordinary delegation.** Ordinary (non-Hybrid) delegations have no review or acknowledgement protocol for their results; the reviewed path is autonomous orchestration with promotion and Hybrid continuation. See [delegations](docs/delegations.md).
-- **Sandboxes and workspaces are boundaries, not guarantees.** Provider permission modes are enforced by each CLI. Task worktrees share repository history, and snapshots exclude common secret and build paths by filename, but this is not a secret scanner. Symlinks and submodules are not supported in Task snapshots.
-- **Private runtime data.** Prompts, agent output and workspace paths are stored in `data/control_center.sqlite3` and the task-workspace folder. Both are excluded from Git. Do not publish them.
+- **Local and single-user.** The backend has no user authentication. Its [local API guards](docs/api-security.md) block other websites, but any program running as your Windows user can call it. Do not expose it to a network.
+- **Windows only.** Launching, Job Object supervision and the desktop app are implemented and tested on Windows. Other operating systems are not a supported target.
+- **Unsigned installer, no published release.** The installer is built locally and is not code-signed.
+- **Model usage costs.** Real agents use your provider plan, and autonomous runs can start several agents and continuations. The Control Center has no token or spending budget, never estimates usage, and resumes after a usage limit only when you choose Resume.
+- **Access levels are enforced by each provider.** Workspace with Claude Code on Windows has no shell tools, because Claude Code does not sandbox them there. Full Access is not sandboxed by the Control Center. Task worktrees share repository history, and snapshots exclude common secret and build paths by filename, but this is not a secret scanner.
+- **Permanent deletion is permanent.** Delete permanently removes the local folder and the app's records and cannot be undone; it was tested only on synthetic folders. Local work that was never pushed is listed in the dialog before you confirm.
+- **Private runtime data.** Prompts, agent output and workspace paths are stored in the local database and task-workspace folder. Both are outside Git. Do not publish them.
 - **Tested, not guaranteed.** The automated suites use mocks, fake provider CLIs, process shims and real temporary Git repositories. Agent status does not prove that an agent's work is correct, so review results before relying on them.
-- **Provider setup.** Setup operations in AI Providers are Windows only and were tested with a fake npm and fake CLIs, not by installing or signing in to real CLIs. Provider permissions apply globally and per Task subtree; there are no project-level permissions.
-- **UI coverage.** Some controls exist only as API endpoints in both interfaces: resources, work intents and applying a root Task's work to its project (`POST /tasks/{id}/integrate`; helper results are combined into their lead automatically). Classic view has no Task lifecycle controls or Project screens; the Atlas preview adds Task pages with Pause, Resume and Cancel and a Projects screen.
+- **UI gaps.** Applying a root Task's work to its project is API only (`POST /tasks/{id}/integrate`); resources and work intents are API only; the Work Map has one orientation; there is no first-run guide. See [Lumen](docs/lumen-parity.md#not-done-yet).
 
 ## Roadmap
 
-- **Real-provider integration testing:** authenticated autonomous runs with Claude Code, any authenticated run with Gemini CLI, and mixed-provider hierarchies.
-- **User experience redesign and production readiness (Stage 2J):** a substantial redesign of the interface and workflows, not only visual polish.
-- **Convenient launch and presentation (Stage 2K):** a simpler way to start the application on the desktop (the packaging approach is not decided yet) and a project demonstration video.
+- **Real-provider integration testing:** authenticated autonomous runs with Claude Code, any authenticated run with Gemini CLI, Full Access runs, and mixed-provider hierarchies.
+- **Release:** a signed installer and a published release after review.
+- **Interface:** an Apply-to-project review, a left-to-right Work Map, a first-run guide and the native folder picker in Add a project.
 
 ## Development
 
@@ -302,6 +320,10 @@ The full backend suite takes about 30 minutes on Windows. It uses temporary data
 
 | Document | Covers |
 | --- | --- |
+| [Desktop app](docs/desktop.md) | The Windows app: behaviour, data locations, build and what was verified |
+| [Lumen](docs/lumen-parity.md) | The default interface: feature checklist against Classic and Atlas, and what is not done yet |
+| [Project lifecycle](docs/project-lifecycle.md) | Rename, order, hide, Trash, Restore and permanent deletion, with their safety rules |
+| [Agent access](docs/agent-access.md) | Read only, Workspace and Full Access per provider, and the capability matrix |
 | [Configuration and troubleshooting](docs/configuration.md) | Environment variables, state locations, delegation limits and common problems |
 | [Dashboard](docs/dashboard.md) | Autonomous creation, the managed execution policy, the hierarchy explorer and verification |
 | [Planning and promotion](docs/planning.md) | The single delegation decision, proposals, promotion to Child Tasks and structured control diagnostics |
@@ -313,8 +335,7 @@ The full backend suite takes about 30 minutes on Windows. It uses temporary data
 | [Resource coordination](docs/resource-coordination.md) | Resource claims, fairness, deadlocks and work intents |
 | [Process supervision](docs/process-supervision.md) | Windows Job Object containment, Stop semantics, restart recovery, diagnostics and human attestation |
 | [Local API security](docs/api-security.md) | Host and Origin checks, CSRF token and scripting the API |
-| [Atlas migration](docs/atlas-migration.md) | The opt-in Atlas interface: milestones, parity with Classic view, design decisions and tests |
-| [Atlas readiness review](docs/atlas-m11-readiness.md) | Evidence for and against making Atlas the default, and the manual checks still needed |
+| [Atlas migration](docs/atlas-migration.md) | How the new interface was built: milestones, parity with Classic view, design decisions and tests |
 | [Project history](docs/history/stage1-handoff.md) | The Stage 1 technical checkpoint and earlier design decisions |
 
 ## License
