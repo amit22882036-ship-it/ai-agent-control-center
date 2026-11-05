@@ -8,6 +8,7 @@ import TaskTree from '../work/TaskTree'
 import TaskMap from '../work/TaskMap'
 import { agentLabel, descendantCount, inBranch, nowView, timeView, visibleRows, whoView } from '../../model/workList.mjs'
 import { mapLayout } from '../../model/mapLayout.mjs'
+import { readMapDirection, saveMapDirection } from '../../layout.mjs'
 import { when } from '../../model/taskPage.mjs'
 
 const TEAM_ROWS = 150
@@ -170,6 +171,8 @@ export function AgentCard({ derived, taskId, history, assignments, onOpenWork })
 // The task's team: its helper tasks as a List or a Map, from the same model and layout as Work.
 export function TeamCard({ store, derived, taskId, projectName, now, complete, onOpenTask, onShowInWork, onLoadMore, loadingMore }) {
   const [lens, setLens] = useState('list')
+  const [direction, setDirection] = useState(() => readMapDirection())
+  const turnMap = (next) => { setDirection(next); saveMapDirection(next) }
   const [selected, setSelected] = useState(null)
   const [overrides, setOverrides] = useState(() => new Map())
   const [focusId, setFocusId] = useState(null)
@@ -185,8 +188,8 @@ export function TeamCard({ store, derived, taskId, projectName, now, complete, o
     const rows = visibleRows(store, derived, { expanded, focus: taskId })
     return { ...rows, sections: rows.sections.map((section) => ({ ...section, label: 'This task and its helpers' })) }
   }, [store, derived, expanded, taskId])
-  const layout = useMemo(() => (lens === 'map' ? mapLayout(view, derived, { chips: (id, row) => row.hasChildren || store.tasks[id].planned.unmaterialized > 0 }) : null),
-    [lens, view, derived, store])
+  const layout = useMemo(() => (lens === 'map' ? mapLayout(view, derived, { chips: (id, row) => row.hasChildren || store.tasks[id].planned.unmaterialized > 0, direction }) : null),
+    [lens, view, derived, store, direction])
   // The List draws the first rows and more on request, so a team of hundreds opens quickly.
   const listView = useMemo(() => (view.shown <= limit ? view : { ...view,
     sections: view.sections.map((section) => ({ ...section, families: section.families.map((family) => ({ ...family, rows: family.rows.slice(0, limit) })) })) }),
@@ -218,7 +221,7 @@ export function TeamCard({ store, derived, taskId, projectName, now, complete, o
         ? <TaskTree view={listView} store={store} derived={derived} projectName={projectName} now={now} selectedId={member} focusId={focusId}
           setFocusId={setFocusId} onSelect={pick} onToggle={toggle} onLoadMore={onLoadMore} loadingMore={loadingMore} empty={<p className="a-ol-empty">Nothing to show.</p>} />
         : <TaskMap layout={layout} view={view} store={store} derived={derived} projectName={projectName} now={now} selectedId={member}
-          onSelect={pick} onToggle={toggle} onFocusBranch={onOpenTask} focusBranch={taskId} cameraRef={cameraRef}
+          onSelect={pick} onToggle={toggle} onFocusBranch={onOpenTask} focusBranch={taskId} onDirection={turnMap} cameraRef={cameraRef}
           onLoadMore={onLoadMore} loadingMore={loadingMore} empty={<p className="a-ol-empty">Nothing to show.</p>} />}
     </div>}
     {lens === 'list' && view.shown > limit && <div className="a-act-row">

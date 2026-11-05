@@ -131,7 +131,7 @@ function NowTab({ store, derived, id, projectName, onSelect, task, activity, now
     <section className="a-blk" aria-labelledby={`resp-${id}`}>
       <h3 id={`resp-${id}`}>Responsible for</h3>
       <div className="a-resp">
-        <TaskTitle taskId={id} title={data.title} className="a-rt" onRenamed={onRenamed} />
+        <TaskTitle taskId={id} title={data.title} className="a-rt" onRenamed={onRenamed} canceled={derived.status[id]?.key === 'canceled'} />
         {description && <p className="a-rd a-bidi" dir="auto">{clip(description, 600)}</p>}
         <div className="a-rm"><Icon name="folder" size={13} /><span className="a-bidi" dir="auto">{projectName(data.projectId)}</span>
           {parent && <> · delegated by <button type="button" className="a-link a-bidi" dir="auto" onClick={() => onSelect(parent.id)}>{clip(parent.title, 48)}</button></>}

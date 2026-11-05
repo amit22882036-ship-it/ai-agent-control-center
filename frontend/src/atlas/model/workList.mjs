@@ -14,6 +14,7 @@ export const FILTERS = [
   { value: 'needs', label: 'Needs you' },
   { value: 'active', label: 'Open' },
   { value: 'done', label: 'Done' },
+  { value: 'canceled', label: 'Canceled' },
 ]
 // States in which nothing more happens without someone acting.
 const ENDED = new Set(['completed', 'integrated', 'canceled', 'stopped'])
@@ -79,17 +80,25 @@ function searchText(store, derived, id) {
 
 export function familyCounts(derived, project = null) {
   const families = derived.families.filter((family) => !project || family.projectId === project)
-  const counts = { all: families.length, needs: 0, active: 0, done: 0 }
-  for (const family of families) counts[family.section] += 1
+  const counts = { all: families.length, needs: 0, active: 0, done: 0, canceled: 0 }
+  // A canceled family is history, but it is counted apart from work that was done.
+  for (const family of families) counts[canceledFamily(derived, family) ? 'canceled' : family.section] += 1
   // "Open" lists every family that is not finished (running, waiting, blocked, paused or not
   // started), including those that need you; it never claims they are running.
   counts.active += counts.needs
   return counts
 }
 
-function inFilter(family, filter) {
+// A family whose top Task was canceled (its helpers may have finished before that).
+export function canceledFamily(derived, family) {
+  return family.section === 'done' && derived.status[family.topId]?.key === 'canceled'
+}
+
+function inFilter(derived, family, filter) {
   if (filter === 'all') return true
   if (filter === 'active') return family.section !== 'done'
+  if (filter === 'canceled') return canceledFamily(derived, family)
+  if (filter === 'done') return family.section === 'done' && !canceledFamily(derived, family)
   return family.section === filter
 }
 
@@ -155,7 +164,7 @@ export function visibleRows(store, derived, { expanded = new Set(), filter = 'al
   let shown = 0
   for (const family of derived.families) {
     if (project && family.projectId !== project) continue
-    if (!inFilter(family, filter)) continue
+    if (!inFilter(derived, family, filter)) continue
     if (narrowing && !keep.has(family.topId)) continue
     const rows = familyRows(family.topId)
     shown += rows.length

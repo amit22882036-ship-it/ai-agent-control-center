@@ -208,3 +208,141 @@
 .atlas .a-projects-find { margin-bottom: 12px; }
 /* Headings receive focus after a navigation (for screen readers); they are not controls, so no ring. */
 .atlas [data-page-heading]:focus, .atlas [data-page-heading]:focus-visible { outline: none; box-shadow: none; }
+
+/* Canceled work: still listed (history is never hidden), but struck through and quieter, so it
+   reads as "decided against" rather than "done". The status words say Canceled as well. */
+.atlas .a-row.is-canceled .a-r-title .a-t,
+.atlas .a-gn.is-canceled .a-gt,
+.atlas .a-gr.is-canceled .a-grt .a-t,
+.atlas .a-ttitle.is-canceled > :first-child {
+  text-decoration: line-through; text-decoration-thickness: 1.5px;
+  text-decoration-color: color-mix(in oklab, var(--a-text-3) 80%, transparent); color: var(--a-text-3);
+}
+.atlas .a-row.is-canceled .a-c-who .a-avatar, .atlas .a-row.is-canceled .a-c-who .a-face, .atlas .a-gn.is-canceled .a-gav, .atlas .a-gr.is-canceled .a-gav { filter: grayscale(1); opacity: .7; }
+
+/* ================================================================== Lumen 2: one window
+   The app reads as a window, not a dashboard: a sidebar material on the left, a transparent
+   title bar, and one content sheet. Inside the sheet, work sits in grouped lists (rounded groups
+   with hairline separators) instead of a stack of floating cards. Selection and hover are inset
+   rounded shapes, as in a native sidebar. Browser surfaces (selection, caret, scrollbars) carry
+   the palette too. */
+.atlas { --a-sheet: rgba(250, 251, 253, .7); --a-group: rgba(255, 255, 255, .94); --a-sidebar: rgba(229, 234, 242, .72);
+  --a-hairline: rgba(14, 19, 32, .075); --a-group-shadow: 0 0 0 1px rgba(14, 19, 32, .045), 0 1px 2px rgba(20, 32, 70, .06), 0 10px 24px -18px rgba(20, 32, 70, .3);
+  --a-sel: color-mix(in srgb, var(--a-accent) 11%, transparent); }
+:root[data-theme="dark"] .atlas { --a-sheet: rgba(20, 24, 34, .66); --a-group: rgba(32, 37, 51, .9); --a-sidebar: rgba(16, 19, 28, .7);
+  --a-hairline: rgba(255, 255, 255, .07); --a-group-shadow: 0 0 0 1px rgba(255, 255, 255, .05), 0 12px 30px -20px rgba(0, 0, 0, .9);
+  --a-sel: color-mix(in srgb, var(--a-accent) 16%, transparent); }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) .atlas { --a-sheet: rgba(20, 24, 34, .66); --a-group: rgba(32, 37, 51, .9); --a-sidebar: rgba(16, 19, 28, .7);
+    --a-hairline: rgba(255, 255, 255, .07); --a-group-shadow: 0 0 0 1px rgba(255, 255, 255, .05), 0 12px 30px -20px rgba(0, 0, 0, .9);
+    --a-sel: color-mix(in srgb, var(--a-accent) 16%, transparent); }
+}
+@media (prefers-reduced-transparency: reduce) { .atlas { --a-sheet: var(--a-bg); --a-group: var(--a-glass-3); --a-sidebar: var(--a-glass-3); } }
+
+/* Browser surfaces */
+.atlas ::selection { background: color-mix(in srgb, var(--a-accent) 24%, transparent); color: inherit; }
+.atlas input, .atlas textarea { caret-color: var(--a-accent); }
+.atlas * { scrollbar-width: thin; scrollbar-color: var(--a-line-2) transparent; }
+.atlas .a-num, .atlas .a-c-time { font-variant-numeric: tabular-nums; }
+
+/* Sidebar material: heavier than the content, so structure reads before content. */
+.atlas .a-rail { background: var(--a-sidebar); box-shadow: 0 0 0 1px var(--a-line-3), 0 1px 0 var(--a-spec) inset, 0 18px 40px -28px rgba(20, 32, 70, .45); }
+.atlas .a-rail.is-open { background: var(--a-glass-3); }
+.atlas .a-rail .a-rail-tile { color: oklch(.44 .11 var(--hue, 250)); background: oklch(.93 .045 var(--hue, 250));
+  box-shadow: inset 0 0 0 1px oklch(.82 .07 var(--hue, 250) / .7); font-weight: 760; }
+:root[data-theme="dark"] .atlas .a-rail .a-rail-tile { color: oklch(.88 .08 var(--hue, 250)); background: oklch(.33 .06 var(--hue, 250));
+  box-shadow: inset 0 0 0 1px oklch(.5 .08 var(--hue, 250) / .6); }
+
+/* Title bar: no card. The window's controls sit on the ground, like a native toolbar. */
+.atlas .a-app--lumen .a-topbar { background: transparent; box-shadow: none; backdrop-filter: none; -webkit-backdrop-filter: none; margin: 8px 12px 0 0; }
+.atlas .a-app--lumen .a-brand-name { font-size: 17px; }
+
+/* The content sheet */
+.atlas .a-app--lumen .a-work { padding: 6px 0 12px; gap: 12px; }
+.atlas .a-app--lumen .a-wmain { border-radius: 26px; background: var(--a-sheet); overflow: hidden; position: relative;
+  box-shadow: 0 0 0 1px var(--a-line-3), 0 1px 0 var(--a-spec) inset, 0 30px 70px -40px rgba(20, 32, 70, .38);
+  backdrop-filter: var(--a-blur); -webkit-backdrop-filter: var(--a-blur); }
+.atlas .a-app--lumen .a-work > .a-inspector { margin: 0; border-radius: 26px; border: 0; background: var(--a-glass-3); box-shadow: var(--a-shadow-2); }
+.atlas .a-app--lumen .a-whead { height: 60px; padding: 0 14px 0 12px; background: transparent; border-bottom: 1px solid var(--a-hairline); }
+.atlas .a-app--lumen .a-find { height: 34px; border: 0; background: var(--a-sunken); box-shadow: none; }
+.atlas .a-app--lumen .a-find:focus-within { background: var(--a-group); box-shadow: 0 0 0 2px var(--a-accent-line), 0 0 0 5px var(--a-accent-soft); }
+
+/* Attention: a quiet amber strip inside the sheet, not a banner. */
+.atlas .a-app--lumen .a-attnbar { margin: 12px 14px 0; border: 0; border-radius: 16px; background: var(--a-ask-soft);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--a-ask-fill) 22%, transparent); }
+
+/* Grouped lists */
+.atlas .a-app--lumen .a-outline { background: transparent; padding-top: 4px; }
+.atlas .a-app--lumen .a-ol-cols { height: 34px; font-size: 11.5px; font-weight: 600; color: var(--a-text-4); letter-spacing: .01em; }
+.atlas .a-app--lumen .a-ol-sec { height: 40px; margin-top: 4px; padding: 0 30px; background: transparent; backdrop-filter: none; -webkit-backdrop-filter: none;
+  font: 650 13.5px/1 var(--a-font); letter-spacing: -.005em; text-transform: none; color: var(--a-text-2); position: static; }
+.atlas .a-app--lumen .a-ol-sec .a-ol-n { font-weight: 600; color: var(--a-text-4); }
+.atlas .a-app--lumen .a-ol-sec.a-ol-sec--needs { color: var(--a-ask); }
+.atlas .a-tgroup { margin: 0 14px 18px; border-radius: 18px; background: var(--a-group); box-shadow: var(--a-group-shadow); }
+.atlas .a-app--lumen .a-tgroup .a-tcard { margin: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; padding: 4px 0; position: relative; }
+.atlas .a-app--lumen .a-tgroup .a-tcard:first-child { border-radius: 18px 18px 0 0; }
+.atlas .a-app--lumen .a-tgroup .a-tcard:last-child { border-radius: 0 0 18px 18px; }
+.atlas .a-app--lumen .a-tgroup .a-tcard:only-child { border-radius: 18px; }
+.atlas .a-app--lumen .a-tgroup .a-tcard + .a-tcard::before { content: ""; position: absolute; top: 0; left: 46px; right: 16px; height: 1px; background: var(--a-hairline); }
+.atlas .a-app--lumen .a-tgroup .a-tcard:hover { box-shadow: none; }
+
+/* Rows: inset rounded hover and selection. */
+.atlas .a-app--lumen .a-outline .a-row { isolation: isolate; }
+.atlas .a-app--lumen .a-outline .a-row::after { content: ""; position: absolute; inset: 1px 6px; z-index: -1; border-radius: 12px; background: transparent;
+  transition: background-color .16s ease; }
+.atlas .a-app--lumen .a-outline .a-row:hover { background: transparent; }
+.atlas .a-app--lumen .a-outline .a-row:hover::after { background: var(--a-hover); }
+.atlas .a-app--lumen .a-outline .a-row.is-selected { background: transparent; }
+.atlas .a-app--lumen .a-outline .a-row.is-selected::after { background: var(--a-sel); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--a-accent) 22%, transparent); }
+.atlas .a-app--lumen .a-outline .a-row.is-selected::before { content: none; }
+
+
+.atlas .a-app--lumen .a-r-title { font-weight: 620; letter-spacing: -.008em; }
+.atlas .a-app--lumen .a-row.a-row--root .a-r-title .a-t { font-size: 15px; font-weight: 660; letter-spacing: -.014em; }
+.atlas .a-app--lumen .a-c-time { color: var(--a-text-3); font-size: 12.5px; }
+
+/* ------------------------------------------------------------------ first run */
+.atlas .a-work-state.a-work-state--welcome { max-width: none; display: grid; place-items: start center; padding: 7vh 24px 48px; overflow: auto; height: 100%; }
+.atlas .a-welcome { width: min(640px, 100%); display: grid; gap: 30px; animation: atlas-welcome .7s var(--a-spring) both; }
+@keyframes atlas-welcome { from { opacity: 0; transform: translateY(14px); filter: blur(6px); } to { opacity: 1; transform: none; filter: none; } }
+.atlas .a-welcome-head { display: grid; gap: 12px; justify-items: start; }
+.atlas .a-welcome-mark { display: grid; place-items: center; width: 52px; height: 52px; border-radius: 16px; color: var(--a-on-ink);
+  background: var(--a-ink); box-shadow: 0 14px 30px -14px rgba(14, 19, 32, .7), 0 1px 0 rgba(255, 255, 255, .25) inset; }
+.atlas .a-welcome-title { font: 760 40px/1.04 var(--a-display); letter-spacing: -.04em; font-variation-settings: 'opsz' 96; color: var(--a-text); text-wrap: balance; }
+.atlas .a-welcome-lead { max-width: 52ch; font-size: 16.5px; line-height: 1.5; color: var(--a-text-2); text-wrap: pretty; }
+.atlas .a-welcome-steps { list-style: none; display: grid; border-radius: 22px; background: var(--a-group); box-shadow: var(--a-group-shadow); padding: 6px 0; }
+.atlas .a-welcome-step { position: relative; display: grid; grid-template-columns: 34px minmax(0, 1fr); gap: 16px; padding: 18px 22px; }
+.atlas .a-welcome-step + .a-welcome-step::before { content: ""; position: absolute; top: 0; left: 72px; right: 22px; height: 1px; background: var(--a-hairline); }
+.atlas .a-welcome-num { display: grid; place-items: center; width: 34px; height: 34px; border-radius: 50%; font: 700 14px/1 var(--a-display);
+  color: var(--a-text-2); background: var(--a-sunken); box-shadow: inset 0 0 0 1px var(--a-line); }
+.atlas .a-welcome-step.is-done .a-welcome-num { color: #fff; background: var(--a-work); box-shadow: 0 6px 14px -8px var(--a-work); }
+.atlas .a-welcome-body { display: grid; gap: 6px; justify-items: start; }
+.atlas .a-welcome-body h3 { font: 680 16.5px/1.3 var(--a-display); letter-spacing: -.015em; color: var(--a-text); }
+.atlas .a-welcome-body p { font-size: 14px; line-height: 1.55; color: var(--a-text-2); max-width: 60ch; }
+.atlas .a-welcome-act { margin-top: 6px; }
+@media (prefers-reduced-motion: reduce) { .atlas .a-welcome { animation: atlas-fade .2s ease both; } }
+@keyframes atlas-fade { from { opacity: 0; } to { opacity: 1; } }
+
+/* Every other page sits on the same sheet as Work, and its cards are groups on that sheet. */
+.atlas .a-app--lumen .a-main:has(> .a-page) { margin: 6px 12px 12px 0; padding: 0; border-radius: 26px; background: var(--a-sheet);
+  box-shadow: 0 0 0 1px var(--a-line-3), 0 1px 0 var(--a-spec) inset, 0 30px 70px -40px rgba(20, 32, 70, .38);
+  backdrop-filter: var(--a-blur); -webkit-backdrop-filter: var(--a-blur); }
+.atlas .a-app--lumen .a-card { border: 0; border-radius: 20px; background: var(--a-group); box-shadow: var(--a-group-shadow);
+  backdrop-filter: none; -webkit-backdrop-filter: none; }
+.atlas .a-app--lumen .a-card-title { font-size: 16.5px; font-weight: 680; letter-spacing: -.016em; }
+.atlas .a-app--lumen .a-plate-glass { background: var(--a-group); box-shadow: var(--a-group-shadow); backdrop-filter: none; -webkit-backdrop-filter: none; }
+.atlas .a-app--lumen .a-shelf { background: transparent; box-shadow: inset 0 0 0 1px var(--a-hairline); }
+
+/* "On this page": quiet chips instead of a row of underlined links. */
+.atlas .a-app--lumen .a-tjump { display: flex; flex-wrap: wrap; gap: 6px; }
+.atlas .a-app--lumen .a-tjump .a-link { height: 30px; padding: 0 12px; border-radius: 999px; text-decoration: none; font-size: 13px; font-weight: 600;
+  color: var(--a-text-2); background: var(--a-sunken); transition: background-color .16s ease, color .16s ease; }
+.atlas .a-app--lumen .a-tjump .a-link:hover { color: var(--a-text); background: var(--a-hover-2); }
+/* Map band headings read like the List's section headings. */
+.atlas .a-app--lumen .a-mappane .a-mband { font-size: 13px; font-weight: 650; letter-spacing: -.005em; text-transform: none; color: var(--a-text-2); }
+.atlas .a-app--lumen .a-mappane .a-mband.a-mband--needs { color: var(--a-ask); }
+@media (max-width: 1100px) { .atlas .a-app--lumen .a-whead { height: auto; min-height: 60px; flex-wrap: wrap; padding-top: 12px; padding-bottom: 12px; row-gap: 8px; } }
+/* At very narrow widths a long filter switch scrolls inside itself rather than past the sheet's edge. */
+.atlas .a-app--lumen .a-whead .a-seg { overflow-x: auto; scrollbar-width: none; }
+.atlas .a-app--lumen .a-outline .a-row:focus-visible { box-shadow: inset 0 0 0 2px var(--a-accent); border-radius: 12px; }
+.atlas .a-app--lumen .a-ol-cols { color: var(--a-text-3); }

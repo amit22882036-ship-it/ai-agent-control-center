@@ -115,7 +115,7 @@ export default function TaskPage({ live, route, navigate }) {
     <header className="a-thead">
       <div className="a-thead-main">
         <TaskTitle taskId={taskId} title={task.title} as="h1" className="a-title" headingProps={{ tabIndex: -1, 'data-page-heading': true }}
-          onRenamed={refresh} />
+          onRenamed={refresh} canceled={status?.key === 'canceled'} />
         <div className="a-tmeta">
           <span><Icon name="folder" size={14} /><span className="a-bidi" dir="auto">{projectName(task.projectId)}</span></span>
           <span>{task.parentId ? 'Helper task' : 'Top-level task'}</span>

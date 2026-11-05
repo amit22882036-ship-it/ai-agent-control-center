@@ -144,7 +144,9 @@ test('a project is registered by its path, and backend validation errors are sho
   await page.getByRole('button', { name: /Project/ }).first().click()
   await page.getByRole('button', { name: /Add a project…/ }).click()
   const dialog = page.getByRole('dialog', { name: 'Add a project' })
-  await expect(dialog).toContainText('Browsing for a folder is not available yet.')
+  // In a browser the path is typed; only the desktop app offers the system folder picker.
+  await expect(dialog).toContainText('Type or paste the full path.')
+  await expect(dialog.getByRole('button', { name: 'Choose folder…' })).toHaveCount(0)
   await dialog.getByLabel('Project name').fill('Payments')
   await dialog.getByLabel('Folder path').fill('C:\\Work\\payments')
   await dialog.getByRole('button', { name: 'Add project' }).click()
@@ -153,6 +155,19 @@ test('a project is registered by its path, and backend validation errors are sho
   await dialog.getByRole('button', { name: 'Add project' }).click()
   await expect(dialog).toBeHidden()
   expect(posts(log, '/projects').map((item) => item.body)).toEqual([{ name: 'Payments', root_path: 'C:\\Work\\payments' }, { name: 'Payments', root_path: 'C:\\Work\\payments' }])
+})
+
+test('in the desktop app, the system folder picker fills the path and a name from the folder', async ({ page }) => {
+  await page.addInitScript(() => { window.controlCenterDesktop = { chooseFolder: async () => 'C:\\Work\\payments-service' } })
+  await openNew(page)
+  await page.getByRole('button', { name: /Project/ }).first().click()
+  await expect(page.getByRole('button', { name: /Add a project…/ })).toContainText('Choose a Git repository folder')
+  await page.getByRole('button', { name: /Add a project…/ }).click()
+  const dialog = page.getByRole('dialog', { name: 'Add a project' })
+  await expect(dialog).toContainText('Choose the folder, or type or paste its full path.')
+  await dialog.getByRole('button', { name: 'Choose folder…' }).click()
+  await expect(dialog.getByLabel('Folder path')).toHaveValue('C:\\Work\\payments-service')
+  await expect(dialog.getByLabel('Project name')).toHaveValue('payments-service')
 })
 
 test('a registration whose outcome is unknown keeps the path, is never sent again by itself, and can be checked first', async ({ page }) => {

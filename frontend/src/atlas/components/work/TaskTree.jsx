@@ -43,7 +43,7 @@ const Row = memo(function Row({ row, store, derived, projectName, now, selected,
   const placement = family && family.placement !== 'root' ? PLACEMENT_NOTES[family.placement] : null
   const title = task.title || 'Untitled task'
   const project = projectName(task.projectId)
-  return <div className={`a-row${row.depth === 0 ? ' a-row--root' : ''}${selected ? ' is-selected' : ''}`}
+  return <div className={`a-row${row.depth === 0 ? ' a-row--root' : ''}${selected ? ' is-selected' : ''}${status.key === 'canceled' ? ' is-canceled' : ''}`}
     role="treeitem" aria-level={row.depth + 1} aria-setsize={row.setSize} aria-posinset={row.position}
     aria-expanded={row.hasChildren ? row.expanded : undefined} aria-selected={selected}
     tabIndex={focused ? 0 : -1} data-id={row.id}
@@ -124,14 +124,14 @@ export default function TaskTree({ view, store, derived, projectName, now, selec
         {section.key === 'needs' && <StatusBead state="ask" size={14} decorative />}
         <span>{section.label}</span><span className="a-ol-n a-num">{section.families.length}</span>
       </div>
-      {section.families.map((family) => <div key={family.topId} className="a-tcard" role="none">
+      <div className="a-tgroup" role="none">{section.families.map((family) => <div key={family.topId} className="a-tcard" role="none">
         {family.rows.map((row) => <Row key={row.id} row={row} store={store} derived={derived} projectName={projectName} now={now}
           selected={row.id === selectedId} focused={row.id === focusTarget} onSelect={onSelect} onToggle={onToggle} onFocusRow={setFocusId}
           compact={compact} onShowInMap={onShowInMap} onOpenTask={onOpenTask} onReply={onReply} />)}
         {family.summary.notLoaded > 0 && !store.complete && <div className="a-tcard-more" role="none">
           {family.summary.notLoaded} more helper{family.summary.notLoaded === 1 ? '' : 's'} on pages that aren’t loaded yet
         </div>}
-      </div>)}
+      </div>)}</div>
     </div>)}
     {!rows.length && empty}
     {!store.complete && <div className="a-ol-more" role="none">

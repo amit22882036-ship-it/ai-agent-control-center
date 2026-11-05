@@ -8,6 +8,13 @@
 const isProject = (item) => item && typeof item.project_id === 'string' && item.project_id.length > 0
 
 // `resource` is a useLiveResource result for GET /projects.
+// A stable hue for a project's monogram, from its id (renaming keeps the colour).
+export function projectHue(id) {
+  let hash = 2166136261
+  for (const char of String(id || '')) hash = Math.imul(hash ^ char.codePointAt(0), 16777619)
+  return (hash >>> 0) % 360
+}
+
 export function projectDirectory(resource) {
   const list = Array.isArray(resource?.data?.projects) ? resource.data.projects.filter(isProject) : null
   if (list) {

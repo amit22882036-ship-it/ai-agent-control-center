@@ -183,3 +183,32 @@ test('large hierarchies lay out quickly and without overlaps between families', 
   assert.ok(boxOf(layout).maxX <= layout.width)
   assert.ok(MAP.MAX_ROW > 0)
 })
+
+test('left to right: helpers sit to the right of their lead, families stack, nothing overlaps, and the arrows turn', () => {
+  const view = visibleRows(store, derived, { expanded: allOpen })
+  const down = mapLayout(view, derived)
+  const right = mapLayout(view, derived, { direction: 'right' })
+  assert.equal(right.direction, 'right')
+  assert.equal(down.direction, 'down')
+  assert.deepEqual(Object.keys(right.nodes).sort(), Object.keys(down.nodes).sort())
+  assert.equal(right.edgeCount, down.edgeCount)
+  const { release, docs, tests, flaky } = right.nodes
+  assert.ok(docs.x >= release.x + release.w && tests.x >= release.x + release.w)
+  assert.ok(flaky.x >= tests.x + tests.w)
+  // The lead sits beside the middle of its helpers' block.
+  const lead = release.y + release.h / 2
+  assert.ok(lead > Math.min(docs.y, tests.y) && lead < Math.max(docs.y + docs.h, tests.y + tests.h))
+  const list = Object.values(right.nodes)
+  for (const a of list) {
+    assert.ok(a.x + a.w <= right.width && a.y + a.h <= right.height)
+    for (const b of list) {
+      if (a === b) continue
+      assert.ok(a.x + a.w <= b.x || b.x + b.w <= a.x || a.y + a.h <= b.y || b.y + b.h <= a.y, `${a.id} overlaps ${b.id}`)
+    }
+  }
+  // Family tops all start in the same column.
+  assert.equal(new Set(right.tops.map((id) => right.nodes[id].x)).size, 1)
+  assert.deepEqual(mapKey(right, 'release', 'ArrowRight'), { focus: right.children.release[0] })
+  assert.deepEqual(mapKey(right, 'docs', 'ArrowLeft'), { focus: 'release' })
+  assert.deepEqual(mapLayout(view, derived, { direction: 'right' }), right)
+})

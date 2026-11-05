@@ -153,9 +153,9 @@ test('the keyboard reference matches the shortcuts the pages implement', async (
   }
   // Each listed Work key does what the reference says.
   await open(page, 'work?task=quoted')
-  await page.locator('.a-whead').click({ position: { x: 4, y: 4 } })
+  await page.locator('.a-whead').click({ position: { x: 4, y: 40 } })
   for (const [press, url] of [['m', /lens=map/], ['l', /^(?!.*lens=map)/], ['f', /focus=quoted/], ['Escape', /^(?!.*focus=)/], ['a', /task=migrate/], ['o', /#\/task\?id=migrate/]]) {
-    await page.locator('.a-whead').click({ position: { x: 4, y: 4 } })
+    await page.locator('.a-whead').click({ position: { x: 4, y: 40 } })
     await page.keyboard.press(press)
     await expect(page).toHaveURL(url)
   }
@@ -167,7 +167,7 @@ test('state survives moving between screens: project, selection in both views, p
   const inspector = page.getByRole('complementary', { name: 'Task details' })
   await expect(inspector).toBeVisible()
   expect(await inspector.evaluate((element) => element.getBoundingClientRect().width)).toBe(460)
-  await page.locator('.a-whead').click({ position: { x: 4, y: 4 } })
+  await page.locator('.a-whead').click({ position: { x: 4, y: 40 } })
   await page.keyboard.press('m')
   await expect(page).toHaveURL(/lens=map/)
   await expect(page).toHaveURL(/project=p1/)
@@ -190,7 +190,7 @@ test('state survives moving between screens: project, selection in both views, p
 test('reduced motion is honoured everywhere: no travelling avatars, no animated panels', async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' })
   await open(page, 'work?task=quoted')
-  await page.locator('.a-whead').click({ position: { x: 4, y: 4 } })
+  await page.locator('.a-whead').click({ position: { x: 4, y: 40 } })
   await page.keyboard.press('m')
   await page.waitForTimeout(50)
   expect(await page.locator('.a-ghosts').count()).toBe(0)

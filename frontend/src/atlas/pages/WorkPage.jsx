@@ -7,13 +7,13 @@ import TaskTree from '../components/work/TaskTree'
 import TaskMap from '../components/work/TaskMap'
 import TaskInspector from '../components/work/TaskInspector'
 import ColorFilter from '../components/work/ColorFilter'
+import Welcome from '../components/work/Welcome'
 import { emptyStore, pathTo } from '../model/tasks.mjs'
 import { reconcile } from '../model/selection.mjs'
 import { COLOR_VALUES, FILTERS, familyCounts, flatRows, inBranch, visibleRows } from '../model/workList.mjs'
 import { mapLayout } from '../model/mapLayout.mjs'
-import { readInspectorWidth, saveInspectorWidth } from '../layout.mjs'
+import { readInspectorWidth, readMapDirection, saveInspectorWidth, saveMapDirection } from '../layout.mjs'
 import { projectDirectory, projectLabel, projectMenu } from '../model/projects.mjs'
-import { exitAtlas } from '../uiMode.mjs'
 import { captureAnchors, playLensTransition } from '../lensTransition'
 import { rememberWork, requestReply } from '../workContext'
 import { pageShortcut } from '../keys.mjs'
@@ -87,6 +87,8 @@ export default function WorkPage({ live, route, navigate, feed, derived, attenti
   const [overrides, setOverrides] = useState(() => new Map())
   const [focusId, setFocusId] = useState(null)
   const [width, setWidth] = useState(() => readInspectorWidth())
+  const [direction, setDirection] = useState(() => readMapDirection())
+  const turnMap = useCallback((next) => { setDirection(next); saveMapDirection(next) }, [])
   const [tick, setTick] = useState(() => Date.now())
   const [revealedFor, setRevealedFor] = useState(null)
   const [mapRequest, setMapRequest] = useState(null)
@@ -131,7 +133,7 @@ export default function WorkPage({ live, route, navigate, feed, derived, attenti
     const loaded = (derived.forest.children[id] || []).length
     return row.hasChildren || task.planned.unmaterialized > 0 || (!store.complete && (task.childCount ?? 0) > loaded)
       || (row.depth === 0 && row.parentId === null && derived.byTop[id] && derived.byTop[id].placement !== 'root')
-  } }) : null), [lens, view, derived, store])
+  }, direction }) : null), [lens, view, derived, store, direction])
   const counts = familyCounts(derived, project)
   const selection = reconcile({ taskId: selectedId, focusId: null, expanded: [] }, store).status
   const shownIds = new Set(flatRows(view).map((row) => row.id))
@@ -237,6 +239,8 @@ export default function WorkPage({ live, route, navigate, feed, derived, attenti
   })
 
   const ready = feed.phase === 'ready' || (feed.store && feed.readAt)
+  // A new installation (no tasks at all) is welcomed instead of shown an empty toolbar.
+  const welcoming = ready && store.complete && !Object.keys(store.tasks).length
   // While older pages remain, the section counts describe the loaded tasks only.
   const partial = ready && !store.complete
   const loadedTasks = Object.values(store.tasks).filter((task) => task.source === 'page').length
@@ -259,15 +263,12 @@ export default function WorkPage({ live, route, navigate, feed, derived, attenti
   } else if (!ready) {
     content = <div className="a-work-state"><Skeleton lines={6} label="Loading your tasks" /></div>
   } else if (!Object.keys(store.tasks).length) {
-    content = <div className="a-work-state"><EmptyState icon="layers" title="No tasks yet"
-      actions={<><Button variant="primary" icon="plus" onClick={() => navigate('new')}>New task</Button>
-        <Button icon="swap" onClick={() => exitAtlas()}>Open Classic view</Button></>}>
-      Tasks you start appear here with their agents and helpers.</EmptyState></div>
+    content = <div className="a-work-state a-work-state--welcome"><Welcome directory={directory} navigate={navigate} /></div>
   } else if (lens === 'map') {
     content = <>
       <TaskMap layout={layout} view={view} store={store} derived={derived} projectName={projectName} now={now} selectedId={selectedId}
         onSelect={select} onToggle={toggle} onFocusBranch={focusBranch} focusBranch={focus} side={side}
-        onToggleSide={() => go({ side: side ? undefined : '1' })} cameraRef={cameraRef} request={mapRequest}
+        onToggleSide={() => go({ side: side ? undefined : '1' })} onDirection={turnMap} cameraRef={cameraRef} request={mapRequest}
         onLoadMore={feed.loadMore} loadingMore={feed.loadingMore} empty={empty} />
       {side && <div className="a-side" data-side-list>{tree(true)}</div>}
     </>
@@ -278,13 +279,13 @@ export default function WorkPage({ live, route, navigate, feed, derived, attenti
   return <div className={`a-work${side ? ' has-side' : ''}`} ref={workRef}>
     <div className="a-wmain">
       <h1 className="a-sr" tabIndex={-1} data-page-heading>Work</h1>
-      <div className="a-whead">
+      {!welcoming && <div className="a-whead">
         <MenuButton label="Choose a project" text={project ? projectName(project) : 'All projects'} icon="folder" align="start"
           items={projectMenu(directory, project).map((item) => item.separator ? item : { label: item.label, disabled: item.disabled,
             icon: item.checked ? 'check' : undefined, onSelect: item.value === undefined ? undefined : () => go({ project: item.value || undefined }) })} />
         <Segmented label="Show" size="sm" value={filter} onChange={(value) => go({ filter: value === 'all' ? undefined : value })}
           describedBy={countNote ? 'work-count-note' : undefined}
-          options={FILTERS.map((option) => ({ ...option, count: ready ? counts[option.value] : undefined,
+          options={FILTERS.filter((option) => option.value !== 'canceled' || filter === 'canceled' || (ready && counts.canceled > 0)).map((option) => ({ ...option, count: ready ? counts[option.value] : undefined,
             title: ready ? `${counts[option.value]} task ${counts[option.value] === 1 ? 'family' : 'families'}${partial ? ' among the loaded tasks; older tasks are not counted' : ''}` : undefined }))} />
         {countNote && <span id="work-count-note" className="a-count-note" title={`${countNote}. Load older tasks to include them.`}>
           <Icon name="info" size={13} />{countNote}</span>}
@@ -302,8 +303,8 @@ export default function WorkPage({ live, route, navigate, feed, derived, attenti
           ...(selectedId && store.tasks[selectedId] ? [{ separator: true }, { label: 'Open the selected task', icon: 'open', hint: 'O', onSelect: () => openTask(selectedId) },
             { label: 'Focus the selected branch', icon: 'focus', hint: 'F', onSelect: () => focusBranch(selectedId) }] : []),
         ]} />
-      </div>
-      {ready && <AttentionBar ids={attentionIds} selectedId={selectedId} derived={derived} summary={attention}
+      </div>}
+      {ready && !welcoming && <AttentionBar ids={attentionIds} selectedId={selectedId} derived={derived} summary={attention}
         filtered={Boolean(project || focus || query || colors.size || filter !== 'all')} complete={store.complete} onStep={goAttention} onReply={replyTo}
         onLoadMore={feed.loadMore} loadingMore={feed.loadingMore} />}
       {(stale || selectedHidden || (query && !store.complete) || focus || (focusParam && ready && !focus)) && <div className="a-work-notices">

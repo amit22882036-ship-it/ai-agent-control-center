@@ -74,12 +74,22 @@ export function RegisterProjectDialog({ open, onClose, onRegistered, onRefresh =
       <button type="button" className="a-link" onClick={() => { setName(''); setPath(''); onRegistered(unknown.found) }}>Use this project</button></div></div>
   }
 
+  // In the desktop app the window offers the system's folder picker; in a browser, the path is typed.
+  const picker = typeof window !== 'undefined' ? window.controlCenterDesktop?.chooseFolder : undefined
+  const browse = async () => {
+    const chosen = await picker().catch(() => null)
+    if (!chosen) return
+    setPath(chosen)
+    if (!name.trim()) setName(chosen.split(/[\\/]/).filter(Boolean).pop() || '')
+  }
+
   return <Dialog open={open} onClose={() => { if (!busy) onClose() }} title="Add a project"
     description="A project is the top folder of a Git repository with at least one commit. Agents work in private copies of it; nothing here writes their changes into your folder.">
     <form className="a-register" onSubmit={register}>
       <TextField label="Project name" value={name} maxLength={100} disabled={busy} onChange={edit(setName)} />
       <TextField label="Folder path" mono value={path} disabled={busy} placeholder="C:\path\to\repository"
-        hint="Type or paste the full path. Browsing for a folder is not available yet." onChange={edit(setPath)} />
+        hint={picker ? 'Choose the folder, or type or paste its full path.' : 'Type or paste the full path.'} onChange={edit(setPath)} />
+      {picker && <div className="a-act-row"><Button size="sm" icon="folder" disabled={busy} onClick={browse}>Choose folder…</Button></div>}
       {error && <div className="a-result a-result--error" role="alert"><Icon name="warn" size={15} /><div>{error}</div></div>}
       {note}
       <div className="a-act-row">
@@ -136,7 +146,7 @@ export function ProjectPicker({ directory, value, onChange, onRegistered, disabl
       <div className="a-pjsep" />
       <button type="button" className="a-pjo" onClick={() => { setOpen(false); setAdding(true) }}>
         <span className="a-pji"><Icon name="plus" size={15} stroke={2.2} /></span>
-        <span className="a-pjt"><b>Add a project…</b><small>Type the full path of a Git repository</small></span>
+        <span className="a-pjt"><b>Add a project…</b><small>{window.controlCenterDesktop ? "Choose a Git repository folder" : "Type the full path of a Git repository"}</small></span>
       </button>
     </div>}
     <p className="a-fine a-pjhint">Agents work in a private copy; nothing here writes their changes into your folder.</p>

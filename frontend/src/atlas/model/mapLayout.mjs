@@ -12,7 +12,7 @@
 
 export const MAP = {
   NODE_W: 168, ROOT_H: 132, NODE_H: 122, CHIPS: 26, ROW_W: 216, ROW_H: 54, ROW_GAP: 8, ROW_INDENT: 26,
-  GAP_X: 24, GAP_Y: 60, FAMILY_GAP: 76, FAMILY_ROW_GAP: 70, BAND_GAP: 54, BAND_HEAD: 40, LABEL: 30, PAD: 48,
+  GAP_X: 24, GAP_Y: 60, GAP_X_ACROSS: 64, GAP_Y_ACROSS: 18, FAMILY_GAP: 76, FAMILY_ROW_GAP: 70, BAND_GAP: 54, BAND_HEAD: 40, LABEL: 30, PAD: 48,
   MAX_ROW: 2600, RADIUS: 10,
 }
 
@@ -39,7 +39,10 @@ function orderedFamilies(section) {
 // says whether a node shows a row of small notes under it (open/closed, not loaded, planned), so
 // its threads start below them.
 // `bands: false` puts every family in one sequence without section headings (small previews).
-export function mapLayout(view, derived, { maxRow = MAP.MAX_ROW, chips = (id, row) => row.hasChildren, bands: banded = true } = {}) {
+// `direction: 'right'` draws each family left to right (lead on the left, helpers to its right) and
+// stacks families under each other; the default draws top to bottom and wraps families into rows.
+export function mapLayout(view, derived, { maxRow = MAP.MAX_ROW, chips = (id, row) => row.hasChildren, bands: banded = true, direction = 'down' } = {}) {
+  const across = direction === 'right'
   const children = new Map()
   const rows = new Map()
   const familyOf = new Map()
@@ -65,8 +68,14 @@ export function mapLayout(view, derived, { maxRow = MAP.MAX_ROW, chips = (id, ro
     const list = kids(id)
     return list.length >= 2 && list.every((child) => kids(child).length === 0 && !rows.get(child)?.hasChildren)
   }
+  // "Breadth" is the axis along which siblings spread (x top to bottom, y left to right); "depth"
+  // runs from a lead to its helpers.
+  const listLength = (n) => n * (MAP.ROW_H + MAP.ROW_GAP) - MAP.ROW_GAP
+  const ownBreadth = (id) => (across ? heightOf(id) : MAP.NODE_W)
+  const depthGap = across ? MAP.GAP_X_ACROSS : MAP.GAP_Y
+  const siblingGap = across ? MAP.GAP_Y_ACROSS : MAP.GAP_X
 
-  // Subtree widths, bottom-up without recursion (deep chains are fine).
+  // Subtree breadths, bottom-up without recursion (deep chains are fine).
   const width = new Map()
   const measureFrom = (top) => {
     const order = []
@@ -79,48 +88,60 @@ export function mapLayout(view, derived, { maxRow = MAP.MAX_ROW, chips = (id, ro
     for (let i = order.length - 1; i >= 0; i -= 1) {
       const id = order[i]
       const list = kids(id)
-      if (!list.length) width.set(id, MAP.NODE_W)
-      else if (stacked(id)) width.set(id, Math.max(MAP.NODE_W, MAP.ROW_INDENT + MAP.ROW_W))
-      else width.set(id, Math.max(MAP.NODE_W, list.reduce((sum, child) => sum + width.get(child), 0) + MAP.GAP_X * (list.length - 1)))
+      if (!list.length) width.set(id, ownBreadth(id))
+      else if (stacked(id)) width.set(id, across ? Math.max(ownBreadth(id), listLength(list.length)) : Math.max(MAP.NODE_W, MAP.ROW_INDENT + MAP.ROW_W))
+      else width.set(id, Math.max(ownBreadth(id), list.reduce((sum, child) => sum + width.get(child), 0) + siblingGap * (list.length - 1)))
     }
     return width.get(top)
   }
 
   const nodes = {}
-  // Places a family whose subtree box starts at (x, y); returns its bottom edge.
-  const place = (top, x0, y0) => {
-    let bottom = y0
-    const stack = [[top, x0, y0]]
+  // Places a family whose subtree box starts at breadth b0 and depth d0; returns its far corner.
+  const place = (top, b0, d0) => {
+    let maxX = 0
+    let maxY = 0
+    const grow = (node) => { maxX = Math.max(maxX, node.x + node.w); maxY = Math.max(maxY, node.y + node.h) }
+    const stack = [[top, b0, d0]]
     while (stack.length) {
-      const [id, x, y] = stack.pop()
+      const [id, b, d] = stack.pop()
       const w = width.get(id)
       const row = rows.get(id)
       const h = heightOf(id)
-      nodes[id] = { id, kind: 'node', x: x + w / 2 - MAP.NODE_W / 2, y, w: MAP.NODE_W, h, depth: row.depth, parentId: parent[id] || null, topId: familyOf.get(id) }
-      bottom = Math.max(bottom, y + h)
+      const x = across ? d : b + w / 2 - MAP.NODE_W / 2
+      const y = across ? b + w / 2 - h / 2 : d
+      nodes[id] = { id, kind: 'node', x, y, w: MAP.NODE_W, h, depth: row.depth, parentId: parent[id] || null, topId: familyOf.get(id) }
+      grow(nodes[id])
       const list = kids(id)
       if (!list.length) continue
       if (stacked(id)) {
-        const left = x + (w - (MAP.ROW_INDENT + MAP.ROW_W)) / 2
-        const top2 = y + h + MAP.GAP_Y * 0.62
-        nodes[id].spine = left + 9
+        let spine, left, top2
+        if (across) {
+          spine = x + MAP.NODE_W + MAP.ROW_INDENT
+          left = spine + MAP.ROW_INDENT
+          top2 = b + (w - listLength(list.length)) / 2
+        } else {
+          const start = b + (w - (MAP.ROW_INDENT + MAP.ROW_W)) / 2
+          spine = start + 9
+          left = start + MAP.ROW_INDENT
+          top2 = y + h + MAP.GAP_Y * 0.62
+        }
+        nodes[id].spine = spine
         list.forEach((child, index) => {
-          const childRow = rows.get(child)
-          const cy = top2 + index * (MAP.ROW_H + MAP.ROW_GAP)
-          nodes[child] = { id: child, kind: 'row', x: left + MAP.ROW_INDENT, y: cy, w: MAP.ROW_W, h: MAP.ROW_H, depth: childRow.depth,
-            parentId: id, topId: familyOf.get(child) }
-          bottom = Math.max(bottom, cy + MAP.ROW_H)
+          nodes[child] = { id: child, kind: 'row', x: left, y: top2 + index * (MAP.ROW_H + MAP.ROW_GAP), w: MAP.ROW_W, h: MAP.ROW_H,
+            depth: rows.get(child).depth, parentId: id, topId: familyOf.get(child) }
+          grow(nodes[child])
         })
         continue
       }
-      const total = list.reduce((sum, child) => sum + width.get(child), 0) + MAP.GAP_X * (list.length - 1)
-      let cx = x + (w - total) / 2
+      const total = list.reduce((sum, child) => sum + width.get(child), 0) + siblingGap * (list.length - 1)
+      let cb = b + (w - total) / 2
+      const next = (across ? x + MAP.NODE_W : y + h) + depthGap
       for (const child of list) {
-        stack.push([child, cx, y + h + MAP.GAP_Y])
-        cx += width.get(child) + MAP.GAP_X
+        stack.push([child, cb, next])
+        cb += width.get(child) + siblingGap
       }
     }
-    return bottom
+    return { maxX, maxY }
   }
 
   const bands = []
@@ -135,20 +156,30 @@ export function mapLayout(view, derived, { maxRow = MAP.MAX_ROW, chips = (id, ro
     let rowTop = y + (banded ? MAP.BAND_HEAD : 0) + MAP.LABEL
     let x = MAP.PAD
     let rowBottom = rowTop
-    for (const family of families) {
+    families.forEach((family, index) => {
       const w = measureFrom(family.topId)
+      if (across) {
+        // One family per line, each growing to the right.
+        if (index > 0) rowTop = rowBottom + MAP.FAMILY_ROW_GAP + MAP.LABEL
+        const far = place(family.topId, rowTop, MAP.PAD)
+        zones.push({ topId: family.topId, x: MAP.PAD - 16, y: rowTop - MAP.LABEL, w: far.maxX - MAP.PAD + 32, h: far.maxY - rowTop + MAP.LABEL + 16, section: section.key })
+        tops.push(family.topId)
+        rowBottom = Math.max(rowTop + w, far.maxY)
+        maxX = Math.max(maxX, far.maxX)
+        return
+      }
       if (x > MAP.PAD && x + w > MAP.PAD + maxRow) {
         x = MAP.PAD
         rowTop = rowBottom + MAP.FAMILY_ROW_GAP + MAP.LABEL
         rowBottom = rowTop
       }
-      const bottom = place(family.topId, x, rowTop)
-      zones.push({ topId: family.topId, x: x - 16, y: rowTop - MAP.LABEL, w: w + 32, h: bottom - rowTop + MAP.LABEL + 16, section: section.key })
+      const far = place(family.topId, x, rowTop)
+      zones.push({ topId: family.topId, x: x - 16, y: rowTop - MAP.LABEL, w: w + 32, h: far.maxY - rowTop + MAP.LABEL + 16, section: section.key })
       tops.push(family.topId)
-      rowBottom = Math.max(rowBottom, bottom)
+      rowBottom = Math.max(rowBottom, far.maxY)
       x += w + MAP.FAMILY_GAP
       maxX = Math.max(maxX, x - MAP.FAMILY_GAP)
-    }
+    })
     y = rowBottom + MAP.BAND_GAP
   }
 
@@ -160,30 +191,51 @@ export function mapLayout(view, derived, { maxRow = MAP.MAX_ROW, chips = (id, ro
     const from = node.parentId ? nodes[node.parentId] : null
     if (!from) continue
     const tone = edgeTone(derived, id)
+    const my = node.y + node.h / 2
     if (node.kind === 'row') {
       const sx = from.spine
-      const my = node.y + node.h / 2
-      paths[tone].push(`M${sx},${my - r}Q${sx},${my} ${sx + r},${my}H${node.x}`)
+      // Left to right, the list can sit above the lead's middle as well as below it.
+      const above = across && my < from.y + from.h / 2
+      paths[tone].push(`M${sx},${above ? my + r : my - r}Q${sx},${my} ${sx + r},${my}H${node.x}`)
+      continue
+    }
+    if (across) {
+      const px = from.x + from.w - 2
+      const py = from.y + from.h / 2
+      const cx = node.x + 2
+      const mx = px + (cx - px) / 2
+      const sg = my > py ? 1 : -1
+      paths[tone].push(Math.abs(my - py) < 1 ? `M${px},${py}H${cx}`
+        : `M${px},${py}H${mx - r}Q${mx},${py} ${mx},${py + sg * r}V${my - sg * r}Q${mx},${my} ${mx + r},${my}H${cx}`)
       continue
     }
     const px = from.x + from.w / 2
     const py = from.y + from.h - 2
     const cx = node.x + node.w / 2
     const cy = node.y + 2
-    const my = py + (cy - py) / 2
+    const midY = py + (cy - py) / 2
     const sg = cx > px ? 1 : -1
     paths[tone].push(Math.abs(cx - px) < 1 ? `M${px},${py}V${cy}`
-      : `M${px},${py}V${my - r}Q${px},${my} ${px + sg * r},${my}H${cx - sg * r}Q${cx},${my} ${cx},${my + r}V${cy}`)
+      : `M${px},${py}V${midY - r}Q${px},${midY} ${px + sg * r},${midY}H${cx - sg * r}Q${cx},${midY} ${cx},${midY + r}V${cy}`)
   }
   // The shared spine of a stacked group of helpers.
   for (const id of Object.keys(nodes)) {
     const node = nodes[id]
     if (node.spine === undefined) continue
     const list = kids(id)
+    const first = nodes[list[0]]
     const last = nodes[list[list.length - 1]]
+    const sx = node.spine
+    if (across) {
+      const px = node.x + node.w - 2
+      const py = node.y + node.h / 2
+      const top2 = Math.min(py, first.y + first.h / 2 + r)
+      const bottom2 = Math.max(py, last.y + last.h / 2 - r)
+      paths.plain.unshift(`M${px},${py}H${sx}M${sx},${top2}V${bottom2}`)
+      continue
+    }
     const px = node.x + node.w / 2
     const py = node.y + node.h - 2
-    const sx = node.spine
     const jy = py + MAP.GAP_Y * 0.3
     paths.plain.unshift(`M${px},${py}V${jy - r}Q${px},${jy} ${px - r},${jy}H${sx + r}Q${sx},${jy} ${sx},${jy + r}V${last.y + last.h / 2 - r}`)
   }
@@ -191,6 +243,7 @@ export function mapLayout(view, derived, { maxRow = MAP.MAX_ROW, chips = (id, ro
   const width2 = Math.max(maxX, ...Object.values(nodes).map((node) => node.x + node.w)) + MAP.PAD
   const height = Math.max(y - MAP.BAND_GAP, ...Object.values(nodes).map((node) => node.y + node.h)) + MAP.PAD
   return { nodes, edges, edgeCount: Object.values(paths).reduce((sum, list) => sum + list.length, 0), bands, zones, tops,
+    direction: across ? 'right' : 'down',
     parent, children: Object.fromEntries(children), order: [...rows.keys()], width: view.sections.length ? width2 : 0, height: view.sections.length ? height : 0 }
 }
 
@@ -239,6 +292,8 @@ export function mapKey(layout, id, key, { collapsed = () => false } = {}) {
     if (key === 'ArrowRight') return collapsed(id) ? { expand: id, descend: true } : null
     return null
   }
+  // Left to right, the arrows turn with the drawing: left to the lead, right to the first helper.
+  if (layout.direction === 'right') key = { ArrowLeft: 'ArrowUp', ArrowRight: 'ArrowDown', ArrowUp: 'ArrowLeft', ArrowDown: 'ArrowRight' }[key] || key
   if (key === 'ArrowUp') return parentId ? { focus: parentId } : null
   if (key === 'ArrowDown') return firstChild ? { focus: firstChild } : collapsed(id) ? { expand: id, descend: true } : null
   if (key === 'ArrowLeft') return index > 0 ? { focus: siblings[index - 1] } : null

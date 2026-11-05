@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import Icon from '../components/Icon'
 import { formatHash, navSection } from '../router.mjs'
-import { visibleProjects } from '../model/projects.mjs'
+import { projectHue, visibleProjects } from '../model/projects.mjs'
 
 const PIN_KEY = 'control-center.lumen.rail-pinned'
 const readPinned = () => { try { return globalThis.localStorage?.getItem(PIN_KEY) === '1' } catch { return false } }
@@ -97,7 +97,7 @@ export default function Rail({ route, markPush, directory, projectFacts, needs, 
         return <a key={project.id} className={`a-rail-link a-rail-project is-${state}`} href={formatHash('work', { project: project.id })}
           onClick={markPush} aria-current={currentProject === project.id ? 'true' : undefined}
           aria-label={`${project.name}, ${description}`} style={{ '--i': index + 4 }} title={project.name}>
-          <span className="a-rail-tile" aria-hidden="true">{[...project.name.trim()][0]?.toUpperCase() || '·'}</span>
+          <span className="a-rail-tile" aria-hidden="true" style={{ '--hue': projectHue(project.id) }}>{[...project.name.trim()][0]?.toUpperCase() || '·'}</span>
           <span className="a-rail-text" aria-hidden="true"><b className="a-bidi" dir="auto">{project.name}</b><small>{description}</small></span>
         </a>
       })}

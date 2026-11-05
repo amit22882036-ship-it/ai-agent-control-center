@@ -28,3 +28,14 @@ export function keyboardInspectorWidth(width, key) {
   if (key === 'ArrowRight') return clampInspector(width - 16)
   return null
 }
+
+// The Work Map's direction (top to bottom or left to right) is also a per-browser convenience.
+export const MAP_DIRECTION_KEY = 'control-center.atlas.map-direction'
+
+export function readMapDirection(storage) {
+  try { return (storage ?? globalThis.localStorage)?.getItem(MAP_DIRECTION_KEY) === 'right' ? 'right' : 'down' } catch { return 'down' }
+}
+
+export function saveMapDirection(direction, storage) {
+  try { (storage ?? globalThis.localStorage)?.setItem(MAP_DIRECTION_KEY, direction === 'right' ? 'right' : 'down') } catch { /* Optional. */ }
+}

@@ -17,7 +17,7 @@ test('families are grouped by what they need, from the status model', () => {
   assert.equal(sections.solo, 'done') // applied to the project
   assert.equal(sections.limited, 'active') // a provider wait is not the person's to answer
   assert.equal(sections.paused, 'active')
-  assert.deepEqual(familyCounts(derived), { all: 9, needs: 2, active: 8, done: 1 })
+  assert.deepEqual(familyCounts(derived), { all: 9, needs: 2, active: 8, done: 1, canceled: 0 })
   assert.ok(derived.attentionBelow.has('release'))
   assert.ok(!derived.attentionBelow.has('tests'))
 })
@@ -231,4 +231,25 @@ test('the colour filter matches the agent each row shows; removed agents and age
   assert.equal(flatRows(visibleRows(store, derived, { colors: new Set(['pink']) })).length, 0)
   const both = flatRows(visibleRows(store, derived, { colors: new Set(['blue']), query: 'tests' }))
   assert.deepEqual(both.filter((row) => row.match).map((row) => row.id), ['tests'])
+})
+
+test('canceled families are counted and filtered apart from finished work, and stay in history', () => {
+  const page = JSON.parse(JSON.stringify(contract.all))
+  const top = page.tasks.find((task) => task.task_id === 'solo')
+  top.status = 'canceled'
+  top.assignment = { current: null, last_ended: null, count: 0, previous_agent_ids: [] }
+  top.agent = null
+  const s = applyPage(emptyStore(), page)
+  const d = deriveWorkspace(s)
+  assert.equal(d.status.solo.key, 'canceled')
+  assert.equal(d.families.find((item) => item.topId === 'solo').section, 'done')
+  const counts = familyCounts(d)
+  assert.equal(counts.canceled, 1)
+  assert.equal(counts.all, familyCounts(derived).all)
+  const canceled = visibleRows(s, d, { filter: 'canceled' }).sections.flatMap((section) => section.families.map((item) => item.topId))
+  assert.ok(canceled.includes(top.task_id))
+  const done = visibleRows(s, d, { filter: 'done' }).sections.flatMap((section) => section.families.map((item) => item.topId))
+  assert.ok(!done.includes(top.task_id))
+  const all = visibleRows(s, d).sections.flatMap((section) => section.families.map((item) => item.topId))
+  assert.ok(all.includes(top.task_id))
 })

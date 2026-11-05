@@ -75,7 +75,7 @@ const MapNode = memo(function MapNode({ node, row, info, selected, tabbable, dim
     {row.expanded ? <Icon name="down" size={12} stroke={2.4} /> : <>+{info.hidden}</>}
   </button>
   if (node.kind === 'row') {
-    return <div {...common} className={`a-gr${selected ? ' is-selected' : ''}${dim ? ' is-dim' : ''}${historic ? ' is-historic' : ''}${info.status.tone === 'ask' ? ' a-gr--ask' : ''}`}
+    return <div {...common} className={`a-gr${selected ? ' is-selected' : ''}${dim ? ' is-dim' : ''}${historic ? ' is-historic' : ''}${info.status.tone === 'ask' ? ' a-gr--ask' : ''}${info.status.key === 'canceled' ? ' is-canceled' : ''}`}
       style={{ left: node.x, top: node.y, width: node.w, height: node.h }}>
       <span className="a-gav">{ring && <span className={`a-ring a-ring--${ring}`} />}<Face who={info.who} size={30} />
         {BADGES.has(bead) && <span className="a-gbadge a-gbadge--sm"><StatusBead state={bead} size={13} decorative /></span>}</span>
@@ -85,7 +85,7 @@ const MapNode = memo(function MapNode({ node, row, info, selected, tabbable, dim
       {fold}
     </div>
   }
-  return <div {...common} className={`a-gn${root ? ' a-gn--root' : ''}${selected ? ' is-selected' : ''}${dim ? ' is-dim' : ''}${historic ? ' is-historic' : ''}`}
+  return <div {...common} className={`a-gn${root ? ' a-gn--root' : ''}${selected ? ' is-selected' : ''}${dim ? ' is-dim' : ''}${historic ? ' is-historic' : ''}${info.status.key === 'canceled' ? ' is-canceled' : ''}`}
     style={{ left: node.x, top: node.y, width: node.w }}>
     <span className="a-gav">{ring && <span className={`a-ring a-ring--${ring}`} />}<Face who={info.who} size={root ? 54 : 44} />
       {BADGES.has(bead) && <span className="a-gbadge"><StatusBead state={bead} size={16} decorative /></span>}</span>
@@ -132,7 +132,7 @@ const Minimap = memo(function Minimap({ layout, derived, camera, view, onJump })
 // branches and focus), drawn as a hierarchy. A tree for assistive technology, with arrow keys that
 // follow what is drawn; pan, zoom and fit with the pointer, the keyboard or the controls.
 export default function TaskMap({ layout, view, store, derived, projectName, now, selectedId, onSelect, onToggle, onFocusBranch,
-  focusBranch, side, onToggleSide, cameraRef, request, onLoadMore, loadingMore, empty }) {
+  focusBranch, side, onToggleSide, onDirection, cameraRef, request, onLoadMore, loadingMore, empty }) {
   const pane = useRef(null)
   const [store2] = useState(createCameraStore)
   const { camera, animated, view: area, pane: paneSize } = useSyncExternalStore(store2.subscribe, store2.get)
@@ -399,7 +399,7 @@ export default function TaskMap({ layout, view, store, derived, projectName, now
           onPick={pick} onOpen={open} onFold={fold} />)}
       </div>
     </div>
-    <p id="map-keys" className="a-sr">Arrow keys move between tasks: up to the lead, down to the first helper, left and right between tasks at the same level.
+    <p id="map-keys" className="a-sr">{layout.direction === 'right' ? 'Arrow keys move between tasks: left to the lead, right to the first helper, up and down between tasks at the same level.' : 'Arrow keys move between tasks: up to the lead, down to the first helper, left and right between tasks at the same level.'}
       Enter opens a task’s details, Space shows or hides its helpers. Plus and minus zoom; Shift with an arrow key moves the map.</p>
     {empty2 && <div className="a-map-empty">{empty}</div>}
     <div className="a-mtool">
@@ -419,6 +419,12 @@ export default function TaskMap({ layout, view, store, derived, projectName, now
       <IconButton icon="fit" size="sm" label={focusBranch ? 'Fit the focused branch' : 'Fit the selected task’s family'}
         onClick={() => defaultCamera(true)} />
       <IconButton icon="grid" size="sm" label="Show everything" onClick={() => fitIds(null, { allowSmall: true })} />
+      {onDirection && <>
+        <span className="a-mctl-sep" aria-hidden="true" />
+        <IconButton icon={layout.direction === 'right' ? 'treedown' : 'treeright'} size="sm"
+          label={layout.direction === 'right' ? 'Draw the map top to bottom' : 'Draw the map left to right'}
+          onClick={() => onDirection(layout.direction === 'right' ? 'down' : 'right')} />
+      </>}
     </div>}
     {showMini && <Minimap layout={layout} derived={derived} camera={camera} view={area}
       onJump={(x, y) => {
