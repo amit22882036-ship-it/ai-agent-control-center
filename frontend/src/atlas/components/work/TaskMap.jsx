@@ -59,7 +59,7 @@ function Face({ who, size }) {
   return <Avatar name={who.name} color={who.agent.color} tool={who.agent.tool} size={size} removed={who.removed} decorative />
 }
 
-const MapNode = memo(function MapNode({ node, row, info, selected, tabbable, dim, historic, onPick, onOpen, onFold }) {
+const MapNode = memo(function MapNode({ node, row, info, selected, tabbable, dim, historic, away, onPick, onOpen, onFold }) {
   const bead = info.status.bead
   const ring = selected ? 'sel' : RINGS[bead]
   const root = node.depth === 0
@@ -75,7 +75,7 @@ const MapNode = memo(function MapNode({ node, row, info, selected, tabbable, dim
     {row.expanded ? <Icon name="down" size={12} stroke={2.4} /> : <>+{info.hidden}</>}
   </button>
   if (node.kind === 'row') {
-    return <div {...common} className={`a-gr${selected ? ' is-selected' : ''}${dim ? ' is-dim' : ''}${historic ? ' is-historic' : ''}${info.status.tone === 'ask' ? ' a-gr--ask' : ''}${info.status.key === 'canceled' ? ' is-canceled' : ''}`}
+    return <div {...common} className={`a-gr${selected ? ' is-selected' : ''}${dim ? ' is-dim' : ''}${historic ? ' is-historic' : ''}${away ? ' is-away' : ''}${info.status.tone === 'ask' ? ' a-gr--ask' : ''}${info.status.key === 'canceled' ? ' is-canceled' : ''}`}
       style={{ left: node.x, top: node.y, width: node.w, height: node.h }}>
       <span className="a-gav">{ring && <span className={`a-ring a-ring--${ring}`} />}<Face who={info.who} size={30} />
         {BADGES.has(bead) && <span className="a-gbadge a-gbadge--sm"><StatusBead state={bead} size={13} decorative /></span>}</span>
@@ -85,7 +85,7 @@ const MapNode = memo(function MapNode({ node, row, info, selected, tabbable, dim
       {fold}
     </div>
   }
-  return <div {...common} className={`a-gn${root ? ' a-gn--root' : ''}${selected ? ' is-selected' : ''}${dim ? ' is-dim' : ''}${historic ? ' is-historic' : ''}${info.status.key === 'canceled' ? ' is-canceled' : ''}`}
+  return <div {...common} className={`a-gn${root ? ' a-gn--root' : ''}${selected ? ' is-selected' : ''}${dim ? ' is-dim' : ''}${historic ? ' is-historic' : ''}${away ? ' is-away' : ''}${info.status.key === 'canceled' ? ' is-canceled' : ''}`}
     style={{ left: node.x, top: node.y, width: node.w }}>
     <span className="a-gav">{ring && <span className={`a-ring a-ring--${ring}`} />}<Face who={info.who} size={root ? 54 : 44} />
       {BADGES.has(bead) && <span className="a-gbadge"><StatusBead state={bead} size={16} decorative /></span>}</span>
@@ -384,7 +384,7 @@ export default function TaskMap({ layout, view, store, derived, projectName, now
     onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerUp}
     onClickCapture={(event) => { if (dragged.current) { event.stopPropagation(); event.preventDefault(); dragged.current = false } }}>
     <div className="a-mtree" role="tree" aria-label="Work map" aria-describedby="map-keys">
-      <div className={`a-minner${animated ? ' is-animated' : ''}`}
+      <div className={`a-minner${animated ? ' is-animated' : ''}${anchorTop ? ' has-anchor' : ''}`}
         style={camera ? { width: layout.width, height: layout.height, transform: `translate(${camera.x}px, ${camera.y}px) scale(${camera.k})` } : { visibility: 'hidden' }}>
         {/* Finished families (the "Completed and history" band) are drawn quieter, never hidden. */}
         {layout.zones.map((zone) => <div key={zone.topId} className={`a-mzone${anchorTop === zone.topId ? ' is-current' : ''}${derived.byTop[zone.topId]?.section === 'done' ? ' is-historic' : ''}`} aria-hidden="true"
@@ -396,6 +396,7 @@ export default function TaskMap({ layout, view, store, derived, projectName, now
         </svg>
         {shown.map((id) => <MapNode key={id} node={layout.nodes[id]} row={rows.get(id).row} info={infos[id]} selected={id === selectedId}
           tabbable={id === focusTarget} dim={view.searching && !rows.get(id).row.match} historic={rows.get(id).family?.section === 'done'}
+          away={Boolean(anchorTop) && layout.nodes[id].topId !== anchorTop}
           onPick={pick} onOpen={open} onFold={fold} />)}
       </div>
     </div>

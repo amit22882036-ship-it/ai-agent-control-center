@@ -42,7 +42,7 @@ test('every task state keeps the backend’s fact and is named without implying 
   assert.equal(label('canceled'), 'Canceled')
   assert.equal(nowView(store, derived, 'stopped').line, 'Not running')
   // Unfinished families are "Open", never "In progress": nothing claims they run.
-  assert.deepEqual(SECTIONS.map((section) => section.label), ['Needs your attention', 'Open', 'Completed and history'])
+  assert.deepEqual(SECTIONS.map((section) => section.label), ['Needs you', 'Open', 'History'])
   const counts = familyCounts(derived)
   // Open: not started, not running, working, waiting for you, blocked and paused. Completed,
   // canceled and "no agent working" (in progress with nothing on it) are under history.

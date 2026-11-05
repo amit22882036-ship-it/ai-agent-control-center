@@ -125,8 +125,8 @@ function withHistory() {
 
 test('open work is called "Open", and a task whose agent stopped reads "Not running", in the List, the Map and its page', async ({ page }) => {
   await openApp(page, { path: '/#/work', tasks: withHistory() })
-  await expect(page.locator('.a-ol-sec')).toHaveText([/Needs your attention/, /Open/, /Completed and history/])
-  await expect(page.getByRole('radio', { name: /^Open/ })).toBeVisible()
+  await expect(page.locator('.a-sheet-sec')).toHaveText([/Needs you/, /Open/, /History/])
+  await expect(page.locator('.atlas')).not.toContainText('In progress')
   await expect(row(page, 'Profile the slow dashboard load')).toContainText('Not running')
   await expect(row(page, 'Profile the slow dashboard load')).not.toContainText('Not started')
   await page.keyboard.press('m')

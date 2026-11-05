@@ -40,7 +40,7 @@ test('Atlas opens only on request, owns the single event connection and changes 
   await expect(page).toHaveURL(/#\/work$/)
   await expect(page.locator('.atlas h1')).toHaveText('Work')
   await expect(page.getByRole('treeitem', { name: /^Fix the tests/ })).toBeVisible()
-  await expect(page.locator('.a-needs')).toHaveText('1 needs you')
+  await expect(page.locator('.a-needs')).toHaveText('1 question for you')
   await expect(page.locator('.a-conn')).toContainText('Live')
   await expect(page).toHaveTitle('Work · AI Agent Control Center')
   expect(await activeEventSources(page)).toBe(1)

@@ -3,17 +3,20 @@ import { Button, EmptyState, Notice, Skeleton } from '../components/primitives'
 import { Segmented } from '../components/controls'
 import { MenuButton } from '../components/overlays'
 import Icon from '../components/Icon'
-import TaskTree from '../components/work/TaskTree'
+import WorkSheet from '../components/work/WorkSheet'
+import NowStrip from '../components/work/NowStrip'
 import TaskMap from '../components/work/TaskMap'
 import TaskInspector from '../components/work/TaskInspector'
 import ColorFilter from '../components/work/ColorFilter'
 import Welcome from '../components/work/Welcome'
 import { emptyStore, pathTo } from '../model/tasks.mjs'
 import { reconcile } from '../model/selection.mjs'
-import { COLOR_VALUES, FILTERS, familyCounts, flatRows, inBranch, visibleRows } from '../model/workList.mjs'
+import { COLOR_VALUES, FILTERS, familyCounts, flatRows, inBranch, markedPaths, taskCounts, visibleRows } from '../model/workList.mjs'
+import { changedSince, rememberRecent, sheetRows } from '../model/workSheet.mjs'
 import { mapLayout } from '../model/mapLayout.mjs'
-import { readInspectorWidth, readMapDirection, saveInspectorWidth, saveMapDirection } from '../layout.mjs'
-import { projectDirectory, projectLabel, projectMenu } from '../model/projects.mjs'
+import { readFinishedOpen, readInspectorWidth, readMapDirection, readRecent, readSeen, saveFinishedOpen, saveInspectorWidth, saveMapDirection,
+  saveRecent, saveSeen } from '../layout.mjs'
+import { projectDirectory, projectHue, projectLabel, projectMenu } from '../model/projects.mjs'
 import { captureAnchors, playLensTransition } from '../lensTransition'
 import { rememberWork, requestReply } from '../workContext'
 import { pageShortcut } from '../keys.mjs'
@@ -21,9 +24,12 @@ import { ATTENTION_KINDS, attentionInView, attentionKind, stepAttention } from '
 import { StatusBead } from '../components/identity'
 
 const EMPTY = emptyStore()
-const FILTER_VALUES = new Set(FILTERS.map((filter) => filter.value))
+const FILTER_VALUES = new Set([...FILTERS.map((filter) => filter.value), 'changed'])
 const LENSES = [{ value: 'list', label: 'List', icon: 'list', title: 'List · L' }, { value: 'map', label: 'Map', icon: 'map', title: 'Map · M' }]
 const clip = (text, limit) => (text && text.length > limit ? text.slice(0, limit - 1).trimEnd() + '…' : text)
+// Up to this many loaded Tasks, every open family is shown expanded; beyond it, families are one
+// line each and a family that needs the person shows only the path to what needs them.
+const SMALL = 60
 
 // A key press meant for the page: not in a field, a menu, a dialog or the details panel.
 const pageKey = (event) => pageShortcut(event, { exclude: '.a-inspector' })
@@ -33,8 +39,10 @@ const pageKey = (event) => pageShortcut(event, { exclude: '.a-inspector' })
 // are of loaded Tasks; questions the backend counts that may be on unloaded pages are said to be.
 function AttentionBar({ ids, selectedId, derived, summary, filtered, complete, onStep, onReply, onLoadMore, loadingMore }) {
   const unlisted = summary?.unlisted || 0
-  if (!ids.length && !unlisted) return null
   const index = ids.indexOf(selectedId)
+  // The Now strip already counts what needs you; the bar appears while you step through those tasks,
+  // or when the backend counts questions the loaded pages don't show.
+  if ((!ids.length || index < 0) && !unlisted) return null
   const kind = index >= 0 ? attentionKind(derived, selectedId) : null
   const n = ids.length
   const where = filtered ? ' in this view' : complete ? '' : ' among loaded tasks'
@@ -58,19 +66,18 @@ function AttentionBar({ ids, selectedId, derived, summary, filtered, complete, o
   </div>
 }
 
-// Work: every task family as a List and as a Map, two views of the same Tasks. Selection, filters,
+// Work: every task family as a List and as a Map, two views of the same Tasks. Selection, scope,
 // project, colours, focus, the view and the side list live in the address, so Back/Forward and
 // reloads restore them; both views share the open branches and the details panel.
-export default function WorkPage({ live, route, navigate, feed, derived, attention, projectsResource }) {
+export default function WorkPage({ live, route, navigate, feed, derived, attention, projectsResource, onGoTo }) {
   // The shell owns the canonical feed and its derived workspace (the attention list uses them too).
   const store = feed.store || EMPTY
   // Actions check the latest store when they run, not the one drawn when a form opened.
   const storeRef = useRef(store)
   useEffect(() => { storeRef.current = store }, [store])
   const getStore = useCallback(() => storeRef.current, [])
-  // The registered projects (GET /projects) are the authoritative list; they are re-read with the
-  // shared connection's updates, so a project registered meanwhile appears without a reload.
-  // The shell's own read of GET /projects (one read per change for the whole app).
+  // The registered projects (GET /projects) are the authoritative list; the shell reads them once
+  // per change for the whole app.
   const directory = useMemo(() => projectDirectory(projectsResource), [projectsResource])
   const projectName = useCallback((id) => projectLabel(directory, id), [directory])
   const params = useMemo(() => route.params || {}, [route.params])
@@ -89,6 +96,10 @@ export default function WorkPage({ live, route, navigate, feed, derived, attenti
   const [width, setWidth] = useState(() => readInspectorWidth())
   const [direction, setDirection] = useState(() => readMapDirection())
   const turnMap = useCallback((next) => { setDirection(next); saveMapDirection(next) }, [])
+  const [finishedChoice, setFinishedChoice] = useState(() => readFinishedOpen())
+  // What the person has looked at, for "changed since you looked". The first visit starts clean.
+  const [seen, setSeen] = useState(() => readSeen() || { since: new Date(Date.now()).toISOString(), opened: {} })
+  useEffect(() => { saveSeen(seen) }, [seen])
   const [tick, setTick] = useState(() => Date.now())
   const [revealedFor, setRevealedFor] = useState(null)
   const [mapRequest, setMapRequest] = useState(null)
@@ -103,46 +114,75 @@ export default function WorkPage({ live, route, navigate, feed, derived, attenti
   // Row times count from the latest of the clock tick and the last successful read.
   const now = Math.max(tick, feed.readAt || 0)
 
-  // Branches start open, except finished families; the person's own choices win.
-  const expanded = useMemo(() => {
+  const loadedCount = Object.keys(store.tasks).length
+  const large = loadedCount > SMALL
+  const marked = useMemo(() => markedPaths(store, derived), [store, derived])
+  // Branches: in a small workspace every open family starts expanded; in a large one families are
+  // one line each, and a family that needs the person opens only along the path to what needs them.
+  // Finished families start closed. The person's own choices always win.
+  const { expanded, prune } = useMemo(() => {
     const open = new Set()
+    const pruned = new Set()
     for (const family of derived.families) {
       for (const id of family.members) {
-        const fallback = family.section !== 'done'
-        if (overrides.has(id) ? overrides.get(id) : fallback) open.add(id)
+        const choice = overrides.has(id) ? overrides.get(id) : undefined
+        let fallback = family.section !== 'done' && !large
+        if (large && family.section === 'needs') fallback = marked.has(id)
+        if (choice ?? fallback) open.add(id)
+        if (large && family.section === 'needs' && choice !== true) pruned.add(id)
       }
     }
-    return open
-  }, [derived, overrides])
+    return { expanded: open, prune: pruned }
+  }, [derived, overrides, large, marked])
 
   // Opening a task (from the address, Back/Forward or a link) reveals the loaded path to it once;
   // collapsing a branch afterwards is the person's choice.
   if (selectedId && store.tasks[selectedId] && revealedFor !== selectedId) {
     setRevealedFor(selectedId)
     const path = pathTo(derived.forest, selectedId)
-    if (path.some((id) => !expanded.has(id))) {
+    if (path.some((id) => !expanded.has(id) || (prune.has(id) && !marked.has(selectedId)))) {
       setOverrides((current) => { const next = new Map(current); for (const id of path) next.set(id, true); return next })
     }
     setFocusId(selectedId)
   }
 
-  const view = useMemo(() => visibleRows(store, derived, { expanded, filter, project, query, colors, focus }),
-    [store, derived, expanded, filter, project, query, colors, focus])
+  // The Task on screen in the details panel is being looked at, so it is never marked as changed.
+  const changed = useMemo(() => {
+    const base = changedSince(store, seen)
+    return (id) => id !== selectedId && base(id)
+  }, [store, seen, selectedId])
+  const view = useMemo(() => visibleRows(store, derived, { expanded, filter, project, query, colors, focus, prune, marked, changed }),
+    [store, derived, expanded, filter, project, query, colors, focus, prune, marked, changed])
+  const familyTotals = familyCounts(derived, project)
+  const finishedOpen = finishedChoice ?? (familyTotals.done + familyTotals.canceled <= 6 || filter === 'done' || filter === 'canceled')
+  const rows = useMemo(() => (lens === 'list' || side ? sheetRows(view, store, derived, { now, finishedOpen, complete: store.complete }) : []),
+    [lens, side, view, store, derived, now, finishedOpen])
+  const viewKey = `${filter}|${project}|${query}|${colorParam}|${focus}`
   const layout = useMemo(() => (lens === 'map' ? mapLayout(view, derived, { chips: (id, row) => {
     const task = store.tasks[id]
     const loaded = (derived.forest.children[id] || []).length
     return row.hasChildren || task.planned.unmaterialized > 0 || (!store.complete && (task.childCount ?? 0) > loaded)
       || (row.depth === 0 && row.parentId === null && derived.byTop[id] && derived.byTop[id].placement !== 'root')
   }, direction }) : null), [lens, view, derived, store, direction])
-  const counts = familyCounts(derived, project)
+  const counts = useMemo(() => taskCounts(store, derived, project), [store, derived, project])
+  const changedCount = useMemo(() => {
+    let n = 0
+    for (const id of Object.keys(store.tasks)) if ((!project || store.tasks[id].projectId === project) && changed(id)) n += 1
+    return n
+  }, [store, project, changed])
   const selection = reconcile({ taskId: selectedId, focusId: null, expanded: [] }, store).status
   const shownIds = new Set(flatRows(view).map((row) => row.id))
   const selectedHidden = selection === 'present' && !shownIds.has(selectedId)
 
   const go = useCallback((patch) => navigate('work', { ...params, ...patch }), [navigate, params])
   // Selecting a Task outside a focused branch leaves the focus, so the selection is never hidden.
-  const select = useCallback((id) => go({ task: id, ...(focus && !inBranch(derived.forest, focus, id) ? { focus: undefined } : {}) }),
-    [go, focus, derived])
+  const select = useCallback((id) => {
+    setSeen((current) => ({ ...current, opened: { ...current.opened, [id]: new Date(Date.now()).toISOString() } }))
+    go({ task: id, ...(focus && !inBranch(derived.forest, focus, id) ? { focus: undefined } : {}) })
+  }, [go, focus, derived])
+  // Opening a Task counts as looking at it, and it joins the recently opened list for Go to.
+  const selectedLoaded = Boolean(selectedId && store.tasks[selectedId])
+  useEffect(() => { if (selectedLoaded) saveRecent(rememberRecent(readRecent(), selectedId)) }, [selectedId, selectedLoaded])
   // The Tasks that need the person in this view, in the List's order; A and Shift A move between
   // them, and moving opens the path to the Task in both views.
   const attentionIds = useMemo(() => attentionInView(store, derived, { filter, project, query, colors, focus }),
@@ -158,7 +198,13 @@ export default function WorkPage({ live, route, navigate, feed, derived, attenti
     next.set(id, open ?? !expanded.has(id))
     return next
   }), [expanded])
+  const showAll = useCallback((id) => setOverrides((current) => new Map(current).set(id, true)), [])
   const setAll = (open) => setOverrides(() => new Map(Object.keys(store.tasks).map((id) => [id, open])))
+  const toggleFinished = useCallback((open) => { setFinishedChoice(open); saveFinishedOpen(open) }, [])
+  const clearChanged = useCallback(() => {
+    setSeen({ since: new Date(Date.now()).toISOString(), opened: {} })
+    if (filter === 'changed') go({ filter: undefined })
+  }, [filter, go])
   const reveal = () => {
     setQuery('')
     const path = pathTo(derived.forest, selectedId)
@@ -179,6 +225,7 @@ export default function WorkPage({ live, route, navigate, feed, derived, attenti
   // The Work view is remembered so a Task page's "Work" link returns to it.
   useEffect(() => { rememberWork(params) }, [params])
   const leaveFocus = useCallback(() => go({ focus: undefined }), [go])
+  const scope = useCallback((value) => go({ filter: value === 'all' ? undefined : value }), [go])
 
   useLayoutEffect(() => {
     const pending = pendingLens.current
@@ -220,9 +267,8 @@ export default function WorkPage({ live, route, navigate, feed, derived, attenti
     highlight()
   }
 
-  // In narrow windows the details panel floats over the list; it starts below the header, the
-  // attention bar and any notices (which wrap onto more lines as the window narrows), so it never
-  // covers their controls. Measured, because their height depends on the window and the text size.
+  // In narrow windows the details panel floats over the list; it starts below the header and any
+  // notices (which wrap onto more lines as the window narrows), so it never covers their controls.
   useLayoutEffect(() => {
     const work = workRef.current
     const wbody = body.current
@@ -241,20 +287,23 @@ export default function WorkPage({ live, route, navigate, feed, derived, attenti
   const ready = feed.phase === 'ready' || (feed.store && feed.readAt)
   // A new installation (no tasks at all) is welcomed instead of shown an empty toolbar.
   const welcoming = ready && store.complete && !Object.keys(store.tasks).length
-  // While older pages remain, the section counts describe the loaded tasks only.
+  // While older pages remain, counts describe the loaded tasks only.
   const partial = ready && !store.complete
   const loadedTasks = Object.values(store.tasks).filter((task) => task.source === 'page').length
   const countNote = partial ? `Counts cover the ${loadedTasks} loaded tasks${store.total !== null ? ` of ${store.total}` : ''}` : null
   const stale = feed.stale || live.reachable === false
   const crumbs = focus ? pathTo(derived.forest, focus).reverse() : []
+  const hueOf = useCallback((id) => (id ? projectHue(id) : 250), [])
 
   const empty = <p className="a-ol-empty">{project && !derived.families.some((family) => family.projectId === project)
-    ? `No loaded tasks in ${projectName(project)}.${store.complete ? '' : ' Older tasks may belong to it.'}` : 'Nothing matches.'}{' '}
+    ? `No loaded tasks in ${projectName(project)}.${store.complete ? '' : ' Older tasks may belong to it.'}`
+    : filter === 'changed' ? 'Nothing changed since you last looked.' : 'Nothing matches.'}{' '}
     <Button size="sm" onClick={() => { setQuery(''); go({ filter: undefined, project: undefined, colors: undefined, focus: undefined }) }}>Clear filters</Button></p>
-  const tree = (compact) => <TaskTree view={view} store={store} derived={derived} projectName={projectName} now={now} selectedId={selectedId}
-    focusId={focusId} setFocusId={setFocusId} onSelect={select} onToggle={toggle} onLoadMore={feed.loadMore} loadingMore={feed.loadingMore}
-    empty={empty} compact={compact} onShowInMap={compact ? undefined : showInMap} onOpenTask={compact ? undefined : openTask}
-    onReply={compact ? undefined : replyTo} />
+  const sheet = (compact) => <WorkSheet rows={rows} viewKey={viewKey} store={store} derived={derived} projectName={projectName} hueOf={hueOf} now={now}
+    selectedId={selectedId} focusId={focusId} setFocusId={setFocusId} onSelect={select} onToggle={toggle} onShowAll={showAll}
+    onToggleFinished={toggleFinished} onLoadMore={feed.loadMore} loadingMore={feed.loadingMore} empty={empty} compact={compact}
+    onShowInMap={compact ? undefined : showInMap} onOpenTask={compact ? undefined : openTask} onReply={compact ? undefined : replyTo}
+    changed={changed} />
 
   let content
   if (!ready && feed.phase === 'error') {
@@ -270,10 +319,10 @@ export default function WorkPage({ live, route, navigate, feed, derived, attenti
         onSelect={select} onToggle={toggle} onFocusBranch={focusBranch} focusBranch={focus} side={side}
         onToggleSide={() => go({ side: side ? undefined : '1' })} onDirection={turnMap} cameraRef={cameraRef} request={mapRequest}
         onLoadMore={feed.loadMore} loadingMore={feed.loadingMore} empty={empty} />
-      {side && <div className="a-side" data-side-list>{tree(true)}</div>}
+      {side && <div className="a-side" data-side-list>{sheet(true)}</div>}
     </>
   } else {
-    content = tree(false)
+    content = sheet(false)
   }
 
   return <div className={`a-work${side ? ' has-side' : ''}`} ref={workRef}>
@@ -283,10 +332,6 @@ export default function WorkPage({ live, route, navigate, feed, derived, attenti
         <MenuButton label="Choose a project" text={project ? projectName(project) : 'All projects'} icon="folder" align="start"
           items={projectMenu(directory, project).map((item) => item.separator ? item : { label: item.label, disabled: item.disabled,
             icon: item.checked ? 'check' : undefined, onSelect: item.value === undefined ? undefined : () => go({ project: item.value || undefined }) })} />
-        <Segmented label="Show" size="sm" value={filter} onChange={(value) => go({ filter: value === 'all' ? undefined : value })}
-          describedBy={countNote ? 'work-count-note' : undefined}
-          options={FILTERS.filter((option) => option.value !== 'canceled' || filter === 'canceled' || (ready && counts.canceled > 0)).map((option) => ({ ...option, count: ready ? counts[option.value] : undefined,
-            title: ready ? `${counts[option.value]} task ${counts[option.value] === 1 ? 'family' : 'families'}${partial ? ' among the loaded tasks; older tasks are not counted' : ''}` : undefined }))} />
         {countNote && <span id="work-count-note" className="a-count-note" title={`${countNote}. Load older tasks to include them.`}>
           <Icon name="info" size={13} />{countNote}</span>}
         <span className="a-sp" />
@@ -298,12 +343,18 @@ export default function WorkPage({ live, route, navigate, feed, derived, attenti
         </label>
         <Segmented label="View as" size="sm" className="a-lens" value={lens} onChange={(value) => switchLens(value)} options={LENSES} />
         <MenuButton label="View options" icon="sliders" items={[
+          ...(onGoTo ? [{ label: 'Go to a task…', icon: 'search', hint: 'Ctrl K', onSelect: onGoTo }, { separator: true }] : []),
           { label: 'Expand everything', icon: 'down', onSelect: () => setAll(true) },
           { label: 'Collapse to task families', icon: 'right', onSelect: () => setAll(false) },
+          { label: finishedOpen ? 'Fold history away' : 'List history by day', icon: finishedOpen ? 'right' : 'down', onSelect: () => toggleFinished(!finishedOpen) },
+          ...(changedCount ? [{ label: 'Mark everything as seen', icon: 'check', onSelect: clearChanged }] : []),
           ...(selectedId && store.tasks[selectedId] ? [{ separator: true }, { label: 'Open the selected task', icon: 'open', hint: 'O', onSelect: () => openTask(selectedId) },
             { label: 'Focus the selected branch', icon: 'focus', hint: 'F', onSelect: () => focusBranch(selectedId) }] : []),
         ]} />
       </div>}
+      {ready && !welcoming && <NowStrip counts={counts} families={familyTotals} filter={filter} onScope={scope} partial={partial}
+        changedCount={changedCount} onChanged={scope} onClearChanged={clearChanged} onFirstNeed={attentionIds.length ? () => goAttention(1) : null}
+        stepping={attentionIds.includes(selectedId)} describedBy={countNote ? 'work-count-note' : undefined} />}
       {ready && !welcoming && <AttentionBar ids={attentionIds} selectedId={selectedId} derived={derived} summary={attention}
         filtered={Boolean(project || focus || query || colors.size || filter !== 'all')} complete={store.complete} onStep={goAttention} onReply={replyTo}
         onLoadMore={feed.loadMore} loadingMore={feed.loadingMore} />}

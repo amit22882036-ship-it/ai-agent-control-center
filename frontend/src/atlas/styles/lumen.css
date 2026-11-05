@@ -226,18 +226,7 @@
    with hairline separators) instead of a stack of floating cards. Selection and hover are inset
    rounded shapes, as in a native sidebar. Browser surfaces (selection, caret, scrollbars) carry
    the palette too. */
-.atlas { --a-sheet: rgba(250, 251, 253, .7); --a-group: rgba(255, 255, 255, .94); --a-sidebar: rgba(229, 234, 242, .72);
-  --a-hairline: rgba(14, 19, 32, .075); --a-group-shadow: 0 0 0 1px rgba(14, 19, 32, .045), 0 1px 2px rgba(20, 32, 70, .06), 0 10px 24px -18px rgba(20, 32, 70, .3);
-  --a-sel: color-mix(in srgb, var(--a-accent) 11%, transparent); }
-:root[data-theme="dark"] .atlas { --a-sheet: rgba(20, 24, 34, .66); --a-group: rgba(32, 37, 51, .9); --a-sidebar: rgba(16, 19, 28, .7);
-  --a-hairline: rgba(255, 255, 255, .07); --a-group-shadow: 0 0 0 1px rgba(255, 255, 255, .05), 0 12px 30px -20px rgba(0, 0, 0, .9);
-  --a-sel: color-mix(in srgb, var(--a-accent) 16%, transparent); }
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme]) .atlas { --a-sheet: rgba(20, 24, 34, .66); --a-group: rgba(32, 37, 51, .9); --a-sidebar: rgba(16, 19, 28, .7);
-    --a-hairline: rgba(255, 255, 255, .07); --a-group-shadow: 0 0 0 1px rgba(255, 255, 255, .05), 0 12px 30px -20px rgba(0, 0, 0, .9);
-    --a-sel: color-mix(in srgb, var(--a-accent) 16%, transparent); }
-}
-@media (prefers-reduced-transparency: reduce) { .atlas { --a-sheet: var(--a-bg); --a-group: var(--a-glass-3); --a-sidebar: var(--a-glass-3); } }
+/* Sheet, group, sidebar, hairline and selection colours live in tokens.css. */
 
 /* Browser surfaces */
 .atlas ::selection { background: color-mix(in srgb, var(--a-accent) 24%, transparent); color: inherit; }

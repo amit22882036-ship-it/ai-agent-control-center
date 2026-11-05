@@ -123,21 +123,23 @@ test('"need you" goes to the next question, keeping the Work view unless it woul
   await open(page, 'settings')
   await expect(page.locator('.a-bell')).toHaveAccessibleName(/1 waiting for your reply/)
   await expect(page.locator('.a-bell')).not.toHaveAccessibleName(/isn’t known yet/)
-  await page.getByRole('button', { name: '1 needs you. Go to the next one' }).click()
+  await page.getByRole('button', { name: '1 question for you. Go to the next one' }).click()
   await expect(page).toHaveURL(/#\/work\?task=quoted$/)
   await expect(answer(page)).toBeFocused()
   // From a Work view that hides it (the Done filter), the filter is cleared and nothing else.
   await open(page, 'work?filter=done&lens=map')
   await expect(page.locator('.a-mappane')).toBeVisible()  // The task list has been read.
-  await page.getByRole('button', { name: '1 needs you. Go to the next one' }).click()
+  await page.getByRole('button', { name: '1 question for you. Go to the next one' }).click()
   await expect(page).toHaveURL(/#\/work\?lens=map&task=quoted$/)
 })
 
 test('Work moves between the tasks that need you in the List’s order, in both views, with A and Shift A', async ({ page }) => {
   await open(page, 'work')
   const bar = page.getByRole('navigation', { name: 'Tasks that need you' })
-  await expect(bar).toContainText('2 tasks need you')
-  await bar.getByRole('button', { name: 'Go to the first task that needs you' }).click()
+  // The Now strip counts them; the stepping bar appears once you are on one of them.
+  await expect(page.getByRole('group', { name: 'What is happening' }).getByRole('button', { name: '2 Need you' })).toBeVisible()
+  await expect(bar).toHaveCount(0)
+  await page.getByRole('button', { name: 'Go to the first task that needs you' }).click()
   await expect(page).toHaveURL(/task=quoted/)
   await expect(bar).toContainText('1 of 2 that need you · Waiting for your reply')
   await bar.getByRole('button', { name: 'Next task that needs you' }).click()
@@ -215,8 +217,9 @@ test('when not every task is loaded, the counts say what they cover and where th
   await expect(panel(page)).toContainText('The backend counts 1 waiting for a reply; 1 may be on older pages that aren’t loaded.')
   await page.keyboard.press('Escape')
   await bar.getByRole('button', { name: 'Look on older pages' }).click()
-  await expect(bar).toContainText('2 tasks need you')
-  await expect(bar).not.toContainText('older pages')
+  // Everything is loaded: the strip has the whole count and the bar has nothing left to add.
+  await expect(page.getByRole('group', { name: 'What is happening' }).getByRole('button', { name: '2 Need you' })).toBeVisible()
+  await expect(bar).toHaveCount(0)
 })
 
 test('backend unavailable: the panel says so, keeps the last answer and offers no update actions', async ({ page }) => {

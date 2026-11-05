@@ -39,3 +39,39 @@ export function readMapDirection(storage) {
 export function saveMapDirection(direction, storage) {
   try { (storage ?? globalThis.localStorage)?.setItem(MAP_DIRECTION_KEY, direction === 'right' ? 'right' : 'down') } catch { /* Optional. */ }
 }
+
+// Whether the Work sheet lists finished families or only offers to ("open", "closed" or unset).
+export const FINISHED_KEY = 'control-center.atlas.finished-open'
+export function readFinishedOpen(storage) {
+  try { const value = (storage ?? globalThis.localStorage)?.getItem(FINISHED_KEY); return value === 'open' ? true : value === 'closed' ? false : null } catch { return null }
+}
+export function saveFinishedOpen(open, storage) {
+  try { (storage ?? globalThis.localStorage)?.setItem(FINISHED_KEY, open ? 'open' : 'closed') } catch { /* Optional. */ }
+}
+
+// What the person has looked at: when they last cleared "changed" marks, and when they last opened
+// each Task (bounded, newest kept). Per browser; nothing is sent anywhere.
+export const SEEN_KEY = 'control-center.atlas.seen'
+const SEEN_LIMIT = 3000
+export function readSeen(storage) {
+  try {
+    const value = JSON.parse((storage ?? globalThis.localStorage)?.getItem(SEEN_KEY) || 'null')
+    if (value && typeof value.since === 'string') return { since: value.since, opened: value.opened && typeof value.opened === 'object' ? value.opened : {} }
+  } catch { /* Start fresh. */ }
+  return null
+}
+export function saveSeen(seen, storage) {
+  try {
+    const entries = Object.entries(seen.opened || {}).sort((a, b) => (a[1] < b[1] ? 1 : -1)).slice(0, SEEN_LIMIT)
+    ;(storage ?? globalThis.localStorage)?.setItem(SEEN_KEY, JSON.stringify({ since: seen.since, opened: Object.fromEntries(entries) }))
+  } catch { /* Optional. */ }
+}
+
+// Tasks opened recently, newest first, for "Go to".
+export const RECENT_KEY = 'control-center.atlas.recent'
+export function readRecent(storage) {
+  try { const value = JSON.parse((storage ?? globalThis.localStorage)?.getItem(RECENT_KEY) || '[]'); return Array.isArray(value) ? value.filter((item) => typeof item === 'string').slice(0, 12) : [] } catch { return [] }
+}
+export function saveRecent(list, storage) {
+  try { (storage ?? globalThis.localStorage)?.setItem(RECENT_KEY, JSON.stringify(list.slice(0, 12))) } catch { /* Optional. */ }
+}

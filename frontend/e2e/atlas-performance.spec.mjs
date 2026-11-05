@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test'
 import { announceChange, openApp } from './harness.mjs'
-import { large, showcase } from './scenarios.mjs'
+import { busy, large, showcase } from './scenarios.mjs'
 
 // Measured interactions in the production build with synthetic workspaces. Each one is timed inside
 // the page, from the event to the second animation frame after it (React's update, style, layout
@@ -10,7 +10,11 @@ const sizes = {
   100: () => large({ families: 5, width: 19 }),
   1000: () => large({ families: 50, width: 19 }),
   5000: () => large({ families: 250, width: 19 }),
+  // Mixed projects, states and hierarchies (a few hundred and about two thousand tasks).
+  'busy 120': () => busy({ families: 120 }),
+  'busy 600': () => busy({ families: 600 }),
 }
+const nth = (index) => `document.querySelectorAll('.a-sheet .a-row--root')[${index}].click()`
 
 // Runs `source` in the page and returns the milliseconds until two frames later.
 function inPage(page, source, value) {
@@ -32,8 +36,11 @@ async function measure(page, tasks) {
   await openApp(page, { path: '/#/work', tasks })
   await expect(page.locator('.a-row').first()).toBeVisible()
   const result = { tasks: tasks.tasks.length, load: Date.now() - start }
-  result.select = await inPage(page, click('.a-outline .a-tcard:nth-of-type(2) .a-row'))
-  result.reselect = await inPage(page, click('.a-outline .a-tcard:nth-of-type(3) .a-row'))
+  result.select = await inPage(page, nth(1))
+  result.reselect = await inPage(page, nth(2))
+  result.drawnRows = await page.evaluate(() => document.querySelectorAll('.a-sheet [role="treeitem"]').length)
+  result.scrollToEnd = await inPage(page, "const sheet = document.querySelector('.a-sheet'); sheet.scrollTop = sheet.scrollHeight")
+  result.scrollBack = await inPage(page, "document.querySelector('.a-sheet').scrollTop = 0")
   result.toMap = await inPage(page, key('m'))
   result.mapZoom = await inPage(page, "document.querySelector('.a-mappane').dispatchEvent(new KeyboardEvent('keydown', { key: '+', bubbles: true }))")
   result.toList = await inPage(page, key('l'))
@@ -64,7 +71,8 @@ test('large workspaces: load, List, Map, selection, search, navigation and refre
     tasks.tasks.push(...showcase().tasks.filter((item) => item.task_id === 'quoted' || item.task_id === 'csv'))
     tasks.total = tasks.tasks.length
     const result = await measure(page, tasks)
-    results.push({ size: Number(size), ...result })
+    results.push({ size, ...result })
+    expect(result.drawnRows, `rows drawn at ${size}`).toBeLessThan(120)
     expect(result.select, `select at ${size}`).toBeLessThan(4000)
     expect(result.toMap, `map at ${size}`).toBeLessThan(6000)
     await page.unroute('**/*')

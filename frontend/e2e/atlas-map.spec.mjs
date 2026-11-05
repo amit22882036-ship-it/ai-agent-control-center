@@ -136,9 +136,11 @@ test('focus a branch from the details, with F, and leave it with Escape; both vi
 
 test('status, project, colour and search filters narrow the map exactly as they narrow the list', async ({ page }) => {
   await openWork(page, '?lens=map')
-  await page.getByRole('radio', { name: /Needs you/ }).click()
-  await expect(mapTree(page).getByRole('treeitem')).toHaveCount(6) // the CSV family (5) and the migration
-  await page.getByRole('radio', { name: /^All/ }).click()
+  const now = page.getByRole('group', { name: 'What is happening' })
+  await now.getByRole('button', { name: /Need you$/ }).click()
+  // The tasks that need you and the path to them: the CSV lead, its question, and the migration.
+  await expect(mapTree(page).getByRole('treeitem')).toHaveCount(3)
+  await now.getByRole('button', { name: /Task families$/ }).click()
   await page.getByRole('button', { name: /Colour · Any/ }).click()
   await page.getByRole('dialog', { name: 'Filter by agent colour' }).getByRole('checkbox', { name: 'Green' }).check()
   await page.keyboard.press('Escape')

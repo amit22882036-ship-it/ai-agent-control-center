@@ -3,7 +3,7 @@ import Icon from '../Icon'
 import { Button } from '../primitives'
 import { MenuButton } from '../overlays'
 import RenameField from './RenameField'
-import { dropProject, moveProject } from '../../model/projects.mjs'
+import { dropProject, moveProject, projectHue } from '../../model/projects.mjs'
 
 const reduced = () => typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
 // A critically damped spring (no overshoot) as a CSS easing, for reflowing plates; the dropped plate
@@ -191,7 +191,7 @@ export default function ProjectPlates({ projects, order, stats, onCommit, onRena
               ? <RenameField value={project.name} label={`New name for ${project.name}`} onSave={(name) => onRename(project, name)}
                 onDone={() => setRenaming(null)} />
               : <button type="button" className="a-plate-name a-bidi" dir="auto" onClick={() => onOpen(project)}
-                title="Show this project's work">{project.name}</button>}
+                title="Show this project's work"><span className="a-ptile" aria-hidden="true" style={{ '--hue': projectHue(project.id) }} />{project.name}</button>}
             <span className="a-plate-path a-mono" title={project.path}>{project.path}</span>
             <span className="a-plate-quiet">{stat.tasks} task{stat.tasks === 1 ? '' : 's'} in {stat.families} famil{stat.families === 1 ? 'y' : 'ies'}</span>
           </div>

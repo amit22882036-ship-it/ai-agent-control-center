@@ -5,19 +5,65 @@ import { helpersView, integrationView, plannedView, resultView, taskStatus } fro
 import { AGENT_COLORS, TOOLS } from '../vocabulary.mjs'
 
 export const SECTIONS = [
-  { key: 'needs', label: 'Needs your attention' },
+  { key: 'needs', label: 'Needs you' },
   { key: 'active', label: 'Open' },
-  { key: 'done', label: 'Completed and history' },
+  { key: 'done', label: 'History' },
 ]
+// What the person can scope Work to. Family scopes keep whole task families (Open, Done,
+// Canceled); task scopes keep the tasks in one state and the path to them (Need you, Working,
+// Waiting, On hold, Not started), so a busy family shows only the part that matters.
 export const FILTERS = [
   { value: 'all', label: 'All' },
-  { value: 'needs', label: 'Needs you' },
+  { value: 'needs', label: 'Need you', task: true },
+  { value: 'working', label: 'Working', task: true },
+  { value: 'waiting', label: 'Waiting', task: true },
+  { value: 'held', label: 'On hold', task: true },
+  { value: 'pending', label: 'Not started', task: true },
   { value: 'active', label: 'Open' },
   { value: 'done', label: 'Done' },
   { value: 'canceled', label: 'Canceled' },
 ]
+const TASK_SCOPES = new Set(FILTERS.filter((scope) => scope.task).map((scope) => scope.value))
 // States in which nothing more happens without someone acting.
 const ENDED = new Set(['completed', 'integrated', 'canceled', 'stopped'])
+const WAITING = new Set(['waiting_helpers', 'provider_wait', 'waiting'])
+const HELD = new Set(['blocked', 'paused', 'removing'])
+
+// One word for where a Task stands, from reported facts only:
+//   needs     waiting for the person (a question, a new owner, an inspection, combining)
+//   working   its current agent is running (working, or reviewing helper results)
+//   waiting   waiting for helpers, for the provider, or for something unreported
+//   held      blocked, paused or being removed: nothing continues until that changes
+//   pending   not started (or returned to not started)
+//   done      completed, applied, integrated or stopped
+//   canceled  canceled
+export function taskCategory(derived, id) {
+  const status = derived.status[id]
+  if (!status) return 'pending'
+  if (status.attention || derived.integration[id]?.attention) return 'needs'
+  if (status.key === 'canceled') return 'canceled'
+  if (ENDED.has(status.key)) return 'done'
+  const agent = derived.agents[id]?.current
+  if ((status.key === 'running' || status.key === 'reviewing') && agent && !agent.unknown && agent.status === 'running') return 'working'
+  if (WAITING.has(status.key) || status.key === 'running' || status.key === 'reviewing') return 'waiting'
+  if (HELD.has(status.key)) return 'held'
+  return 'pending'
+}
+
+// How many loaded Tasks are in each state (in one project, or everywhere).
+export function taskCounts(store, derived, project = null) {
+  const out = { tasks: 0, needs: 0, working: 0, waiting: 0, held: 0, pending: 0, done: 0, canceled: 0 }
+  for (const id of Object.keys(store.tasks)) {
+    if (project && store.tasks[id].projectId !== project) continue
+    out.tasks += 1
+    out[taskCategory(derived, id)] += 1
+  }
+  return out
+}
+
+export function isTaskScope(filter) {
+  return TASK_SCOPES.has(filter)
+}
 
 export const PLACEMENT_NOTES = {
   parent_not_loaded: 'Its lead is on a page that isn’t loaded yet',
@@ -95,7 +141,7 @@ export function canceledFamily(derived, family) {
 }
 
 function inFilter(derived, family, filter) {
-  if (filter === 'all') return true
+  if (filter === 'all' || filter === 'changed' || TASK_SCOPES.has(filter)) return true
   if (filter === 'active') return family.section !== 'done'
   if (filter === 'canceled') return canceledFamily(derived, family)
   if (filter === 'done') return family.section === 'done' && !canceledFamily(derived, family)
@@ -116,13 +162,35 @@ export function rowColor(derived, id) {
   return agent.color || 'neutral'
 }
 
+// The Tasks that need the person and every loaded Task above them: the "marked" paths a busy
+// family is pruned to, so the Task that needs you shows without the rest of its team.
+export function markedPaths(store, derived) {
+  const marked = new Set()
+  for (const id of Object.keys(store.tasks)) {
+    if (taskCategory(derived, id) !== 'needs') continue
+    marked.add(id)
+    let parent = derived.forest.parent[id]
+    const seen = new Set([id])
+    while (parent && !seen.has(parent)) { marked.add(parent); seen.add(parent); parent = derived.forest.parent[parent] }
+  }
+  return marked
+}
+
 // `focus` (a loaded Task id) narrows the view to that Task's branch: it becomes the only family,
 // at depth 0, whatever its section or project, and search and colour still apply inside it.
-export function visibleRows(store, derived, { expanded = new Set(), filter = 'all', project = null, query = '', colors = null, focus = null } = {}) {
+// `prune` holds Task ids whose children are reduced to the marked paths (`marked`); a row then
+// says how many of its children are not shown (`hiddenChildren`).
+// `changed` (a predicate) is used by the "changed" scope: Tasks whose record changed since the
+// person last looked.
+export function visibleRows(store, derived, { expanded = new Set(), filter = 'all', project = null, query = '', colors = null, focus = null,
+  prune = null, marked = null, changed = null } = {}) {
   const q = query.trim().toLowerCase()
   const colorSet = colors && colors.size ? colors : null
-  const narrowing = Boolean(q || colorSet)
+  const scoped = TASK_SCOPES.has(filter)
+  const changedScope = filter === 'changed' && typeof changed === 'function'
+  const narrowing = Boolean(q || colorSet || scoped || changedScope)
   const matches = (id) => (!q || searchText(store, derived, id).includes(q)) && (!colorSet || colorSet.has(rowColor(derived, id)))
+    && (!scoped || taskCategory(derived, id) === filter) && (!changedScope || changed(id))
   const { forest } = derived
   const keep = new Set()
   if (narrowing) {
@@ -137,9 +205,15 @@ export function visibleRows(store, derived, { expanded = new Set(), filter = 'al
   const familyRows = (topId) => {
     const rows = []
     const walk = (id, depth, guides, last, parentId) => {
-      const children = (forest.children[id] || []).filter((child) => !narrowing || keep.has(child))
+      let children = (forest.children[id] || []).filter((child) => !narrowing || keep.has(child))
+      let hiddenChildren = 0
+      if (!narrowing && prune?.has(id) && marked) {
+        const shown = children.filter((child) => marked.has(child))
+        hiddenChildren = children.length - shown.length
+        children = shown
+      }
       const open = children.length > 0 && (narrowing ? true : expanded.has(id))
-      rows.push({ id, depth, guides, last, parentId, hasChildren: children.length > 0, expanded: open,
+      rows.push({ id, depth, guides, last, parentId, hasChildren: children.length > 0 || hiddenChildren > 0, expanded: open, hiddenChildren: open ? hiddenChildren : 0,
         match: narrowing ? matches(id) : false, setSize: 0, position: 0 })
       if (!open) return
       children.forEach((child, index) => walk(child, depth + 1, depth > 0 ? [...guides, !last] : [], index === children.length - 1, id))

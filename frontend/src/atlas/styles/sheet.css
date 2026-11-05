@@ -1,0 +1,235 @@
+/* Light table: the film-black rail, the Work sheet (virtualized rows over one scroller), the Now
+   strip, the grease-pencil mark and Go to. Every rule is scoped to .atlas; state rules keep three
+   class-level selectors so the classic stylesheet's element rules never win. */
+
+/* ------------------------------------------------------------------ film rail */
+.atlas .a-app--lumen .a-rail { background: var(--a-film); color: var(--a-film-text);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, .06) inset, 0 0 0 1px rgba(0, 0, 0, .35), 0 24px 48px -28px rgba(0, 0, 0, .6); }
+.atlas .a-app--lumen .a-rail.is-open { background: var(--a-film); box-shadow: 0 1px 0 rgba(255, 255, 255, .06) inset, 0 0 0 1px rgba(0, 0, 0, .35), 0 30px 70px -30px rgba(0, 0, 0, .7); }
+.atlas .a-app--lumen .a-rail .a-rail-link { color: var(--a-film-text); }
+.atlas .a-app--lumen .a-rail .a-rail-link:hover { color: var(--a-film-strong); background: var(--a-film-2); }
+.atlas .a-app--lumen .a-rail .a-rail-link[aria-current="page"] { color: var(--a-film-strong); }
+.atlas .a-app--lumen .a-rail .a-rail-link:focus-visible { outline: 2px solid var(--a-edge-print); outline-offset: -2px; }
+.atlas .a-app--lumen .a-rail-puck { background: var(--a-film-3); box-shadow: 0 1px 0 rgba(255, 255, 255, .07) inset; }
+.atlas .a-app--lumen .a-rail-puck::before { content: ""; position: absolute; left: -8px; top: 13px; bottom: 13px; width: 3px; border-radius: 0 3px 3px 0;
+  background: var(--a-edge-print); }
+.atlas .a-app--lumen .a-rail-text small { color: color-mix(in srgb, var(--a-film-text) 78%, transparent); }
+.atlas .a-app--lumen .a-rail .a-rail-link.has-mark small { color: var(--a-edge-print); }
+.atlas .a-app--lumen .a-rail-head { color: color-mix(in srgb, var(--a-film-text) 70%, transparent); }
+.atlas .a-app--lumen .a-rail-sep { background: rgba(255, 255, 255, .08); }
+.atlas .a-app--lumen .a-rail-dot { background: var(--a-mark); box-shadow: 0 0 0 2px var(--a-film); }
+.atlas .a-app--lumen .a-rail .a-rail-tile { color: oklch(.93 .05 var(--hue, 250)); background: oklch(.36 .07 var(--hue, 250));
+  box-shadow: inset 0 0 0 1px oklch(.55 .09 var(--hue, 250) / .55); }
+.atlas .a-app--lumen .a-rail .a-rail-project.is-live .a-rail-tile { box-shadow: inset 0 0 0 1.4px var(--a-live), 0 0 12px -3px var(--a-live); }
+.atlas .a-app--lumen .a-rail .a-rail-project.is-need .a-rail-tile { color: #fff; background: oklch(.36 .07 var(--hue, 250)); box-shadow: inset 0 0 0 1.6px var(--a-mark); }
+.atlas .a-app--lumen .a-rail .a-rail-project.is-need small { color: var(--a-edge-print); }
+.atlas .a-app--lumen .a-rail .a-rail-project[aria-current="true"] .a-rail-tile { box-shadow: 0 0 0 2px var(--a-film), 0 0 0 3.5px var(--a-film-strong); }
+.atlas .a-app--lumen .a-rail .a-rail-muted { color: color-mix(in srgb, var(--a-film-text) 80%, transparent); }
+
+/* ------------------------------------------------------------------ Now strip */
+.atlas .a-now { display: flex; align-items: stretch; gap: 4px; padding: 10px 14px 8px; flex: none; min-width: 0; overflow-x: auto; scrollbar-width: none; }
+.atlas .a-now-item { position: relative; display: grid; align-content: center; justify-items: start; gap: 2px; min-width: 92px; padding: 8px 14px 9px;
+  border-radius: 16px; text-align: left; color: var(--a-text-2); background: transparent;
+  transition: background-color .18s ease, box-shadow .18s ease, color .18s ease; }
+.atlas .a-now .a-now-item:hover { background: var(--a-hover); color: var(--a-text); }
+.atlas .a-now .a-now-item[aria-pressed="true"] { background: var(--a-group); color: var(--a-text); box-shadow: var(--a-group-shadow); }
+.atlas .a-now .a-now-item:focus-visible { outline: 2px solid var(--a-accent); outline-offset: 2px; }
+.atlas .a-now-n { position: relative; display: inline-flex; align-items: center; gap: 7px; font: 700 23px/1.05 var(--a-display);
+  letter-spacing: -.02em; color: var(--a-text); font-variant-numeric: tabular-nums; }
+.atlas .a-now-l { font-size: 12.5px; font-weight: 560; color: var(--a-text-3); white-space: nowrap; }
+.atlas .a-now .a-now-item.is-zero .a-now-n { color: var(--a-text-4); }
+.atlas .a-now .a-now-item.is-zero .a-bead { opacity: .45; }
+.atlas .a-now .a-now-item--needs:not(.is-zero) .a-now-n { color: var(--a-ask); }
+.atlas .a-now .a-now-item--working:not(.is-zero) .a-now-n { color: var(--a-work); }
+.atlas .a-now-sep { flex: none; width: 1px; margin: 10px 6px; background: var(--a-hairline); }
+.atlas .a-now-item--all .a-now-n { font-size: 23px; }
+.atlas .a-now-changed { display: inline-flex; align-items: center; gap: 2px; }
+.atlas .a-now-clear { font-size: 12.5px; margin: 0 10px 0 2px; white-space: nowrap; }
+.atlas .a-now-mark { width: 46px; height: 38px; left: -16px; top: 50%; translate: 0 -50%; }
+
+/* ------------------------------------------------------------------ the grease-pencil mark */
+.atlas .a-mark { position: absolute; width: 40px; height: 33px; left: 50%; top: 50%; translate: -50% -50%; overflow: visible; pointer-events: none; z-index: 0; }
+.atlas .a-mark path { fill: none; stroke: var(--a-mark); stroke-width: 2.3; stroke-linecap: round; stroke-linejoin: round; vector-effect: non-scaling-stroke; opacity: .92; }
+.atlas .a-mark.is-fresh path { stroke-dasharray: 100; stroke-dashoffset: 100; animation: atlas-mark-draw .62s cubic-bezier(.35, .6, .25, 1) .12s forwards; }
+@keyframes atlas-mark-draw { to { stroke-dashoffset: 0; } }
+
+/* ------------------------------------------------------------------ the sheet */
+.atlas .a-app--lumen .a-outline.a-sheet { position: absolute; inset: 0; overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain;
+  padding: 0; background: transparent; outline: none; contain: strict; }
+.atlas .a-sheet-space { position: relative; width: 100%; }
+.atlas .a-sheet .a-row, .atlas .a-sheet .a-sheet-sec, .atlas .a-sheet .a-sheet-day, .atlas .a-sheet .a-sheet-reveal, .atlas .a-sheet .a-sheet-more {
+  position: absolute; left: 14px; right: 14px; top: 0; will-change: transform; }
+.atlas .a-sheet .a-ol-more { position: relative; display: flex; align-items: center; justify-content: center; gap: 12px; padding: 0 18px 28px; margin-top: -40px; }
+.atlas .a-sheet .a-ol-empty { position: absolute; top: 18px; left: 20px; right: 20px; }
+
+/* Sections and days */
+.atlas .a-sheet .a-sheet-sec { display: flex; align-items: flex-end; gap: 8px; padding: 0 16px 10px; color: var(--a-text-2);
+  font: 650 13.5px/1 var(--a-font); letter-spacing: -.005em; }
+.atlas .a-sheet .a-sheet-sec .a-ol-n { color: var(--a-text-4); font-weight: 600; }
+.atlas .a-sheet .a-sheet-sec.a-sheet-sec--needs { color: var(--a-ask); }
+.atlas .a-sheet .a-sheet-sec.a-sheet-sec--done { color: var(--a-text-3); }
+.atlas .a-sheet .a-sheet-sec-toggle { margin-left: auto; padding: 4px 10px; border-radius: 999px; font-size: 12.5px; font-weight: 600;
+  color: var(--a-text-3); }
+.atlas .a-sheet .a-sheet-sec-toggle:hover { color: var(--a-text); background: var(--a-hover-2); }
+.atlas .a-sheet .a-sheet-day { display: flex; align-items: center; gap: 10px; padding: 0 18px 0 56px; background: var(--a-group);
+  font: 600 11.5px/1 var(--a-mono); letter-spacing: .02em; color: var(--a-text-3); }
+.atlas .a-sheet .a-sheet-day::after { content: ""; flex: 1; height: 1px; background: var(--a-hairline); }
+.atlas .a-sheet .a-sheet-reveal { display: flex; align-items: flex-start; justify-content: center; }
+.atlas .a-sheet .a-sheet-reveal button { display: inline-flex; align-items: center; gap: 8px; height: 38px; padding: 0 18px; border-radius: 999px;
+  font-size: 13px; font-weight: 600; color: var(--a-text-2); background: var(--a-group); box-shadow: var(--a-group-shadow);
+  transition: color .16s ease, box-shadow .16s ease; }
+.atlas .a-sheet .a-sheet-reveal button:hover { color: var(--a-text); box-shadow: var(--a-shadow-2); }
+.atlas .a-sheet .a-sheet-more { display: flex; align-items: center; padding-left: calc(64px + var(--depth, 1) * 22px); background: var(--a-group); }
+.atlas .a-sheet .a-sheet-more button { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; font-weight: 600; color: var(--a-text-3);
+  padding: 4px 10px; border-radius: 999px; }
+.atlas .a-sheet .a-sheet-more button:hover { color: var(--a-text); background: var(--a-hover-2); }
+
+/* The paper the rows sit on: one sheet per section, hairlines between families. */
+.atlas .a-sheet .a-row, .atlas .a-sheet .a-sheet-day, .atlas .a-sheet .a-sheet-more { background: var(--a-group); }
+.atlas .a-sheet .is-first { border-top-left-radius: 18px; border-top-right-radius: 18px; box-shadow: 0 -1px 0 var(--a-line-3); }
+.atlas .a-sheet .is-last { border-bottom-left-radius: 18px; border-bottom-right-radius: 18px; box-shadow: 0 10px 22px -18px rgba(16, 20, 34, .35), 0 1px 0 var(--a-line-3); }
+.atlas .a-sheet .is-first.is-last { box-shadow: var(--a-group-shadow); }
+.atlas .a-sheet .a-row.a-row--root:not(.is-first)::before { content: ""; position: absolute; top: 0; left: 56px; right: 16px; height: 1px; background: var(--a-hairline); }
+
+/* Rows: one shared baseline, so state marks, agents and times align down the sheet. */
+.atlas .a-sheet .a-row { display: grid; grid-template-columns: minmax(0, 2.1fr) 150px 196px minmax(0, 1.5fr) 74px; column-gap: 16px;
+  align-items: center; padding: 0 16px 0 10px; cursor: pointer; isolation: isolate; outline: none; }
+.atlas .a-sheet .a-row::after { content: ""; position: absolute; inset: 3px 6px; z-index: -1; border-radius: 13px; background: transparent;
+  transition: background-color .16s ease, box-shadow .16s ease; }
+.atlas .a-sheet .a-row:hover::after { background: var(--a-hover); }
+.atlas .a-sheet .a-row.is-selected::after { background: var(--a-sel); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--a-accent) 24%, transparent); }
+.atlas .a-sheet .a-row.is-selected::before { content: none; }
+.atlas .a-sheet .a-row:focus-visible::after { box-shadow: inset 0 0 0 2px var(--a-accent); }
+.atlas .a-sheet .a-row:focus-visible { box-shadow: none; }
+.atlas .a-sheet .a-row.is-hl::after { background: var(--a-hover-2); }
+.atlas .a-sheet .a-row-bead { position: relative; width: 26px; height: 26px; margin-right: 10px; display: grid; place-items: center; }
+.atlas .a-sheet .a-row-bead .a-bead { position: relative; z-index: 1; }
+.atlas .a-sheet .a-r-title { font-weight: 600; letter-spacing: -.006em; padding: 0; }
+.atlas .a-sheet .a-row.a-row--root .a-r-title .a-t { font: 650 15px/1.25 var(--a-font); letter-spacing: -.014em; }
+.atlas .a-sheet .a-row.a-row--member .a-r-title .a-t { font-size: 14px; }
+.atlas .a-sheet .a-r-title .a-sub { display: flex; align-items: center; gap: 0; margin-top: 3px; font-size: 12px; }
+.atlas .a-sheet .a-pdot { flex: none; width: 7px; height: 7px; margin-right: 6px; border-radius: 50%; background: oklch(.66 .13 var(--hue, 250)); }
+.atlas .a-sheet .a-c-time { font: 500 12px/1 var(--a-mono); color: var(--a-text-3); text-align: right; letter-spacing: -.01em; }
+.atlas .a-sheet .a-changed { display: inline-block; width: 6px; height: 6px; margin: 0 6px 1px 0; border-radius: 50%; background: var(--a-accent);
+  box-shadow: 0 0 0 3px var(--a-accent-soft); }
+.atlas .a-sheet .a-c-now .a-l { font-weight: 560; }
+.atlas .a-sheet .a-row.is-marked .a-c-now .a-l { color: var(--a-ask); font-weight: 650; }
+
+/* The team strip: how many of the family's tasks are in each state. */
+.atlas .a-c-team { display: flex; align-items: center; gap: 9px; min-width: 0; overflow: hidden; }
+.atlas .a-tm { display: inline-flex; align-items: center; gap: 4px; font: 600 12px/1 var(--a-mono); color: var(--a-text-2); white-space: nowrap; }
+.atlas .a-tm.a-tm--needs { color: var(--a-ask); }
+.atlas .a-tm.a-tm--working { color: var(--a-work); }
+.atlas .a-tm.a-tm--done, .atlas .a-tm.a-tm--canceled { color: var(--a-text-3); }
+
+/* Finished work recedes; canceled work is struck through (lumen.css). */
+.atlas .a-sheet .a-row.is-finished .a-r-title .a-t { color: var(--a-text-2); font-weight: 560; }
+.atlas .a-sheet .a-row.is-finished .a-c-who .a-avatar { filter: saturate(.35); opacity: .78; }
+.atlas .a-sheet .a-row.is-finished .a-c-now .a-l { color: var(--a-text-3); }
+
+/* The side list beside the Map: titles only. */
+.atlas .a-side .a-sheet .a-row { grid-template-columns: minmax(0, 1fr); padding-right: 10px; }
+.atlas .a-side .a-sheet .a-row, .atlas .a-side .a-sheet .a-sheet-sec, .atlas .a-side .a-sheet .a-sheet-day, .atlas .a-side .a-sheet .a-sheet-more,
+.atlas .a-side .a-sheet .a-sheet-reveal { left: 8px; right: 8px; }
+
+/* Narrower windows drop columns from the right edge inwards, never the task or its state. */
+@container atlas-work (max-width: 1180px) {
+  .atlas .a-sheet .a-row { grid-template-columns: minmax(0, 2fr) 196px minmax(0, 1.4fr) 70px; }
+  .atlas .a-sheet .a-row .a-c-team { display: none; }
+}
+@container atlas-work (max-width: 900px) {
+  .atlas .a-sheet .a-row { grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr) 64px; }
+  .atlas .a-sheet .a-row .a-c-who { display: none; }
+}
+@container atlas-work (max-width: 560px) {
+  .atlas .a-sheet .a-row { grid-template-columns: minmax(0, 1fr) 58px; }
+  .atlas .a-sheet .a-row .a-c-now { display: none; }
+  .atlas .a-now-item { min-width: 72px; padding: 6px 10px 7px; }
+  .atlas .a-now-n { font-size: 19px; }
+}
+
+/* ------------------------------------------------------------------ attention stepper */
+.atlas .a-app--lumen .a-attnbar { margin: 0 14px 8px; min-height: 40px; padding: 4px 6px 4px 14px; border-radius: 14px;
+  background: var(--a-ask-soft); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--a-mark) 22%, transparent); }
+.atlas .a-app--lumen .a-attnbar-text { color: var(--a-ask); font-weight: 650; }
+
+/* ------------------------------------------------------------------ Go to */
+.atlas .a-dialog.a-goto { width: min(680px, calc(100vw - 32px)); max-height: min(560px, calc(100vh - 120px)); padding: 0; margin: 12vh auto auto;
+  flex-direction: column; overflow: hidden; border-radius: 22px; }
+.atlas .a-dialog.a-goto[open] { display: flex; }
+.atlas .a-goto-field { display: flex; align-items: center; gap: 12px; padding: 16px 18px; border-bottom: 1px solid var(--a-hairline); color: var(--a-text-3); }
+.atlas .a-goto-field input { flex: 1; min-width: 0; border: 0; outline: none; background: transparent; color: var(--a-text);
+  font: 560 18px/1.3 var(--a-font); letter-spacing: -.01em; }
+.atlas .a-goto-list { overflow-y: auto; padding: 6px 8px 10px; overscroll-behavior: contain; }
+.atlas .a-goto-head { padding: 12px 12px 6px; font: 600 11.5px/1 var(--a-mono); letter-spacing: .02em; color: var(--a-text-3); }
+.atlas .a-goto-item { display: grid; grid-template-columns: 28px minmax(0, 1fr) auto 16px; align-items: center; gap: 10px; min-height: 48px;
+  padding: 6px 12px; border-radius: 12px; cursor: pointer; color: var(--a-text-3); }
+.atlas .a-goto .a-goto-item[aria-selected="true"] { background: var(--a-sel); color: var(--a-text-2); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--a-accent) 22%, transparent); }
+.atlas .a-goto-icon { display: grid; place-items: center; color: var(--a-text-2); }
+.atlas .a-goto-text { display: grid; min-width: 0; }
+.atlas .a-goto-text b { font-weight: 620; color: var(--a-text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.atlas .a-goto-text small { font-size: 12.5px; color: var(--a-text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.atlas .a-goto-empty { padding: 22px 14px; color: var(--a-text-3); }
+
+/* ------------------------------------------------------------------ motion preferences */
+@media (prefers-reduced-motion: reduce) {
+  .atlas .a-mark.is-fresh path { animation: none; stroke-dashoffset: 0; }
+  .atlas .a-sheet .a-row::after, .atlas .a-now-item { transition: none; }
+}
+
+/* ------------------------------------------------------------------ refinements */
+/* A marked task shows one mark: the grease circle around a hand drawn in the same marker. */
+.atlas .a-sheet .a-row.is-marked .a-row-bead .a-bead circle:first-child { fill: transparent; }
+.atlas .a-sheet .a-row.is-marked .a-row-bead .a-bead path { stroke: var(--a-mark); stroke-width: 1.35; }
+/* The section being read stays named while its heading is out of view. */
+.atlas .a-sheet-pin { position: sticky; top: 0; height: 0; z-index: 4; pointer-events: none; }
+.atlas .a-sheet-pin-label { position: absolute; top: 8px; right: 22px; display: inline-flex; align-items: center; gap: 8px; height: 28px; padding: 0 12px;
+  border-radius: 999px; font: 650 12.5px/1 var(--a-font); color: var(--a-text-2); background: var(--a-glass-2);
+  backdrop-filter: var(--a-blur); -webkit-backdrop-filter: var(--a-blur); box-shadow: var(--a-shadow-1); }
+.atlas .a-sheet-pin-label .a-num { color: var(--a-text-4); font-family: var(--a-mono); font-size: 11.5px; }
+.atlas .a-sheet-pin-label.a-sheet-pin--needs { color: var(--a-ask); }
+/* "Go" beside the Need you readout: the first task that needs you, as A does. */
+.atlas .a-now .a-now-go { align-self: center; display: inline-flex; align-items: center; gap: 2px; height: 30px; margin: 0 6px 0 -6px; padding: 0 8px 0 12px;
+  border-radius: 999px; font-size: 13px; font-weight: 650; color: var(--a-ask); background: var(--a-ask-soft); }
+.atlas .a-now .a-now-go:hover { background: color-mix(in srgb, var(--a-mark) 18%, transparent); }
+.atlas .a-now .a-now-go:focus-visible { outline: 2px solid var(--a-accent); outline-offset: 2px; }
+/* The light table: the sheet glows faintly from the top, where the work is. */
+.atlas .a-app--lumen .a-wmain { background: radial-gradient(120% 70% at 50% -10%, color-mix(in srgb, var(--a-ground-1) 92%, transparent), transparent 62%), var(--a-sheet); }
+.atlas .a-now .a-now-mark { width: 66px; height: 42px; left: -12px; top: 50%; translate: 0 -50%; }
+.atlas .a-now .a-now-item--needs:not(.is-zero) .a-bead circle:first-child { fill: transparent; }
+.atlas .a-now .a-now-item--needs:not(.is-zero) .a-bead path { stroke: var(--a-mark); stroke-width: 1.35; }
+
+/* ------------------------------------------------------------------ the Map: the chosen family burns brightest */
+.atlas .a-mappane .a-minner.has-anchor .a-mzone:not(.is-current) { opacity: .5; }
+.atlas .a-mappane .a-minner.has-anchor .a-gn.is-away:not(:hover):not(:focus-visible),
+.atlas .a-mappane .a-minner.has-anchor .a-gr.is-away:not(:hover):not(:focus-visible) { filter: grayscale(.9); opacity: .82; }
+.atlas .a-mappane .a-mzone, .atlas .a-mappane .a-gn, .atlas .a-mappane .a-gr { transition: opacity .24s ease; }
+.atlas .a-mappane .a-mzone.is-current { box-shadow: 0 0 0 1.5px var(--a-accent-line), 0 18px 40px -26px rgba(16, 20, 34, .35); }
+@media (prefers-reduced-motion: reduce) { .atlas .a-mappane .a-mzone, .atlas .a-mappane .a-gn, .atlas .a-mappane .a-gr { transition: none; } }
+
+/* ------------------------------------------------------------------ the title bar's Go to */
+.atlas .a-topbar .a-goto-btn { display: inline-flex; align-items: center; gap: 10px; height: 38px; min-width: 260px; padding: 0 8px 0 14px; border-radius: 999px;
+  color: var(--a-text-3); background: var(--a-glass-2); box-shadow: var(--a-shadow-1); font-size: 13.5px; font-weight: 560;
+  backdrop-filter: var(--a-blur); -webkit-backdrop-filter: var(--a-blur); transition: box-shadow .18s ease, color .18s ease; }
+.atlas .a-topbar .a-goto-btn:hover { color: var(--a-text); box-shadow: var(--a-shadow-2); }
+.atlas .a-topbar .a-goto-btn:focus-visible { outline: 2px solid var(--a-accent); outline-offset: 2px; }
+.atlas .a-topbar .a-goto-btn .a-goto-btn-label { flex: 1; text-align: left; }
+@media (max-width: 1100px) { .atlas .a-topbar .a-goto-btn { min-width: 0; } .atlas .a-topbar .a-goto-btn .a-goto-btn-label, .atlas .a-topbar .a-goto-btn .a-kbd { display: none; } }
+
+/* ------------------------------------------------------------------ projects carry their colour */
+.atlas .a-plate .a-ptile { display: inline-block; width: 10px; height: 10px; margin-right: 9px; border-radius: 3.5px; vertical-align: 1px;
+  background: oklch(.62 .14 var(--hue, 250)); box-shadow: inset 0 0 0 1px oklch(.45 .1 var(--hue, 250) / .4); }
+.atlas .a-plate .a-plate-glass { border-radius: 22px; }
+.atlas .a-sheet .a-c-main { overflow: hidden; }
+.atlas .a-sheet .a-g.a-g--deep { width: auto; min-width: 22px; padding: 0 4px; display: grid; place-items: center; font: 600 10.5px/1 var(--a-mono);
+  color: var(--a-text-3); }
+
+/* ------------------------------------------------------------------ the loupe (details panel) */
+.atlas .a-ih-state .a-ih-bead { position: relative; display: grid; place-items: center; width: 18px; height: 18px; }
+.atlas .a-ih-state .a-ih-bead .a-bead { position: relative; z-index: 1; }
+.atlas .a-ih-state .a-ih-bead .a-mark { width: 34px; height: 28px; }
+.atlas .a-ih-state.is-marked .a-ih-bead .a-bead circle:first-child { fill: transparent; }
+.atlas .a-ih-state.is-marked .a-ih-bead .a-bead path { stroke: var(--a-mark); stroke-width: 1.35; }
+.atlas .a-app--lumen .a-work > .a-inspector { animation: atlas-loupe-in .2s ease-out both; }
+@keyframes atlas-loupe-in { from { opacity: .4; } to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .atlas .a-app--lumen .a-work > .a-inspector { animation: none; } }

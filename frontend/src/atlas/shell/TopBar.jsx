@@ -3,7 +3,7 @@ import Icon from '../components/Icon'
 import { IconButton, Kbd } from '../components/primitives'
 import { StatusBead } from '../components/identity'
 import { formatHash } from '../router.mjs'
-import { connectionView, needsYouLabel } from '../status.mjs'
+import { connectionView, questionLabel } from '../status.mjs'
 import { THEME_LABELS, nextTheme } from '../vocabulary.mjs'
 import { bellLabel } from '../model/attention.mjs'
 import NotificationsPanel from './NotificationsPanel'
@@ -26,7 +26,7 @@ export function BrandMark({ size = 28 }) {
 
 // Route links are real anchors (so they can be opened in a new tab); `markPush` tells the shell a
 // click is a new navigation, which starts the page at the top.
-export default function TopBar({ live, appearance, markPush, attention: watch }) {
+export default function TopBar({ live, appearance, markPush, attention: watch, onGoTo }) {
   const { summary, onNext, panel } = watch
   // The backend's own workspace count of questions; the button moves to the next one.
   const needs = summary.reported
@@ -41,9 +41,12 @@ export default function TopBar({ live, appearance, markPush, attention: watch })
   return <header className="a-topbar">
     <a className="a-brand" href={formatHash('work')} onClick={markPush}><BrandMark /><span className="a-brand-name">Control Center</span></a>
     <span className="a-sp" />
+    {onGoTo && <button type="button" className="a-goto-btn" onClick={onGoTo} aria-keyshortcuts="Control+K" title="Go to a task, project or page · Ctrl K">
+      <Icon name="search" size={15} /><span className="a-goto-btn-label">Go to…</span><span aria-hidden="true"><Kbd>Ctrl K</Kbd></span></button>}
+    <span className="a-sp" />
     {needs > 0 && <button type="button" className="a-needs" onClick={onNext} title="Go to the next task waiting for your reply"
-      aria-label={`${needsYouLabel(needs)}. Go to the next one`}>
-      <StatusBead state="ask" decorative /><span className="a-num">{needs}<span className="a-needs-word">{needsYouLabel(needs).slice(String(needs).length)}</span></span>
+      aria-label={`${questionLabel(needs)}. Go to the next one`}>
+      <StatusBead state="ask" decorative /><span className="a-num">{needs}<span className="a-needs-word">{questionLabel(needs).slice(String(needs).length)}</span></span>
       <Icon name="right" size={13} stroke={2.4} /></button>}
     <div className="a-bell-wrap">
       <button ref={bell} type="button" className={`a-iconbtn a-bell${open ? ' is-open' : ''}`} aria-label={label} title={label}

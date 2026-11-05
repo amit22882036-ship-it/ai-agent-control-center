@@ -18,8 +18,10 @@
   src: url('../fonts/jetbrains-mono-latin-ext.woff2') format('woff2');
   unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C4, U+2113, U+2C60-2C7F, U+A720-A7FF; }
 
-/* Daylight: a mist ground, white glass and deep ink. Light means an agent is producing output;
-   amber means a person is needed; everything else stays quiet. */
+/* Light table (daylight): a luminous ground, paper-white sheets and graphite ink, framed by a
+   film-black rail whose numerals are edge-print amber. Colour does jobs, never decoration: marker
+   orange only where the person is needed (the grease-pencil mark), lit green only where an agent
+   is recorded working, ultramarine for selection and focus. */
 .atlas {
   color-scheme: light;
   --a-font: 'Atlas Bricolage Grotesque', 'Atlas Heebo', 'Segoe UI Variable Text', 'Segoe UI', system-ui, sans-serif;
@@ -31,75 +33,92 @@
   --a-spring: linear(0, 0.157 4.6%, 0.48 11.5%, 0.73 19.2%, 0.877 27.5%, 0.953 37%, 0.986 48.5%, 1);
   --a-spring-give: linear(0, 0.21 5%, 0.65 13%, 0.94 21%, 1.04 29%, 1.05 36%, 1.02 46%, 1);
   --a-r: 12px; --a-r-sm: 9px; --a-r-lg: 18px; --a-r-xl: 24px; --a-r-2xl: 30px;
-  --a-bg: #EAEEF4; --a-ground-1: #F4F6FA; --a-ground-2: #E2E8F0;
-  --a-rail: rgba(255, 255, 255, .74); --a-surface: rgba(255, 255, 255, .86); --a-surface-2: rgba(255, 255, 255, .64);
-  --a-sunken: rgba(14, 19, 32, .045);
-  --a-glass: rgba(255, 255, 255, .58); --a-glass-2: rgba(255, 255, 255, .78); --a-glass-3: rgba(255, 255, 255, .96);
-  --a-blur: blur(22px) saturate(165%);
+  --a-bg: #ECEEF2; --a-ground-1: #F8F9FB; --a-ground-2: #E2E5EB;
+  --a-film: #15161A; --a-film-2: #22242A; --a-film-3: #2D3038; --a-film-text: #A3A8B4; --a-film-strong: #F5F6F8; --a-edge-print: #E8A33A;
+  --a-rail: var(--a-film); --a-surface: rgba(255, 255, 255, .9); --a-surface-2: rgba(255, 255, 255, .66);
+  --a-sunken: rgba(16, 18, 24, .045);
+  --a-glass: rgba(255, 255, 255, .6); --a-glass-2: rgba(255, 255, 255, .8); --a-glass-3: rgba(255, 255, 255, .97);
+  --a-blur: blur(22px) saturate(160%);
   --a-edge: rgba(255, 255, 255, .9);
-  --a-hover: rgba(14, 19, 32, .04); --a-hover-2: rgba(14, 19, 32, .07);
-  --a-line: rgba(14, 19, 32, .08); --a-line-2: rgba(14, 19, 32, .15); --a-line-3: rgba(14, 19, 32, .05);
-  --a-text: #0E1320; --a-text-2: #454E63; --a-text-3: #5F687D; --a-text-4: #98A0B2;
-  --a-ink: #0E1320; --a-on-ink: #F7F8FB;
+  --a-hover: rgba(16, 18, 24, .04); --a-hover-2: rgba(16, 18, 24, .07);
+  --a-line: rgba(16, 18, 24, .08); --a-line-2: rgba(16, 18, 24, .15); --a-line-3: rgba(16, 18, 24, .05);
+  --a-text: #111318; --a-text-2: #474C59; --a-text-3: #5C6270; --a-text-4: #9AA0AD;
+  --a-ink: #111318; --a-on-ink: #F7F7F8;
   --a-accent: #2F55E4; --a-accent-soft: rgba(47, 85, 228, .09); --a-accent-line: rgba(47, 85, 228, .4);
-  --a-thread: #AEB8CB; --a-thread-soft: #D7DDE8;
-  --a-work: #13865A; --a-work-soft: rgba(19, 134, 90, .13); --a-live: #2BB673;
-  --a-ask: #A35600; --a-ask-fill: #F08A00; --a-ask-soft: rgba(255, 168, 38, .14); --a-ask-line: rgba(240, 138, 0, .42);
-  --a-ask-light: rgba(255, 168, 38, .55);
-  --a-block: #B4501F; --a-fail: #C9372F; --a-fail-soft: rgba(209, 63, 55, .1);
-  --a-map: transparent; --a-dot: rgba(70, 86, 120, .14);
-  --a-shadow-1: 0 1px 0 rgba(255, 255, 255, .8) inset, 0 0 0 1px rgba(14, 19, 32, .05), 0 6px 18px -10px rgba(20, 32, 70, .28);
-  --a-shadow-2: 0 1px 0 rgba(255, 255, 255, .85) inset, 0 0 0 1px rgba(14, 19, 32, .06), 0 22px 50px -26px rgba(20, 32, 70, .42), 0 3px 8px -3px rgba(20, 32, 70, .12);
-  --a-shadow-3: 0 1px 0 rgba(255, 255, 255, .85) inset, 0 0 0 1px rgba(14, 19, 32, .07), 0 40px 90px -36px rgba(20, 32, 70, .5), 0 8px 18px -8px rgba(20, 32, 70, .16);
+  --a-thread: #B1B6C2; --a-thread-soft: #DADDE4;
+  --a-work: #0B7350; --a-work-soft: rgba(11, 115, 80, .12); --a-live: #1DB173;
+  --a-ask: #AE3F0B; --a-ask-fill: #EF5E17; --a-ask-soft: rgba(239, 94, 23, .1); --a-ask-line: rgba(239, 94, 23, .4);
+  --a-ask-light: rgba(239, 94, 23, .5); --a-mark: #EC5811;
+  --a-block: #4E5AAE; --a-fail: #C3332B; --a-fail-soft: rgba(195, 51, 43, .1);
+  --a-map: transparent; --a-dot: rgba(60, 68, 92, .14);
+  --a-shadow-1: 0 1px 0 rgba(255, 255, 255, .8) inset, 0 0 0 1px rgba(16, 18, 24, .05), 0 6px 18px -10px rgba(16, 20, 34, .28);
+  --a-shadow-2: 0 1px 0 rgba(255, 255, 255, .85) inset, 0 0 0 1px rgba(16, 18, 24, .06), 0 22px 50px -26px rgba(16, 20, 34, .42), 0 3px 8px -3px rgba(16, 20, 34, .12);
+  --a-shadow-3: 0 1px 0 rgba(255, 255, 255, .85) inset, 0 0 0 1px rgba(16, 18, 24, .07), 0 40px 90px -36px rgba(16, 20, 34, .5), 0 8px 18px -8px rgba(16, 20, 34, .16);
   --a-spec: rgba(255, 255, 255, .55);
-  --a-veil: rgba(234, 238, 246, .62);
-  --a-agent-neutral: #B9C0CC; --a-agent-violet: #A994F4; --a-agent-blue: #7FA2F6; --a-agent-cyan: #6FCBD8;
+  --a-veil: rgba(236, 238, 242, .62);
+  --a-sheet: rgba(251, 251, 253, .74); --a-group: #FFFFFF; --a-sidebar: var(--a-film);
+  --a-hairline: rgba(16, 18, 24, .075);
+  --a-group-shadow: 0 0 0 1px rgba(16, 18, 24, .05), 0 1px 2px rgba(16, 20, 34, .05), 0 12px 28px -20px rgba(16, 20, 34, .32);
+  --a-sel: color-mix(in srgb, var(--a-accent) 10%, transparent);
+  --a-agent-neutral: #B9BEC9; --a-agent-violet: #A994F4; --a-agent-blue: #7FA2F6; --a-agent-cyan: #6FCBD8;
   --a-agent-green: #7FCF98; --a-agent-yellow: #E8C766; --a-agent-orange: #F2A66E; --a-agent-red: #EE8E8E; --a-agent-pink: #EE97C4;
   --canvas: var(--a-bg); --surface: var(--a-surface); --raised: var(--a-hover-2); --text: var(--a-text);
   --muted: var(--a-text-3); --line: var(--a-line); --accent: var(--a-accent); --motion: 150ms;
 }
-/* Night: the same glass after dark. */
+/* Darkroom: the same table after dark, on a neutral near-black (never navy). */
 :root[data-theme="dark"] .atlas {
   color-scheme: dark;
-  --a-bg: #0C0F16; --a-ground-1: #131824; --a-ground-2: #090B11;
-  --a-rail: rgba(24, 29, 41, .76); --a-surface: rgba(28, 33, 46, .82); --a-surface-2: rgba(28, 33, 46, .58);
-  --a-sunken: rgba(255, 255, 255, .04);
-  --a-glass: rgba(28, 33, 46, .52); --a-glass-2: rgba(32, 38, 53, .78); --a-glass-3: rgba(34, 40, 55, .97);
+  --a-bg: #0E0F12; --a-ground-1: #17181C; --a-ground-2: #0A0B0D;
+  --a-film: #060607; --a-film-2: #141518; --a-film-3: #1E2024; --a-film-text: #9CA1AD; --a-film-strong: #F2F3F5; --a-edge-print: #E9A642;
+  --a-surface: rgba(30, 31, 36, .86); --a-surface-2: rgba(30, 31, 36, .6);
+  --a-sunken: rgba(255, 255, 255, .045);
+  --a-glass: rgba(30, 31, 36, .55); --a-glass-2: rgba(34, 35, 41, .8); --a-glass-3: rgba(37, 38, 44, .97);
   --a-edge: rgba(255, 255, 255, .1);
   --a-hover: rgba(255, 255, 255, .05); --a-hover-2: rgba(255, 255, 255, .085);
   --a-line: rgba(255, 255, 255, .08); --a-line-2: rgba(255, 255, 255, .15); --a-line-3: rgba(255, 255, 255, .05);
-  --a-text: #EEF1F8; --a-text-2: #AEB6C8; --a-text-3: #8E96AB; --a-text-4: #5D657A;
-  --a-ink: #EEF1F8; --a-on-ink: #10131B;
-  --a-accent: #93AAFF; --a-accent-soft: rgba(147, 170, 255, .12); --a-accent-line: rgba(147, 170, 255, .45);
-  --a-thread: #3E4659; --a-thread-soft: #2A3040;
-  --a-work: #5CCF8F; --a-work-soft: rgba(92, 207, 143, .15); --a-live: #5CCF8F;
-  --a-ask: #FFC266; --a-ask-fill: #FFB03C; --a-ask-soft: rgba(255, 176, 60, .1); --a-ask-line: rgba(255, 176, 60, .38);
-  --a-ask-light: rgba(255, 168, 38, .42);
-  --a-block: #F0925F; --a-fail: #FF7468; --a-fail-soft: rgba(255, 116, 104, .1);
-  --a-dot: rgba(214, 222, 240, .07);
+  --a-text: #F1F2F4; --a-text-2: #B5B9C3; --a-text-3: #959AA6; --a-text-4: #60656F;
+  --a-ink: #F1F2F4; --a-on-ink: #111216;
+  --a-accent: #8FA6FF; --a-accent-soft: rgba(143, 166, 255, .13); --a-accent-line: rgba(143, 166, 255, .45);
+  --a-thread: #3E424C; --a-thread-soft: #2A2D34;
+  --a-work: #58D394; --a-work-soft: rgba(88, 211, 148, .14); --a-live: #58D394;
+  --a-ask: #FF9B5F; --a-ask-fill: #FF7A35; --a-ask-soft: rgba(255, 122, 53, .11); --a-ask-line: rgba(255, 122, 53, .4);
+  --a-ask-light: rgba(255, 122, 53, .42); --a-mark: #FF7A35;
+  --a-block: #A4ACF4; --a-fail: #FF7468; --a-fail-soft: rgba(255, 116, 104, .1);
+  --a-dot: rgba(220, 224, 235, .07);
   --a-shadow-1: 0 1px 0 rgba(255, 255, 255, .05) inset, 0 0 0 1px rgba(255, 255, 255, .06), 0 8px 20px -12px rgba(0, 0, 0, .8);
   --a-shadow-2: 0 1px 0 rgba(255, 255, 255, .07) inset, 0 0 0 1px rgba(255, 255, 255, .06), 0 26px 60px -28px rgba(0, 0, 0, .85);
   --a-shadow-3: 0 1px 0 rgba(255, 255, 255, .08) inset, 0 0 0 1px rgba(255, 255, 255, .07), 0 44px 100px -40px rgba(0, 0, 0, .9);
   --a-spec: rgba(255, 255, 255, .07);
-  --a-veil: rgba(8, 10, 16, .6);
+  --a-veil: rgba(6, 7, 9, .62);
+  --a-sheet: rgba(20, 21, 25, .72); --a-group: #1C1D22; --a-sidebar: var(--a-film);
+  --a-hairline: rgba(255, 255, 255, .07);
+  --a-group-shadow: 0 0 0 1px rgba(255, 255, 255, .05), 0 12px 30px -20px rgba(0, 0, 0, .9);
+  --a-sel: color-mix(in srgb, var(--a-accent) 16%, transparent);
 }
 /* Before the appearance preference is applied (the classic code sets data-theme on mount). */
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme]) .atlas {
     color-scheme: dark;
-    --a-bg: #0C0F16; --a-ground-1: #131824; --a-ground-2: #090B11;
-    --a-rail: rgba(24, 29, 41, .76); --a-surface: rgba(28, 33, 46, .82); --a-surface-2: rgba(28, 33, 46, .58); --a-sunken: rgba(255, 255, 255, .04);
-    --a-glass: rgba(28, 33, 46, .52); --a-glass-2: rgba(32, 38, 53, .78); --a-glass-3: rgba(34, 40, 55, .97);
+    --a-bg: #0E0F12; --a-ground-1: #17181C; --a-ground-2: #0A0B0D;
+    --a-film: #060607; --a-film-2: #141518; --a-film-3: #1E2024; --a-film-text: #9CA1AD; --a-film-strong: #F2F3F5; --a-edge-print: #E9A642;
+    --a-surface: rgba(30, 31, 36, .86); --a-surface-2: rgba(30, 31, 36, .6); --a-sunken: rgba(255, 255, 255, .045);
+    --a-glass: rgba(30, 31, 36, .55); --a-glass-2: rgba(34, 35, 41, .8); --a-glass-3: rgba(37, 38, 44, .97);
     --a-hover: rgba(255, 255, 255, .05); --a-hover-2: rgba(255, 255, 255, .085);
     --a-line: rgba(255, 255, 255, .08); --a-line-2: rgba(255, 255, 255, .15); --a-line-3: rgba(255, 255, 255, .05);
-    --a-text: #EEF1F8; --a-text-2: #AEB6C8; --a-text-3: #8E96AB; --a-text-4: #5D657A; --a-ink: #EEF1F8; --a-on-ink: #10131B;
-    --a-accent: #93AAFF; --a-accent-soft: rgba(147, 170, 255, .12); --a-accent-line: rgba(147, 170, 255, .45);
-    --a-spec: rgba(255, 255, 255, .07); --a-veil: rgba(8, 10, 16, .6);
+    --a-text: #F1F2F4; --a-text-2: #B5B9C3; --a-text-3: #959AA6; --a-text-4: #60656F; --a-ink: #F1F2F4; --a-on-ink: #111216;
+    --a-accent: #8FA6FF; --a-accent-soft: rgba(143, 166, 255, .13); --a-accent-line: rgba(143, 166, 255, .45);
+    --a-work: #58D394; --a-work-soft: rgba(88, 211, 148, .14); --a-live: #58D394;
+    --a-ask: #FF9B5F; --a-ask-fill: #FF7A35; --a-ask-soft: rgba(255, 122, 53, .11); --a-ask-line: rgba(255, 122, 53, .4); --a-mark: #FF7A35;
+    --a-block: #A4ACF4; --a-fail: #FF7468; --a-fail-soft: rgba(255, 116, 104, .1);
+    --a-spec: rgba(255, 255, 255, .07); --a-veil: rgba(6, 7, 9, .62);
+    --a-sheet: rgba(20, 21, 25, .72); --a-group: #1C1D22; --a-hairline: rgba(255, 255, 255, .07);
+    --a-group-shadow: 0 0 0 1px rgba(255, 255, 255, .05), 0 12px 30px -20px rgba(0, 0, 0, .9);
+    --a-sel: color-mix(in srgb, var(--a-accent) 16%, transparent);
   }
 }
 @media (prefers-contrast: more) {
-  .atlas { --a-line: rgba(14, 19, 32, .24); --a-line-2: rgba(14, 19, 32, .36); --a-text-3: #454E63; --a-surface: #FFFFFF; --a-glass-2: #FFFFFF; }
+  .atlas { --a-line: rgba(16, 18, 24, .24); --a-line-2: rgba(16, 18, 24, .36); --a-text-3: #474C59; --a-surface: #FFFFFF; --a-glass-2: #FFFFFF; --a-hairline: rgba(16, 18, 24, .2); }
 }
 @media (prefers-reduced-transparency: reduce) {
-  .atlas { --a-surface: var(--a-glass-3); --a-glass: var(--a-glass-3); --a-glass-2: var(--a-glass-3); --a-rail: var(--a-glass-3); --a-blur: none; }
+  .atlas { --a-surface: var(--a-glass-3); --a-glass: var(--a-glass-3); --a-glass-2: var(--a-glass-3); --a-blur: none; --a-sheet: var(--a-bg); }
 }

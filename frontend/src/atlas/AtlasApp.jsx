@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import './styles/tokens.css'
 import './styles/base.css'
 import './styles/components.css'
@@ -12,6 +12,7 @@ import './styles/task.css'
 import './styles/connections.css'
 import './styles/notifications.css'
 import './styles/lumen.css'
+import './styles/sheet.css'
 import TopBar from './shell/TopBar'
 import Rail from './shell/Rail'
 import WorkPage from './pages/WorkPage'
@@ -22,6 +23,8 @@ import TaskPage from './pages/TaskPage'
 import SettingsPage from './pages/SettingsPage'
 import GalleryPage from './pages/GalleryPage'
 import NotFoundPage from './pages/NotFoundPage'
+import GoTo from './components/work/GoTo'
+import { readRecent } from './layout.mjs'
 import { useAppearance, useAtlasRoute, useConnections, useLiveResource, useLiveStatus, useNotificationPreference, useProviderNotices, useTaskFeed } from './hooks'
 import { useBrowserNotifications } from './notifications'
 import { emptyStore } from './model/tasks.mjs'
@@ -118,6 +121,21 @@ export default function AtlasApp() {
     navigationRef.current = 'traversal'
   }, [key, route, navigationRef])
 
+  // Go to: Ctrl K (or Cmd K) from anywhere, or / when no field has the cursor.
+  const [goTo, setGoTo] = useState(false)
+  const openGoTo = useCallback(() => setGoTo(true), [])
+  useEffect(() => {
+    const onKey = (event) => {
+      const combo = (event.ctrlKey || event.metaKey) && !event.altKey && !event.shiftKey && event.key.toLowerCase() === 'k'
+      if (combo) { event.preventDefault(); setGoTo(true); return }
+      if (event.key === '/' && pageShortcut(event)) { event.preventDefault(); setGoTo(true) }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
+  const goToTask = useCallback((taskId) => showTask(taskId), [showTask])
+  const goToRoute = useCallback((name, params) => { markPush(); navigate(name, params) }, [markPush, navigate])
+
   // N opens New task from any page (not while typing, nor with a menu, dialog or panel open).
   useEffect(() => {
     const onKey = (event) => {
@@ -132,7 +150,7 @@ export default function AtlasApp() {
 
   let page
   if (route.name === 'work') page = <WorkPage live={live} route={route} navigate={navigate} feed={feed} derived={derived} attention={summary}
-    projectsResource={projectsResource} />
+    projectsResource={projectsResource} onGoTo={openGoTo} />
   else if (route.name === 'new') page = <NewTaskPage live={live} navigate={navigate} route={route} />
   else if (route.name === 'projects') page = <ProjectsPage live={live} navigate={navigate} />
   else if (route.name === 'task') page = <TaskPage key={route.params?.id || 'none'} live={live} navigate={navigate} route={route} />
@@ -151,7 +169,7 @@ export default function AtlasApp() {
       <Rail route={route} markPush={markPush} directory={directory} projectFacts={projectFacts} needs={summary.reported || 0}
         toolsText={toolsText} toolsName={toolsName} currentProject={route.name === 'work' ? route.params?.project || null : null}
         onClassic={() => exitAtlas(undefined, { agentId: null })} />
-      <TopBar live={live} appearance={appearance} markPush={markPush}
+      <TopBar live={live} appearance={appearance} markPush={markPush} onGoTo={openGoTo}
         attention={{ summary, onNext: nextQuestion, panel: { attention, tools, notices, preference: notifications, delivery,
           onReply: (taskId) => showTask(taskId, { reply: true }), onShow: (taskId) => showTask(taskId),
           onShowAll: () => { markPush(); navigate('work', { ...(route.name === 'work' ? route.params : lastWork()), filter: 'needs' }) },
@@ -161,6 +179,8 @@ export default function AtlasApp() {
         onScroll={() => { if (currentKey.current) scrolls.current.set(currentKey.current, main.current.scrollTop) }}>
         {page}
       </main>
+      <GoTo open={goTo} onClose={() => setGoTo(false)} store={store} derived={derived} projects={directory.projects}
+        recent={goTo ? readRecent() : []} onTask={goToTask} onRoute={goToRoute} />
       {/* New questions are announced politely; focus never moves. */}
       <div ref={region} className="a-sr" role="status" aria-live="polite" />
     </div>

@@ -20,6 +20,11 @@ export function needsYouCount(overview) {
   return count(overview?.needs_input)
 }
 
+// The top bar's count of questions waiting for the person (the backend's workspace-wide count).
+export function questionLabel(value) {
+  return value === 1 ? '1 question for you' : `${value} questions for you`
+}
+
 export function needsYouLabel(value) {
   return value === 1 ? '1 needs you' : `${value} need you`
 }

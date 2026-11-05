@@ -27,13 +27,13 @@ test('the synthetic scenarios use exactly the endpoint’s node shape', () => {
 
 test('root and child tasks render as one tree from parent_task_id, with sections and guides', async ({ page }) => {
   await openWork(page, { tasks: showcase() })
-  await expect(page.locator('.a-ol-sec')).toHaveText([/Needs your attention/, /Open/, /Completed and history/])
+  await expect(page.locator('.a-sheet-sec')).toHaveText([/Needs you/, /Open/, /History/])
   await expect(row(page, 'Build the CSV import pipeline')).toHaveAttribute('aria-level', '1')
   await expect(row(page, 'Handle quoted fields')).toHaveAttribute('aria-level', '2')
   await expect(row(page, 'Document the CLI flags')).toHaveAttribute('aria-level', '3')
   // A family that only finished stays collapsed under history; the person's question surfaces the whole family.
   await expect(row(page, 'Build the CSV import pipeline')).toHaveAttribute('aria-expanded', 'true')
-  expect(await page.locator('.a-tcard').first().locator('[role="treeitem"]').count()).toBe(5)
+  for (const title of ['Handle quoted fields', 'JSON command-line interface', 'Document the CLI flags', 'HTML summary report']) await expect(row(page, title)).toBeVisible()
   await expect(row(page, 'Build the CSV import pipeline')).toContainText('Waiting for 2 helpers')
   await expect(row(page, 'Build the CSV import pipeline')).toContainText('1 more planned, not started')
   // Planned work is never drawn as a task.
@@ -127,13 +127,18 @@ test('keyboard: one Tab stop, arrows move, Right/Left open and close, Enter sele
 
 test('filters, project scope and search narrow the list without inventing structure', async ({ page }) => {
   await openWork(page, { tasks: showcase() })
-  await page.getByRole('radio', { name: /Needs you/ }).click()
+  const now = page.getByRole('group', { name: 'What is happening' })
+  await now.getByRole('button', { name: /Need you$/ }).click()
   await expect(page).toHaveURL(/filter=needs/)
-  await expect(page.locator('.a-ol-sec')).toHaveText([/Needs your attention/])
+  await expect(page.locator('.a-sheet-sec')).toHaveText([/Needs you/])
+  // A task scope keeps the tasks that need you and the path to them, not their whole families.
+  await expect(row(page, 'Handle quoted fields')).toBeVisible()
+  await expect(row(page, 'HTML summary report')).toHaveCount(0)
   await expect(row(page, 'Summarize last week')).toHaveCount(0)
-  await page.getByRole('radio', { name: /^Done/ }).click()
+  await now.getByRole('button', { name: /Done$/ }).click()
   await expect(row(page, 'Rename the settings page')).toBeVisible()
-  await page.getByRole('radio', { name: /^All/ }).click()
+  await now.getByRole('button', { name: /Task families$/ }).click()
+  await expect(page).not.toHaveURL(/filter=/)
   await page.getByRole('searchbox', { name: 'Find in loaded tasks' }).fill('flags')
   await expect(page.locator('[role="treeitem"]')).toHaveCount(3) // the match and its two loaded ancestors
   await page.getByRole('searchbox', { name: 'Find in loaded tasks' }).fill('nothing like this')
@@ -250,6 +255,9 @@ test('long names, deep hierarchies and wide sibling groups stay inside the layou
     await page.setViewportSize({ width, height: 860 })
     await openWork(page, { tasks: data }, '?task=deep-59')
     await expect(row(page, 'Level 60')).toHaveAttribute('aria-level', '61')
+    // Deep levels keep their title in view: indentation stops growing after a few levels.
+    const title = await row(page, 'Level 60').locator('.a-t').boundingBox()
+    expect(title.width).toBeGreaterThan(40)
     const overflow = await page.evaluate(() => ({ page: document.documentElement.scrollWidth - window.innerWidth,
       outline: document.querySelector('.a-outline').scrollWidth - document.querySelector('.a-outline').clientWidth }))
     expect(overflow).toEqual({ page: 0, outline: 0 })
@@ -257,15 +265,23 @@ test('long names, deep hierarchies and wide sibling groups stay inside the layou
   }
 })
 
-test('1,000 tasks render and respond within measured bounds', async ({ page }) => {
+test('1,000 tasks render and respond within measured bounds, drawing only what is on screen', async ({ page }) => {
   test.setTimeout(60_000)
   const data = large({ families: 50, width: 19 })
   expect(data.tasks.length).toBe(1000)
   await page.clock.setFixedTime(NOW)
   const started = Date.now()
   await openApp(page, { path: '/#/work', tasks: data })
-  await expect(page.locator('[role="treeitem"]')).toHaveCount(1000, { timeout: 20_000 })
+  await expect(page.locator('[role="treeitem"]').first()).toBeVisible({ timeout: 20_000 })
   const firstRender = Date.now() - started
+  // A busy workspace starts as one line per family, and only rows near the view are in the page.
+  const drawn = await page.locator('[role="treeitem"]').count()
+  expect(drawn).toBeGreaterThan(5)
+  expect(drawn).toBeLessThan(80)
+  await expect(page.locator('[role="treeitem"]').first()).toHaveAttribute('aria-expanded', 'false')
+  // The last family is reached by scrolling.
+  await page.locator('.a-sheet').evaluate((sheet) => { sheet.scrollTop = sheet.scrollHeight })
+  await expect(row(page, 'Family 0 lead task')).toBeVisible()
   const metrics = await page.evaluate(async () => {
     const time = async (action) => {
       const start = performance.now()
@@ -276,7 +292,7 @@ test('1,000 tasks render and respond within measured bounds', async ({ page }) =
     const rows = document.querySelectorAll('[role="treeitem"]')
     rows[0].focus()
     const keyStep = await time(() => rows[0].dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true })))
-    const select = await time(() => rows[40].click())
+    const select = await time(() => rows[Math.min(12, rows.length - 1)].click())
     const collapse = await time(() => rows[0].querySelector('.a-fold').click())
     return { keyStep, select, collapse, nodes: document.querySelectorAll('*').length }
   })
@@ -326,12 +342,13 @@ test('section counts say when they cover only the loaded tasks', async ({ page }
   } })
   const note = page.locator('#work-count-note')
   await expect(note).toHaveText('Counts cover the 3 loaded tasks of 12')
-  await expect(page.getByRole('radiogroup', { name: 'Show' })).toHaveAttribute('aria-describedby', 'work-count-note')
-  await expect(page.getByRole('radio', { name: /^Needs you/ })).toHaveAttribute('title', /among the loaded tasks/)
+  const now = page.getByRole('group', { name: 'What is happening' })
+  await expect(now).toHaveAttribute('aria-describedby', 'work-count-note')
+  await expect(now.getByRole('button', { name: /Need(s)? you$/ })).toHaveAttribute('title', /among the loaded tasks/)
   for (let i = 1; i < pages.length; i += 1) await page.getByRole('button', { name: 'Load older tasks' }).click()
   await expect(page.getByRole('button', { name: 'Load older tasks' })).toHaveCount(0)
   await expect(note).toHaveCount(0)
-  await expect(page.getByRole('radio', { name: /^Needs you/ })).not.toHaveAttribute('title', /loaded/)
+  await expect(now.getByRole('button', { name: /Need(s)? you$/ })).not.toHaveAttribute('title', /loaded/)
 })
 
 test('opening Classic from a task selects its current agent there, and never an ended or removed one', async ({ page }) => {

@@ -21,6 +21,12 @@ const onScreen = (rect) => rect.bottom > -40 && rect.top < window.innerHeight + 
 // them would force the layout that `content-visibility` skips: seconds with 5,000 tasks). The Map
 // draws only what is near the view already.
 function* candidates(root) {
+  // The Work sheet draws only rows near the view already; measure those on screen.
+  const sheet = root.querySelector('.a-sheet')
+  if (sheet) {
+    for (const row of sheet.querySelectorAll('[data-id]')) if (onScreen(row.getBoundingClientRect())) yield row
+    return
+  }
   const cards = root.querySelectorAll('.a-outline .a-tcard')
   if (cards.length) {
     for (const card of cards) {
