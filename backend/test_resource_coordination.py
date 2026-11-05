@@ -474,7 +474,7 @@ class CoordinationTests(unittest.TestCase):
             self.assertEqual([r['claim_id'] for r in waits], [one['claim_id'], two['claim_id']])
             self.assertTrue(all(r['waiting_since'] is None for r in waits))
             self.assertEqual(db.execute('SELECT COUNT(*) FROM resource_deadlocks').fetchone()[0], 0)
-            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 38)
+            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 39)
             self.assertEqual(db.execute('PRAGMA foreign_key_check').fetchall(), [])
             coordination.migrate(db)  # Explicit idempotency, including backfill.
             self.assertEqual(len(list(db.execute('SELECT * FROM resource_waits'))), 2)

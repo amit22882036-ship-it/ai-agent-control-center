@@ -131,7 +131,7 @@ def _origin(db, origin, session_id):
     assignment = db.execute('SELECT * FROM task_assignments WHERE assignment_id=?', (origin.assignment_id,)).fetchone()
     if (not agent or not all(agent[k] for k in ('planning_enabled', 'delegation_protocol_enabled',
             'child_materialization_enabled', 'hybrid_delegation_enabled'))
-            or not _managed_provider(agent['agent_type']) or agent['sandbox'] not in ('read-only', 'workspace-write')
+            or not _managed_provider(agent['agent_type']) or agent['sandbox'] not in ('read-only', 'workspace-write', 'full-access')
             or agent['execution_generation'] != origin.generation or not session_id or agent['session_id'] != session_id
             or not assignment or assignment['agent_id'] != origin.agent_id or assignment['task_id'] != task['task_id']
             or task['project_id'] != origin.project_id):

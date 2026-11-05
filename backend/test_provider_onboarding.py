@@ -62,7 +62,7 @@ class GlobalPermissionTests(Store, unittest.TestCase):
             db.execute('PRAGMA user_version = 36')
         upgraded = AgentStore(self.store.path)
         with upgraded._connection() as db:
-            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 38)
+            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 39)
             self.assertEqual(sorted(policy.global_policy(db)['allowed']), sorted(set(enabled) | {'claude'}))
             revision = policy.global_policy(db)['revision']
         with AgentStore(self.store.path)._connection() as db:  # Reopening changes nothing.

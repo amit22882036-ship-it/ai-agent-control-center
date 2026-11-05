@@ -7,27 +7,56 @@ import sqlite3
 from threading import RLock
 from uuid import uuid4
 from . import work_control, dependencies, resources, resource_coordination, external_resources, runtime_resources, work_intents, delegations, delegation_handoff, delegation_materialization
-from .task_domain import task_title, validate_task_status, validate_end_reason
+from .task_domain import normalize_task_title, task_title, validate_task_status, validate_end_reason
 from .agent_names import default_display_name, validate_display_color
 from .output_history import OUTPUT_PAGE_SIZE, OUTPUT_MAX_LIMIT
 from .project_domain import DEFAULT_ROOT, canonical_path, contains, project_name
 from . import delegation_orchestration, delegation_rounds, delegation_safety
 from . import planning, promotion, orchestration, replanning, agent_removal, executions, execution_attestation, responsibility, providers, model_catalog, allocation, provider_policy, provider_onboarding
+from . import project_lifecycle
 
 
 class ControllerConflict(RuntimeError):
     """A live (or unverifiable) controller already owns this database."""
 
 
+# The schema this code writes. A database written by a newer version is refused, never altered.
+SCHEMA_VERSION = 39
+
+
 class AgentStore:
+    def _backup_before_upgrade(self):
+        """Copy an existing database before the first upgrade to this schema version.
+
+        An upgraded database cannot be opened by an older Control Center. The copy, written once
+        next to the database with SQLite's online backup, is the way back."""
+        if not self.path.is_file():
+            return
+        source = sqlite3.connect(self.path, timeout=10)
+        try:
+            version = source.execute('PRAGMA user_version').fetchone()[0]
+            if version == 0 or version >= SCHEMA_VERSION:
+                return
+            target_path = self.path.with_name(f'{self.path.name}.schema-v{version}.bak')
+            if target_path.exists():
+                return
+            target = sqlite3.connect(target_path)
+            try:
+                source.backup(target)
+            finally:
+                target.close()
+        finally:
+            source.close()
+
     def __init__(self, path=None):
         self.path = Path(path or os.environ.get('CONTROL_CENTER_DB_PATH')
                          or Path(__file__).resolve().parents[2] / 'data' / 'control_center.sqlite3')
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self._lock = RLock()
+        self._backup_before_upgrade()
         with self._connection() as db:
             version = db.execute('PRAGMA user_version').fetchone()[0]
-            if version not in range(39):
+            if version not in range(SCHEMA_VERSION + 1):
                 raise RuntimeError(f'Unsupported control-center database schema version: {version}')
             if version < 27:
                 # Table rebuilds (v11, v12, v27) need enforcement off on this
@@ -358,6 +387,15 @@ class AgentStore:
                     if db.execute('PRAGMA foreign_key_check').fetchone():
                         raise sqlite3.IntegrityError('Invalid orchestration decision migration references')
                     db.execute('PRAGMA user_version = 38')
+                    version = 38
+                if version == 38:
+                    if not db.in_transaction:
+                        db.execute('BEGIN IMMEDIATE')
+                    project_lifecycle.migrate_v39(db)
+                    delegation_safety.migrate_access(db)
+                    db.execute('PRAGMA user_version = 39')
+                project_lifecycle.validate_schema(db)
+                db.execute('SELECT task_id,helper_access FROM task_access LIMIT 0')
                 db.execute('SELECT task_id,decision_key,plan_revision,promotion_decision_key,content,receipt FROM orchestration_decisions LIMIT 0')
                 db.execute('SELECT rejection_id,agent_id,task_id,kind,reason FROM control_rejections LIMIT 0')
                 db.execute('SELECT allowed_providers,default_provider,revision FROM provider_global_policy LIMIT 0')
@@ -642,9 +680,13 @@ class AgentStore:
             other = existing['workspace_path_key']
             if contains(other, key) or contains(key, other):
                 raise ValueError('Project root must not overlap a Task Workspace')
+        trash = canonical_path(project_lifecycle.trash_root())[1]
+        if contains(trash, key) or contains(key, trash):
+            raise ValueError('Project root must not overlap the Control Center Trash')
         project_id = str(uuid4())
-        db.execute('INSERT INTO projects(project_id,name,root_path,root_path_key) VALUES (?,?,?,?)',
-                   (project_id, name or project_name(Path(root).name or 'Project'), root, key))
+        db.execute('INSERT INTO projects(project_id,name,root_path,root_path_key,sort_order) VALUES (?,?,?,?,?)',
+                   (project_id, name or project_name(Path(root).name or 'Project'), root, key,
+                    project_lifecycle.next_sort_order(db)))
         return cls._public_project(db.execute('SELECT * FROM projects WHERE project_id=?', (project_id,)).fetchone())
 
     def create_project(self, name, root_path):
@@ -672,7 +714,8 @@ class AgentStore:
 
     def list_projects(self):
         with self._connection() as db:
-            return [self._public_project(row) for row in db.execute('SELECT * FROM projects ORDER BY rowid')]
+            return [self._public_project(row) for row in db.execute(
+                'SELECT * FROM projects ORDER BY sort_order IS NULL, sort_order, rowid')]
 
     @staticmethod
     def _migrate_tasks(db):
@@ -835,6 +878,17 @@ class AgentStore:
         with self._connection() as db:
             row = db.execute('SELECT * FROM tasks WHERE task_id=?', (task_id,)).fetchone()
             return dependencies.describe(db, row) if row else None
+
+    def rename_task(self, task_id, title):
+        """The Task's display title only. Its description (the agent's instructions), identity,
+        hierarchy, assignments and history are unchanged, and its activity time is not touched."""
+        title = normalize_task_title(title)
+        with self._connection() as db:
+            db.execute('BEGIN IMMEDIATE')
+            if db.execute('SELECT 1 FROM tasks WHERE task_id=?', (task_id,)).fetchone() is None:
+                raise LookupError('Task not found')
+            db.execute('UPDATE tasks SET title=? WHERE task_id=?', (title, task_id))
+        return self.get_task(task_id)
 
     def list_tasks(self):
         with self._connection() as db:

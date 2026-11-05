@@ -38,7 +38,9 @@ class ProjectTests(unittest.TestCase):
         UUID(result['project_id'])
         self.assertEqual(result['name'], 'Shop')
         self.assertEqual(result['root_path'], canonical_path(root)[0])
-        self.assertEqual(set(result), {'project_id', 'name', 'root_path', 'created_at', 'updated_at'})
+        self.assertEqual(set(result), {'project_id', 'name', 'root_path', 'created_at', 'updated_at', 'sort_order',
+                                       'hidden', 'hidden_at', 'trashed', 'trash'})
+        self.assertEqual((result['sort_order'], result['hidden'], result['trashed'], result['trash']), (0, False, False, None))
         self.assertEqual(self.request('/projects')['projects'], [result])
         self.assertEqual(self.request('/projects/' + result['project_id']), result)
         self.request('/projects/missing', expected=404)
@@ -274,7 +276,7 @@ class ProjectTests(unittest.TestCase):
         self.assertEqual(restored.name_history(child), names)
         self.assertEqual([restored.list_task_assignments(t['task_id']) for t in tasks], assignments)
         with restored._connection() as db:
-            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 38)
+            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 39)
             self.assertEqual(db.execute('PRAGMA foreign_key_check').fetchall(), [])
             self.assertIn('projects', {row['table'] for row in db.execute('PRAGMA foreign_key_list(tasks)')})
         self.assertEqual(AgentStore(self.path).list_tasks(), restored.list_tasks())

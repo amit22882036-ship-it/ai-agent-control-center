@@ -25,7 +25,8 @@ from uuid import UUID, uuid4
 from .agent_names import default_display_name, validate_display_name, validate_display_color
 from .system_notifications import notifications
 from .persistence import AgentStore
-from .task_workspaces import TaskBusy, provision_task_workspace, task_lock
+from .task_workspaces import TaskBusy, provision_task_workspace, storage_root, task_lock
+from . import project_lifecycle
 from . import orchestration_waker
 from .workspace_freshness import evaluate_workspace_freshness, ensure_workspace_current, reject_divergence, session_context
 from .project_domain import canonical_path
@@ -48,7 +49,7 @@ from . import delegations as delegations_module
 logger = logging.getLogger(__name__)
 
 AgentType = Literal["mock", "codex", "claude", "gemini"]
-CodexSandbox = Literal["read-only", "workspace-write"]  # Every real provider's access policy
+CodexSandbox = Literal["read-only", "workspace-write", "full-access"]  # Every real provider's access policy
 
 agents: dict[str, subprocess.Popen | None] = {}
 agent_parents: dict[str, str | None] = {}
@@ -655,6 +656,8 @@ def initialize_persistence(path=None) -> None:
     controller = _new_controller()
     # Serialized: a live (or unverifiable) earlier controller refuses this one.
     store.claim_controller(controller)
+    # A Trash move, restore or deletion cut off by a restart is settled from what is on disk.
+    project_lifecycle.recover(store)
     # Previous controllers' executions are decided from kernel and reboot
     # evidence before anything reads them; nothing is launched or reattached.
     # Blockers follow at reconciliation, after running Agents are marked stopped.
@@ -1396,7 +1399,7 @@ def change_agent_provider(agent_id, *, provider, model=None, sandbox=None, effor
     target_sandbox = sandbox or current_sandbox or 'read-only'
     if target_sandbox not in providers.SANDBOXES:
         raise ValueError('Unknown access policy')
-    if current_sandbox == 'read-only' and target_sandbox == 'workspace-write':
+    if providers.ACCESS_RANK[target_sandbox] > providers.ACCESS_RANK.get(current_sandbox or 'read-only', 0):
         raise ValueError('Access cannot be widened by a provider or model change; it may only stay or narrow.')
     if (provider, model, target_sandbox, effort) == (current_provider, current_model, current_sandbox,
                                                       agent_efforts.get(agent_id)):
@@ -2170,7 +2173,7 @@ def start_agent(task: str, agent_type: AgentType = "mock", sandbox: CodexSandbox
                 child_materialization_enabled: bool = False, hybrid_delegation_enabled: bool = False,
                 recursive_delegation_enabled: bool = False, planning_enabled: bool = False, _materialization=None,
                 model: str | None = None, effort: str | None = None, attempt_unverified: bool = False,
-                auto_allocation_providers: list | None = None) -> str:
+                auto_allocation_providers: list | None = None, helper_access: str | None = None) -> str:
     """A new Agent with its own default provider, model and effort (never shared with another Agent).
 
     `auto_allocation_providers` is the user's Auto allocation authorization for a new autonomous
@@ -2183,6 +2186,9 @@ def start_agent(task: str, agent_type: AgentType = "mock", sandbox: CodexSandbox
                                                                 and child_materialization_enabled):
             raise ValueError('Auto allocation applies to delegated Children of a new autonomous root agent.')
         allocation.normalize_policy(True, auto_allocation_providers)  # Invalid: nothing is created or launched.
+    if helper_access is not None and (parent_id is not None or task_id is not None or sandbox != 'full-access'
+                                      or helper_access not in ('workspace-write', 'full-access')):
+        raise ValueError('Helper access applies to a new root agent with Full Access.')
     with _prompt_config({}):
         _launch.execution_config = dict(model=model, effort=effort, source='agent_default',
                                         attempt=bool(attempt_unverified))
@@ -2193,12 +2199,14 @@ def start_agent(task: str, agent_type: AgentType = "mock", sandbox: CodexSandbox
                             hybrid_delegation_enabled=hybrid_delegation_enabled,
                             recursive_delegation_enabled=recursive_delegation_enabled,
                             planning_enabled=planning_enabled, _materialization=_materialization, model=model,
-                            effort=effort, auto_allocation_providers=auto_allocation_providers)
+                            effort=effort, auto_allocation_providers=auto_allocation_providers,
+                            helper_access=helper_access)
 
 
 def _start_agent(task, agent_type, sandbox, parent_id, *, task_id, project_id, delegation_protocol_enabled,
                  child_materialization_enabled, hybrid_delegation_enabled, recursive_delegation_enabled,
-                 planning_enabled, _materialization, model, effort, auto_allocation_providers=None):
+                 planning_enabled, _materialization, model, effort, auto_allocation_providers=None,
+                 helper_access=None):
     providers.adapter(agent_type)  # Unknown providers are refused before anything else.
     if project_id is not None and (parent_id is not None or task_id is not None):
         raise ValueError('Project selection is only available for new root Tasks')
@@ -2241,6 +2249,11 @@ def _start_agent(task, agent_type, sandbox, parent_id, *, task_id, project_id, d
             db.execute('BEGIN IMMEDIATE')
             allocation.set_policy(db, task_id, enabled=True, allowed=list(auto_allocation_providers),
                                   expected_revision=None)
+    if helper_access is not None and _store is not None:
+        # The person's explicit choice for this root's helpers, stored before anything launches.
+        with _store._connection() as db:
+            db.execute('BEGIN IMMEDIATE')
+            delegation_safety.set_helper_access(db, task_id, helper_access)
     guard = task_lock(_store, task_id, blocking=False) if _store is not None else nullcontext()
     with guard, _upstream_guard(task_id):
         if _store is not None:
@@ -2355,7 +2368,7 @@ def _launch_prepared_agent(task, parent_id, task_id, parent_task, command, agent
                 record, _, provider = delegation_materialization.authorize(db, identifier, limits)
                 expected = record.get('child_provider') or provider['agent_type']
                 if (record['child_task_id'] != task_id or expected != agent_type
-                        or (agent_type in providers.REAL and provider['sandbox'] != sandbox)
+                        or (agent_type in providers.REAL and delegation_safety.helper_sandbox(db, task_id, provider['sandbox']) != sandbox)
                         or (record.get('child_provider') and record.get('child_model') != model)
                         or (record.get('child_provider') and record.get('child_effort') != effort)):
                     raise ValueError('Child launch provider, permissions or ownership changed')
@@ -2506,6 +2519,9 @@ def _admitted_spawn(task_id, agent_id, command, agent_type, cwd, *, materializat
         # preparation never holds a SQLite write transaction.
         with _store._connection() as db:
             db.execute('BEGIN IMMEDIATE')
+            # A Project in (or moving to or from) the Trash runs nothing; checked in the same
+            # transaction that a Trash move commits its intent in.
+            project_lifecycle.require_runnable(db, task_id)
             # Stage 2F: provider enablement, billing acknowledgment, configuration,
             # every known limit (durable or not) and newer negative readiness,
             # revalidated at this boundary. An explicit user retry may override
@@ -2539,6 +2555,7 @@ def _admitted_spawn(task_id, agent_id, command, agent_type, cwd, *, materializat
                 identifier, limits = materialization
                 delegation, _, provider = delegation_materialization.authorize(db, identifier, limits)
                 delegation_safety.require_inherited(provider, agent_type, sandbox, capabilities or {},
+                                                    expected_sandbox=delegation_safety.helper_sandbox(db, task_id, provider['sandbox']),
                                                     child_provider=delegation.get('child_provider'))
                 promotion.require_ready(db, identifier)
                 allocation.require_delegation_authorized(db, delegation)  # Ordinary Auto, at the final boundary.
@@ -2799,6 +2816,8 @@ def transfer_responsibility(task_id, *, request_key, expected_owner_assignment_i
 def _launch_delegated_child(task_id, identifier, limits):
     with _task_store()._connection() as db:
         record, _, provider = delegation_materialization.authorize(db, identifier, limits)
+        # Never broader than the Parent; Full Access is not inherited unless the person allowed it.
+        child_sandbox = delegation_safety.helper_sandbox(db, task_id, provider['sandbox'] or 'read-only')
     # Stage 2F: the Child's provider is the one the Parent requested (never a
     # substitute) or, without a request, the Parent's own; access never widens.
     child_provider = record.get('child_provider') or provider['agent_type']
@@ -2806,7 +2825,7 @@ def _launch_delegated_child(task_id, identifier, limits):
     previous, _launch.automated = getattr(_launch, 'automated', False), True
     try:
         # An Auto allocation is recorded in the same fields as an explicit request.
-        return start_agent('', child_provider, provider['sandbox'] or 'read-only',
+        return start_agent('', child_provider, child_sandbox,
                            task_id=task_id, _materialization=(identifier, limits),
                            model=record.get('child_model') if record.get('child_provider') else None,
                            effort=record.get('child_effort') if record.get('child_provider') else None,
@@ -4605,3 +4624,113 @@ def _settle_removal_member(removal_id, key, confirmed):
         agent_statuses[key] = row['status']
         agent_waiting_questions[key] = row['waiting_question']
     notifications.cancel(key)
+
+
+# ---------------------------------------------------------------- Projects and Task titles (schema v39)
+
+def _project_agent_statuses(project_id):
+    """Live statuses of the agents currently assigned to this Project's Tasks."""
+    with _task_store()._connection() as db:
+        ids = [row[0] for row in db.execute('''SELECT DISTINCT a.agent_id FROM task_assignments a
+            JOIN tasks t ON t.task_id=a.task_id WHERE t.project_id=? AND a.ended_at IS NULL''', (project_id,))]
+    statuses = {}
+    for agent_id in ids:
+        if agent_id in agents:
+            _refresh_status_for_read(agent_id)
+            statuses[agent_id] = agent_statuses.get(agent_id)
+    return statuses
+
+
+def _forget_agents(agent_ids):
+    """Drop deleted Agents from the in-memory registries (never one whose process is still alive)."""
+    registries = (agents, agent_parents, agent_statuses, agent_outputs, agent_tasks, agent_names, agent_colors, agent_types,
+                  agent_sandboxes, agent_sessions, agent_waiting_questions, agent_readers, agent_similar_decisions,
+                  agent_always_decisions, agent_watcher_lost, agent_models, agent_conditions, _provider_retry_attempts,
+                  agent_efforts, agent_session_configs)
+    with _data_lock:
+        for key in agent_ids:
+            process = agents.get(key)
+            if process is not None and process.poll() is None:
+                continue
+            for registry in registries:
+                registry.pop(key, None)
+
+
+def list_projects(*, trashed=False):
+    return project_lifecycle.list_projects(_task_store(), trashed=trashed)
+
+
+def get_project(project_id):
+    return project_lifecycle.get_project(_task_store(), project_id)
+
+
+@_synchronized
+def rename_project(project_id, name):
+    result = project_lifecycle.rename(_task_store(), project_id, name)
+    _emit_agent_change(None)
+    return result
+
+
+@_synchronized
+def set_project_hidden(project_id, hidden):
+    result = project_lifecycle.set_hidden(_task_store(), project_id, hidden)
+    _emit_agent_change(None)
+    return result
+
+
+@_synchronized
+def reorder_projects(project_ids):
+    result = project_lifecycle.reorder(_task_store(), project_ids)
+    _emit_agent_change(None)
+    return result
+
+
+def project_lifecycle_preview(project_id):
+    return project_lifecycle.preview(_task_store(), project_id, _project_agent_statuses(project_id), storage_root())
+
+
+@_synchronized
+def stop_project_work(project_id):
+    """Stop every agent working or waiting in the Project, one by one, and say what happened."""
+    project_lifecycle.get_project(_task_store(), project_id)  # LookupError when it does not exist.
+    stopped, failures = [], []
+    for agent_id, status in _project_agent_statuses(project_id).items():
+        if status not in project_lifecycle.ACTIVE_AGENT_STATUSES:
+            continue
+        try:
+            result = stop_agent(agent_id)
+            stopped.append({'agent_id': agent_id, 'name': agent_names.get(agent_id), 'status': (result or {}).get('status')})
+        except Exception as exc:
+            failures.append({'agent_id': agent_id, 'name': agent_names.get(agent_id), 'error': str(exc)[:300]})
+    _emit_agent_change(None)
+    return {'stopped': stopped, 'failures': failures}
+
+
+@_synchronized
+def trash_project(project_id):
+    result = project_lifecycle.move_to_trash(_task_store(), project_id, _project_agent_statuses(project_id), storage_root())
+    _emit_agent_change(None)
+    return result
+
+
+@_synchronized
+def restore_project(project_id, target=None):
+    result = project_lifecycle.restore(_task_store(), project_id, target)
+    _emit_agent_change(None)
+    return result
+
+
+@_synchronized
+def delete_project(project_id, confirm_name):
+    result = project_lifecycle.delete_permanently(_task_store(), project_id, confirm_name,
+                                                  _project_agent_statuses(project_id), storage_root())
+    _forget_agents(result['records'].pop('agent_ids', []))
+    _emit_agent_change(None)
+    return result
+
+
+@_synchronized
+def rename_task(task_id, title):
+    task = _task_store().rename_task(task_id, title)
+    _emit_agent_change(None)
+    return task

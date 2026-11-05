@@ -451,7 +451,7 @@ class ProbeTests(unittest.TestCase):
             for t in tables:
                 self.assertEqual([tuple(r) for r in db.execute(f'SELECT rowid,{columns[t]} FROM {t} ORDER BY rowid')], before[t], t)
             self.assertTrue(all(tuple(r) == (None, None, None) for r in db.execute('SELECT probe_status,probe_checked_at,probe_reason FROM resource_claims')))
-            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 38)
+            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 39)
             self.assertEqual(db.execute('PRAGMA foreign_key_check').fetchall(), [])
             external_resources.migrate(db)
         self.assertEqual(AgentStore(self.path).load_agents()[0]['session_id'], key)

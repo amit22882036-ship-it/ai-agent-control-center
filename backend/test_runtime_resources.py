@@ -450,7 +450,7 @@ class RuntimeResourceTests(unittest.TestCase):
             before = {t: db.execute(f'SELECT rowid,* FROM {t} ORDER BY rowid').fetchall() for t in tables}
         AgentStore(self.path)
         with closing(sqlite3.connect(self.path)) as db:
-            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 38)
+            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 39)
             self.assertEqual(db.execute('SELECT * FROM resource_ownership').fetchall(), [])
             for t in tables:
                 self.assertEqual(db.execute(f'SELECT rowid,* FROM {t} ORDER BY rowid').fetchall(), before[t], t)

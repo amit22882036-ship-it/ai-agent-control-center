@@ -49,6 +49,33 @@ def check_depth(db, task_id, *, child=False, limit=None):
     return path
 
 
+def migrate_access(db):
+    """v39: the access a root Task's helpers receive when its agent has Full Access."""
+    db.execute("""CREATE TABLE IF NOT EXISTS task_access (
+        task_id TEXT PRIMARY KEY NOT NULL REFERENCES tasks(task_id),
+        helper_access TEXT NOT NULL CHECK(helper_access IN ('workspace-write','full-access')),
+        created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')))""")
+
+
+def set_helper_access(db, task_id, helper_access):
+    if helper_access not in ('workspace-write', 'full-access'):
+        raise ValueError('Helper access must be Workspace or Full Access')
+    db.execute('INSERT OR REPLACE INTO task_access(task_id, helper_access) VALUES (?,?)', (task_id, helper_access))
+
+
+def helper_sandbox(db, task_id, parent_sandbox):
+    """The access a delegated helper in `task_id`'s tree receives from a parent with `parent_sandbox`.
+
+    Equal or narrower, never broader: a helper works with its parent's access, except that Full
+    Access is never inherited by default. Helpers of a Full Access parent work with Workspace access
+    unless the person allowed Full Access for helpers when starting the root Task."""
+    if parent_sandbox != 'full-access':
+        return parent_sandbox
+    root = work_control.ancestry(db, task_id)[-1]['task_id']
+    row = db.execute('SELECT helper_access FROM task_access WHERE task_id=?', (root,)).fetchone()
+    return 'full-access' if row is not None and row['helper_access'] == 'full-access' else 'workspace-write'
+
+
 def activation(db, task_id, provider, sandbox):
     """Validate explicit root activation or delegation of that same capability."""
     path = check_depth(db, task_id)
@@ -63,7 +90,7 @@ def activation(db, task_id, provider, sandbox):
     # the access policy may never widen.
     if (not parent or not parent['recursive_delegation_enabled']
             or not parent['hybrid_delegation_enabled'] or not parent['child_materialization_enabled']
-            or not parent['delegation_protocol_enabled'] or parent['sandbox'] != sandbox):
+            or not parent['delegation_protocol_enabled'] or helper_sandbox(db, task_id, parent['sandbox']) != sandbox):
         raise ValueError('Parent has not authorized recursive provider/sandbox capability')
 
 
@@ -122,11 +149,12 @@ def root_slot(db, task_id, timestamp, *, burst=8, window_seconds=60):
     return max(timestamp, prior[0] + window_seconds) if prior else timestamp
 
 
-def require_inherited(provider, agent_type, sandbox, capabilities, child_provider=None):
+def require_inherited(provider, agent_type, sandbox, capabilities, child_provider=None, expected_sandbox=None):
     """Recheck the actual launch request against fresh durable Parent authority."""
     expected = child_provider or provider['agent_type']
     allowed = inherited(provider, expected)
+    access = provider['sandbox'] if expected_sandbox is None else expected_sandbox
     if (expected != agent_type
-            or (agent_type in providers.REAL and provider['sandbox'] != sandbox)
+            or (agent_type in providers.REAL and access != sandbox)
             or any(capabilities.get(key, False) and not value for key, value in allowed.items())):
         raise ValueError('Inherited Child capabilities exceed current Parent authorization')

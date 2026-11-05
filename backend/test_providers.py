@@ -85,7 +85,8 @@ class AdapterContractTests(unittest.TestCase):
             env, _ = fake.isolated_environment(root)
             with patch.dict(os.environ, env):
                 for provider in ('claude', 'gemini', 'codex'):
-                    for sandbox in providers.SANDBOXES:
+                    # The two confined levels never carry a bypass flag; Full Access is tested on its own.
+                    for sandbox in ('read-only', 'workspace-write'):
                         for session in (None, SESSION):
                             command = providers.adapter(provider).command(sandbox, session, model='fable-5' if provider != 'codex' else None)
                             for forbidden in ('dangerously', 'bypassPermissions', 'yolo', 'danger-full-access',
@@ -263,7 +264,7 @@ class PolicyStoreTests(unittest.TestCase):
             providers.migrate(db)
             sql = db.execute("SELECT sql FROM sqlite_master WHERE name='responsibility_transfers'").fetchone()[0]
             self.assertIn("'claude','gemini'", sql)
-            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 38)
+            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 39)
 
     def test_v30_responsibility_table_is_rebuilt_with_rows(self):
         with self.db() as db:

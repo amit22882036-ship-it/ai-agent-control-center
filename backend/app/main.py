@@ -2,6 +2,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException, Query, Request
 import getpass
+import os
 from typing import Annotated, Literal
 import sqlite3
 from fastapi.middleware.cors import CORSMiddleware
@@ -9,9 +10,9 @@ from fastapi.openapi.utils import get_openapi
 from starlette.responses import JSONResponse, StreamingResponse
 from . import security
 from . import process_supervision
-from . import agent_removal, recovery_actions, responsibility, providers, provider_onboarding
+from . import agent_removal, recovery_actions, responsibility, providers, provider_onboarding, project_lifecycle
 from .realtime import changes
-from pydantic import BaseModel, ConfigDict, StrictBool, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, StrictBool, field_validator, model_validator
 from .system_notifications import notifications
 from .agent_manager import initialize_persistence, shutdown_agents
 from .agent_manager import get_agent_output
@@ -110,6 +111,8 @@ class StartAgentRequest(BaseModel):
     # Auto allocation for this root Agent's delegated Children: the user's own
     # authorization (allowed providers), stored as the new Task's policy.
     auto_allocation_providers: list[AgentType] | None = None
+    # With Full Access only: the access its helpers receive (Workspace unless Full Access is chosen).
+    helper_access: Literal['workspace-write', 'full-access'] | None = None
 
     @field_validator('model')
     @classmethod
@@ -233,8 +236,11 @@ def _start_agent_response(request: StartAgentRequest, parent_id: str | None = No
                                    **({'project_id': request.project_id} if request.project_id is not None else {}),
                                    **capabilities, **model,
                                    **({'auto_allocation_providers': request.auto_allocation_providers}
-                                      if request.auto_allocation_providers is not None else {}))
+                                      if request.auto_allocation_providers is not None else {}),
+                                   **({'helper_access': request.helper_access} if request.helper_access is not None else {}))
         else:
+            if request.helper_access is not None:
+                raise ValueError('Helper access applies to a new root agent with Full Access.')
             agent_id = start_agent(request.task, request.agent_type, request.sandbox, parent_id=parent_id, **model)
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
@@ -382,26 +388,138 @@ def create_project_route(request: CreateProjectRequest):
     def register():
         from .workspace_git import repository
         repository(request.root_path)
-        return manager._task_store().create_project(request.name, request.root_path)
+        created = manager._task_store().create_project(request.name, request.root_path)
+        manager._emit_agent_change(None)
+        return manager.get_project(created['project_id'])
     return _project_action(register)
 
 
 @app.get('/projects')
 def list_projects_route():
-    return {'projects': _project_action(lambda: manager._task_store().list_projects())}
+    """Every Project not in the Trash, in the person's order. Hidden ones are included and marked."""
+    return {'projects': _project_action(manager.list_projects)}
+
+
+@app.get('/projects/trash')
+def list_trashed_projects_route():
+    return {'projects': _project_action(lambda: manager.list_projects(trashed=True))}
 
 
 @app.get('/projects/{project_id}')
 def get_project_route(project_id: str):
-    result = _project_action(lambda: manager._task_store().get_project(project_id))
-    if result is None:
-        raise HTTPException(status_code=404, detail='Project not found')
-    return result
+    return _project_action(lambda: manager.get_project(project_id))
+
+
+def _lifecycle_action(action):
+    """Refusals carry a code, a message and reasons the interface shows as they are."""
+    try:
+        return action()
+    except project_lifecycle.LifecycleRefused as exc:
+        raise HTTPException(status_code=409, detail=exc.payload()) from exc
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except (sqlite3.Error, OSError, RuntimeError) as exc:
+        raise HTTPException(status_code=503, detail='Project operation is unavailable. Please retry.') from exc
+
+
+class RenameProjectRequest(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    name: str
+
+    @field_validator('name')
+    @classmethod
+    def valid_name(cls, value):
+        return project_name(value)
+
+
+class ProjectOrderRequest(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    project_ids: list[Annotated[str, Field(min_length=1, max_length=100)]] = Field(max_length=2000)
+
+
+class RestoreProjectRequest(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    target_path: Annotated[str, Field(min_length=1, max_length=1024)] | None = None
+
+
+class DeleteProjectRequest(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    confirm_name: Annotated[str, Field(min_length=1, max_length=200)]
+
+
+@app.patch('/projects/{project_id}')
+def rename_project_route(project_id: str, request: RenameProjectRequest):
+    """The display name only; the folder and every reference are unchanged."""
+    return _lifecycle_action(lambda: manager.rename_project(project_id, request.name))
+
+
+@app.put('/projects/order')
+def reorder_projects_route(request: ProjectOrderRequest):
+    return {'projects': _lifecycle_action(lambda: manager.reorder_projects(request.project_ids))}
+
+
+@app.post('/projects/{project_id}/hide')
+def hide_project_route(project_id: str):
+    return _lifecycle_action(lambda: manager.set_project_hidden(project_id, True))
+
+
+@app.post('/projects/{project_id}/unhide')
+def unhide_project_route(project_id: str):
+    return _lifecycle_action(lambda: manager.set_project_hidden(project_id, False))
+
+
+@app.get('/projects/{project_id}/lifecycle')
+def project_lifecycle_route(project_id: str):
+    """What Move to Trash or Delete permanently would affect. Local reads only; changes nothing."""
+    return _lifecycle_action(lambda: manager.project_lifecycle_preview(project_id))
+
+
+@app.post('/projects/{project_id}/stop-work')
+def stop_project_work_route(project_id: str):
+    return _lifecycle_action(lambda: manager.stop_project_work(project_id))
+
+
+@app.post('/projects/{project_id}/trash')
+def trash_project_route(project_id: str):
+    """Moves the Project's folder into the Trash. Refused while work in it is running."""
+    return _lifecycle_action(lambda: manager.trash_project(project_id))
+
+
+@app.post('/projects/{project_id}/restore')
+def restore_project_route(project_id: str, request: RestoreProjectRequest | None = None):
+    target = request.target_path if request is not None else None
+    return _lifecycle_action(lambda: manager.restore_project(project_id, target))
+
+
+@app.delete('/projects/{project_id}')
+def delete_project_route(project_id: str, request: DeleteProjectRequest):
+    """Deletes a Project in the Trash: its local folder, its Task worktrees and its records.
+
+    Irreversible. Remote repositories are never contacted, so they are not affected."""
+    return _lifecycle_action(lambda: manager.delete_project(project_id, request.confirm_name))
 
 
 @app.get('/tasks')
 def list_tasks_route():
     return {'tasks': _task_action(manager.get_tasks)}
+
+
+class RenameTaskRequest(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    title: str
+
+    @field_validator('title')
+    @classmethod
+    def valid_title(cls, value):
+        return normalize_task_title(value)
+
+
+@app.patch('/tasks/{task_id}')
+def rename_task_route(task_id: str, request: RenameTaskRequest):
+    """The Task's display title only; its instructions, hierarchy and history are unchanged."""
+    return _task_action(lambda: manager.rename_task(task_id, request.title))
 
 
 @app.get('/tasks/{task_id}')
@@ -1330,3 +1448,13 @@ def delegations_route(task_id: str):
 @app.get('/delegations/{delegation_id}')
 def delegation_route(delegation_id: str):
     return _task_action(lambda: manager._task_store().get_delegation(delegation_id))
+
+
+# The desktop app serves its interface from this backend, so the interface and the API share one
+# local origin and nothing else listens. Development keeps the separate Vite server instead.
+_static = os.environ.get('CONTROL_CENTER_STATIC_DIR')
+if _static:
+    from starlette.staticfiles import StaticFiles
+    if not os.path.isfile(os.path.join(_static, 'index.html')):
+        raise RuntimeError('CONTROL_CENTER_STATIC_DIR does not contain index.html')
+    app.mount('/', StaticFiles(directory=_static, html=True), name='interface')

@@ -52,6 +52,11 @@ UNSAFE_ROUTES = {
     ('POST', '/agent-removals/{removal_id}/retry'),
     ('POST', '/executions/{execution_id}/diagnostics'), ('POST', '/executions/{execution_id}/attestation'),
     ('POST', '/tasks/{task_id}/responsibility/transfer'),
+    # Schema v39: project organization and lifecycle, and Task titles.
+    ('PATCH', '/projects/{project_id}'), ('PUT', '/projects/order'), ('POST', '/projects/{project_id}/hide'),
+    ('POST', '/projects/{project_id}/unhide'), ('POST', '/projects/{project_id}/stop-work'),
+    ('POST', '/projects/{project_id}/trash'), ('POST', '/projects/{project_id}/restore'),
+    ('DELETE', '/projects/{project_id}'), ('PATCH', '/tasks/{task_id}'),
 }
 GET_ROUTES = {
     '/providers',  # Stage 2F: reports the last check; never probes.
@@ -69,6 +74,7 @@ GET_ROUTES = {
     '/delegations/{delegation_id}', '/tasks/{task_id}/orchestration',
     '/agents/{agent_id}/removals', '/agent-removals/{removal_id}',
     '/executions/unresolved', '/executions/{execution_id}', '/tasks/{task_id}/responsibility',
+    '/projects/trash', '/projects/{project_id}/lifecycle',  # Schema v39: reads only; the preview runs local Git reads.
 }
 
 

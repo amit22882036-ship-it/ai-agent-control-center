@@ -32,7 +32,11 @@ logger = logging.getLogger(__name__)
 
 IDS = ('mock', 'codex', 'claude', 'gemini')
 REAL = ('codex', 'claude', 'gemini')
-SANDBOXES = ('read-only', 'workspace-write')
+# Access levels, narrowest first. Each provider maps them to its own documented control; the
+# semantics differ between providers and are described per adapter (`access_modes`).
+SANDBOXES = ('read-only', 'workspace-write', 'full-access')
+ACCESS_RANK = {sandbox: rank for rank, sandbox in enumerate(SANDBOXES)}
+CODEX_SANDBOX = {'read-only': 'read-only', 'workspace-write': 'workspace-write', 'full-access': 'danger-full-access'}
 LABELS = {'mock': 'Mock', 'codex': 'Codex', 'claude': 'Claude Code', 'gemini': 'Gemini CLI'}
 NOW = "strftime('%Y-%m-%dT%H:%M:%fZ','now')"
 
@@ -334,13 +338,18 @@ class Adapter:
             return 'known'
         return 'unknown'
 
+    # What each access level means with this provider, in plain words: what runs, what is
+    # confined and by what. None: not offered by this adapter.
+    access_modes = {}
+
     def describe(self):
         return {'provider': self.id, 'label': self.label, 'docs_url': self.docs_url,
                 'install_guidance': self.install_guidance, 'auth_guidance': self.auth_guidance,
                 'billing_guidance': self.billing_guidance,
                 'documented_models': list(self.documented_models),
                 'capabilities': {name: {'supported': self.capability(name) is None, 'reason': self.capability(name)}
-                                 for name in CORE_CAPABILITIES + ADVANCED_CAPABILITIES}}
+                                 for name in CORE_CAPABILITIES + ADVANCED_CAPABILITIES},
+                'access_modes': self.access_modes}
 
 
 class MockAdapter(Adapter):
@@ -386,7 +395,17 @@ class CodexAdapter(Adapter):
                                             'autonomous', 'delegation', 'hybrid', 'delegated_child', 'model_selection')}
     capabilities['model_change_keeps_session'] = ('A different model starts a new Codex session: resuming a session '
                                                   'with another model is not a documented exec contract.')
-    capabilities['permission_change'] = 'Only narrowing (Workspace write to Read only) is allowed, at a safe boundary.'
+    capabilities['permission_change'] = 'Access may only narrow for an existing agent, at a safe boundary.'
+    access_modes = {
+        'read-only': {'summary': 'Reads files and runs commands that cannot change anything, inside the Codex sandbox.',
+                      'commands': True, 'edits': False, 'network': False, 'sandboxed': True},
+        'workspace-write': {'summary': 'Edits files and runs commands such as tests, builds and Git inside the Codex sandbox, '
+                                      "which limits changes to the task's own worktree. No network access.",
+                            'commands': True, 'edits': True, 'network': False, 'sandboxed': True},
+        'full-access': {'summary': "Codex's danger-full-access mode: commands run without the sandbox, with network "
+                                   'access, and can change anything your Windows account can.',
+                        'commands': True, 'edits': True, 'network': True, 'sandboxed': False},
+    }
 
     def locate(self):
         if os.name != 'nt':
@@ -398,7 +417,7 @@ class CodexAdapter(Adapter):
     def sandbox_arguments(self, sandbox, *, managed=False):
         if sandbox not in SANDBOXES:
             raise ValueError('Unknown Codex sandbox')
-        return ['--sandbox', sandbox]
+        return ['--sandbox', CODEX_SANDBOX[sandbox]]
 
     def config_path(self):
         home = os.environ.get('CODEX_HOME') or str(Path(os.environ.get('USERPROFILE') or Path.home()) / '.codex')
@@ -506,7 +525,7 @@ class CodexAdapter(Adapter):
             overrides += f'-c model_reasoning_effort={chosen_effort} '
         if structured:
             overrides += managed_orchestration.CLI_OVERRIDE
-        command = (f'"{launcher}" exec {overrides}--sandbox {sandbox} --color never --skip-git-repo-check '
+        command = (f'"{launcher}" exec {overrides}--sandbox {CODEX_SANDBOX[sandbox]} --color never --skip-git-repo-check '
                    f'{"--json " if structured else ""}{prompt_args}')
         # cmd /s /c strips the outer quotes, preserving the quoted launcher path.
         return f'"{cmd}" /d /s /v:off /c "{command}"'
@@ -613,7 +632,19 @@ class ClaudeAdapter(Adapter):
     capabilities = {name: None for name in ('session_resume', 'reply', 'redirect', 'waiting_input', 'decisions',
                                             'autonomous', 'delegation', 'hybrid', 'delegated_child',
                                             'model_selection', 'model_change_keeps_session')}
-    capabilities['permission_change'] = 'Only narrowing (Workspace write to Read only) is allowed, at a safe boundary.'
+    capabilities['permission_change'] = 'Access may only narrow for an existing agent, at a safe boundary.'
+    full_access_supported = False  # The installed CLI documents the bypassPermissions mode (set by probe).
+    access_modes = {
+        'read-only': {'summary': 'Reads and searches files. No file changes, no commands and no web access.',
+                      'commands': False, 'edits': False, 'network': False, 'sandboxed': True},
+        'workspace-write': {'summary': "Edits files in the task's worktree without asking. Commands (PowerShell, Bash) and "
+                                       'web access stay off, because Claude Code cannot confine them to the worktree on '
+                                       'Windows.', 'commands': False, 'edits': True, 'network': False, 'sandboxed': True},
+        'full-access': {'summary': 'Every Claude Code tool without approval prompts: PowerShell and Bash commands, web '
+                                   "search and fetch, your MCP servers and this repository's own Claude settings. Not "
+                                   'sandboxed: it can change anything your Windows account can.',
+                        'commands': True, 'edits': True, 'network': True, 'sandboxed': False},
+    }
 
     def locate(self):
         if os.name != 'nt':
@@ -632,6 +663,17 @@ class ClaudeAdapter(Adapter):
         return _exe_line(executable, arguments)
 
     def sandbox_arguments(self, sandbox, *, managed=False):
+        if sandbox == 'full-access':
+            if not self.full_access_supported:
+                raise ProviderRefused('claude', UNSUPPORTED_VERSION, 'This Claude Code version does not document the '
+                                      'bypassPermissions mode that Full Access uses.', 'Update Claude Code.')
+            # As when Claude Code is started in the folder by hand: user, project and local settings,
+            # the person's MCP servers and every built-in tool, with no approval prompts. Only
+            # provider-internal sub-agents stay off in managed runs: helpers go through admission.
+            arguments = ['--setting-sources', 'user,project,local', '--permission-mode', 'bypassPermissions']
+            if managed:
+                arguments += ['--disallowedTools', ','.join(CLAUDE_NATIVE_COLLABORATION_TOOLS)]
+            return arguments
         denied = list(CLAUDE_ALWAYS_DENIED)
         if sandbox == 'read-only':
             mode = 'dontAsk'  # Denies every call that would otherwise prompt.
@@ -833,6 +875,7 @@ class ClaudeAdapter(Adapter):
         self.installed_version = version_tuple(found)
         self.effort_flag_supported = '--effort' in usage.stdout
         self.settings_flag_supported = '--settings' in usage.stdout
+        self.full_access_supported = 'bypassPermissions' in usage.stdout
         self.usage_command_supported = ('--no-session-persistence' in usage.stdout and self.installed_version is not None
                                         and self.installed_version >= CLAUDE_USAGE_REPORT_VERSION)
         self.user_fallback_chain = self.configured_fallback()
@@ -875,7 +918,17 @@ class GeminiAdapter(Adapter):
                    'so it cannot coordinate Control Center Children. Use Codex or Claude Code as the Parent.')
     capabilities.update(autonomous=_no_managed, delegation=_no_managed, hybrid=_no_managed,
                         model_change_keeps_session='A different model starts a new Gemini CLI session.',
-                        permission_change='Only narrowing (Workspace write to Read only) is allowed, at a safe boundary.')
+                        permission_change='Access may only narrow for an existing agent, at a safe boundary.')
+    yolo_supported = False  # The installed CLI documents the yolo approval mode (set by probe).
+    access_modes = {
+        'read-only': {'summary': 'Reads files. Tools that would need approval do not run.',
+                      'commands': False, 'edits': False, 'network': False, 'sandboxed': False},
+        'workspace-write': {'summary': 'Edits files without asking. Shell commands need approval in Gemini CLI, so they '
+                                       'do not run.', 'commands': False, 'edits': True, 'network': False, 'sandboxed': False},
+        'full-access': {'summary': "Gemini CLI's yolo mode: every tool runs without approval, including shell commands. "
+                                   'Not sandboxed: it can change anything your Windows account can.',
+                        'commands': True, 'edits': True, 'network': True, 'sandboxed': False},
+    }
 
     def locate(self):
         if os.name != 'nt':
@@ -971,6 +1024,11 @@ class GeminiAdapter(Adapter):
             return ['--approval-mode', 'default']
         if sandbox == 'workspace-write':
             return ['--approval-mode', 'auto_edit']
+        if sandbox == 'full-access':
+            if not self.yolo_supported:
+                raise ProviderRefused('gemini', UNSUPPORTED_VERSION, 'This Gemini CLI version does not document the yolo '
+                                      'approval mode that Full Access uses.', 'Update Gemini CLI.')
+            return ['--approval-mode', 'yolo']
         raise ValueError('Unknown Gemini CLI access policy')
 
     def command(self, sandbox='read-only', session_id=None, *, structured=False, model=None, effort=None):
@@ -1032,6 +1090,7 @@ class GeminiAdapter(Adapter):
             return Readiness('gemini', UNSUPPORTED_VERSION, 'This Gemini CLI version lacks required options: '
                              + (', '.join(missing) or 'help unavailable') + '.',
                              'Update it with `npm install -g @google/gemini-cli`.', self.docs_url, **base)
+        self.yolo_supported = 'yolo' in usage.stdout
         refusal = self.route_refusal(None)
         if refusal is not None:
             state, reason = refusal

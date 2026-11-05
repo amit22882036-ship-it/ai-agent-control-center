@@ -181,7 +181,7 @@ def require_owner(db, decision):
     current, task, agent = hybrid.owner(db, decision['task_id'], allow_running=True)
     if (agent['agent_id'] != decision['agent_id'] or current['assignment_id'] != decision['assignment_id']
             or not agent['planning_enabled'] or not providers.managed_capable(agent['agent_type'])
-            or agent['sandbox'] not in ('read-only','workspace-write')
+            or agent['sandbox'] not in ('read-only','workspace-write','full-access')
             or (task['parent_task_id'] and not agent['recursive_delegation_enabled'])
             or task['control_intent'] != 'active' or task['stop_required']):
         raise ValueError('Replanning owner is no longer authorized')

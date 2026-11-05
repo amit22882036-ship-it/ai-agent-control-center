@@ -54,7 +54,9 @@ class ReadSideEffectTests(unittest.TestCase):
         manager.get_agent_output(agent_id)
         for path in ('/agents', f'/agents/{agent_id}', f'/agents/{agent_id}?include_output=false',
                      f'/agents/{agent_id}/output', f'/agents/{agent_id}/activity', f'/agents/{agent_id}/hierarchy',
-                     f'/agents/{agent_id}/name-history', '/workspace', '/workspace/tasks', '/tasks', '/projects'):
+                     f'/agents/{agent_id}/name-history', '/workspace', '/workspace/tasks', '/tasks', '/projects',
+                     '/projects/trash', *([f"/projects/{p['project_id']}/lifecycle" for p in manager.list_projects()]
+                                          if manager._store is not None else [])):
             path, _, query = path.partition('?')
             status, _, _ = call('GET', path, headers(token=None))
             self.assertNotEqual(status, 500, path)
@@ -416,10 +418,13 @@ class ReadAuditTests(unittest.TestCase):
             agent_popen.assert_not_called()
         self.assertEqual(self.database(), before)
         self.assertEqual(manager.agent_statuses[policy], 'running')
-        # Only /tasks/{task_id}/workspace runs Git: read-only queries plus
-        # content-addressed object hashing into a temporary index.
+        # /tasks/{task_id}/workspace runs read-only queries plus content-addressed object hashing
+        # into a temporary index; /projects/{project_id}/lifecycle runs read-only queries only
+        # (remote, status without optional locks, branch, rev-list, stash list), never a fetch.
         self.assertTrue(set(git_commands) <= {'rev-parse', 'worktree list', 'ls-files', 'read-tree', 'hash-object',
-                                              'update-index', 'write-tree', 'diff-tree'}, git_commands)
+                                              'update-index', 'write-tree', 'diff-tree',
+                                              'remote', 'status', 'branch', 'rev-list', 'stash'}, git_commands)
+        self.assertIn('status', git_commands)
 
 
 if __name__ == '__main__':
