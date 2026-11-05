@@ -44,8 +44,31 @@ From the repository root in PowerShell: `.\desktop\build.ps1`. It builds the int
 packaged backend, and the installer in `desktop\out\`. The installer is unsigned, so Windows
 SmartScreen warns before the first run.
 
-## Verified on this machine (2026-11-05)
+## First run and demo mode
 
-Silent install and uninstall (`/S`), Start menu and desktop shortcuts, launch, process supervision
-reported as `supervised`, Mock agents started and finished, data kept after reinstalling over the
-previous version and relaunching, a clean shutdown with no backend left running.
+A new installation opens on a welcome with three steps: check the AI tools in Connections, add a
+project (the system folder picker fills the path and a name), and describe the work. Starting the
+app with `--demo` uses a separate database with three synthetic repositories and Mock agents, so
+it can be explored without a real project or any model usage.
+
+![The welcome a new installation opens on](images/lumen/welcome.png)
+
+## Verified on this machine
+
+All with disposable data (`CONTROL_CENTER_DESKTOP_DATA` and `APPDATA` pointed at temporary
+folders, fake provider CLIs, Mock agents only; no real project, database or paid run):
+
+| Check | 0.9.0 (2026-11-05) | 0.9.1 upgrade (2026-11-05) |
+| --- | --- | --- |
+| Silent install (`/S`), Start menu and desktop shortcuts, per-user uninstall entry | Yes | Yes, over 0.9.0 |
+| Launch; backend healthy on a free port; interface served; window shown | Yes | Yes |
+| Process supervision reported as `supervised`; a Mock agent started and finished | Yes | Yes |
+| Provider discovery: Codex and Gemini CLI found at the fake installation | Yes | Yes |
+| Data kept across the upgrade (project, task, agent history) | Not applicable | Yes |
+| Closing the window: backend shutdown completes, exit code 0, no process left | Yes | Yes |
+| Silent uninstall removes program, shortcuts and registry entry; data stays | Yes | Yes |
+
+Claude Code discovery found the developer's own native installation (its location is under the
+user profile, which the test cannot redirect without breaking Electron); only local, non-billable
+discovery ran against it. The installer is not code-signed, and automatic in-app updates are not
+implemented: a newer version is installed over the old one, as verified above.

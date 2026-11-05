@@ -12,7 +12,9 @@ page says what the chosen level means for the chosen tool before anything starts
 
 All levels keep the Control Center's own guarantees: the prompt travels on standard input, the
 process runs under a Windows Job Object, paid-route environment variables are removed, and the
-agent works in its task's private Git worktree as its working directory.
+agent works in its task's private Git worktree as its working directory. A confined agent loses
+its own provider's paid-route variables; a Full Access agent loses every provider's, because it
+can start other programs, another provider's CLI included.
 
 ## Capability matrix (verified against the installed CLIs' help on 2026-11-04)
 
@@ -50,3 +52,29 @@ only and Workspace.
 The Control Center runs providers headless (print or exec mode). Prompts that would ask a person
 are answered by the access level: refused in Read only and Workspace, approved in Full Access.
 Interactive per-command approval inside the Control Center is not implemented.
+
+## What is verified, and what still needs a real run
+
+`backend/test_agent_access.py` launches every provider at every level as a real supervised process
+against fake CLIs that record their arguments and environment (no model is called):
+
+| Checked with fake CLIs | Result |
+| --- | --- |
+| Each provider receives exactly one access flag with the documented value for each level | Claude `dontAsk` / `acceptEdits` / `bypassPermissions`; Codex `read-only` / `workspace-write` / `danger-full-access`; Gemini `default` / `auto_edit` / `yolo` |
+| Claude confined levels remove Bash, PowerShell, WebFetch and WebSearch and use `--strict-mcp-config`; Read only also removes Edit and Write | Yes |
+| Claude Full Access loads user, project and local settings and removes no built-in tool | Yes |
+| Codex never receives `--dangerously-bypass-approvals-and-sandbox` | Yes |
+| Every level runs under a Job Object (`job_kill_on_close`) | Yes |
+| Paid-route variables: the provider's own at every level, every provider's with Full Access | Yes |
+| A CLI whose help does not document `bypassPermissions` or `yolo` refuses Full Access before anything starts | Yes |
+| Helpers of a Full Access lead start with Workspace unless "Full Access too" was chosen | Yes (`HelperAccessTests`) |
+
+These need an authenticated, paid run of the real CLI and have not been done:
+
+- That Claude Code in `bypassPermissions` mode, Codex in `danger-full-access` and Gemini CLI in
+  `yolo` mode really run shell commands, builds and network access without prompting when started
+  headless by the Control Center.
+- That Codex's `workspace-write` sandbox lets tests and builds run in the worktree on Windows, and
+  blocks network access, with the installed Codex version.
+- That Gemini CLI's `auto_edit` mode edits files but never runs a shell command in headless mode.
+- That the CLIs' own approval prompts never appear and block a headless run at any level.

@@ -26,21 +26,27 @@ missing.
 | Connections (AI Providers), Settings, notifications | Yes | Yes | Yes |
 | Windows desktop app with installer | No | No | Yes, see [desktop app](desktop.md) |
 | Demo mode with synthetic projects and Mock agents | No | No | Desktop app `--demo` |
+| Work Map direction: top to bottom or left to right (remembered; arrow keys turn with it) | No | Top to bottom | Both |
+| Canceled tasks struck through, with their own "Canceled" filter (shown when there are any) | No | No | Yes |
+| First-run welcome: check tools, add a project, describe the work | No | No | Yes, until the first task exists |
+| System folder picker in Add a project | No | No | Desktop app (a browser still takes a typed path) |
 
 ## Not done yet
 
-- **Map orientation.** The Work Map draws families top to bottom only; a left-to-right option is
-  not implemented.
-- **Canceled tasks.** Canceled tasks show the "Canceled" state; there is no struck-through style
-  and no separate filter for them.
-- **First-run guide.** A new installation opens on an empty Work page ("No tasks yet") with a
-  New task button; there is no step-by-step welcome.
-- **Folder picker.** The desktop app exposes a native folder picker to the page
-  (`window.controlCenterDesktop.chooseFolder`), but the Add project dialog still takes a typed path.
 - **Applying a root task's work to its project** is still API only (`POST /tasks/{id}/integrate`),
   as in Atlas.
-- **Real-provider runs** of Full Access were not exercised: the flags were checked against each
-  installed CLI's help, and the behaviour with fake CLIs. No paid agent was started.
+- **Resources and work intents** have no screens; they are API only, as in Classic.
+- **Real-provider runs** of Full Access were not exercised: the flags are checked against each
+  installed CLI's help and with fake CLIs (see [agent access](agent-access.md#what-is-verified-and-what-still-needs-a-real-run)).
+  No paid agent was started.
+
+## Look and feel
+
+The app is laid out as one window: a sidebar material on the left (navigation and projects, each
+with its own colour), a transparent title bar, and one content sheet. Work sits in grouped lists
+(rounded groups with hairline separators) in place of a stack of cards, and selection is an inset
+rounded shape as in a native sidebar. Pages share the same sheet; their sections are groups on it.
+Light and dark appearances, reduced motion, reduced transparency and higher contrast are honoured.
 
 ## Tests
 
