@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'">
+<title>AI Agent Control Center</title>
+<style>
+  html, body { margin: 0; height: 100%; }
+  body { display: grid; place-items: center; font: 600 14px/1.4 'Segoe UI Variable Text', 'Segoe UI', system-ui, sans-serif; color: #0E1320;
+    background: radial-gradient(60% 60% at 70% 20%, rgba(47, 85, 228, .12), transparent 70%), radial-gradient(50% 50% at 20% 100%, rgba(240, 138, 0, .12), transparent 70%), #EAEEF4; }
+  .card { display: grid; justify-items: center; gap: 14px; }
+  .mark { width: 54px; height: 54px; border-radius: 17px; background: #0E1320; position: relative; box-shadow: 0 18px 40px -18px rgba(20, 32, 70, .6); }
+  .mark::after { content: ""; position: absolute; right: 9px; bottom: 9px; width: 13px; height: 13px; border-radius: 50%; background: #FFB547;
+    box-shadow: 0 0 18px 4px rgba(255, 181, 71, .55); animation: pulse 1.6s ease-in-out infinite; }
+  .name { font-size: 18px; font-weight: 700; letter-spacing: -.02em; }
+  .note { font-weight: 500; color: #5F687D; }
+  @keyframes pulse { 50% { opacity: .55; } }
+  @media (prefers-reduced-motion: reduce) { .mark::after { animation: none; } }
+</style>
+</head>
+<body>
+<div class="card" role="status">
+  <div class="mark" aria-hidden="true"></div>
+  <div class="name">AI Agent Control Center</div>
+  <div class="note">Starting the local service…</div>
+</div>
+</body>
+</html>

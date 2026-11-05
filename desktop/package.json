@@ -1,0 +1,43 @@
+{
+  "name": "ai-agent-control-center-desktop",
+  "productName": "AI Agent Control Center",
+  "version": "0.9.0",
+  "description": "Supervise coding agents (Claude Code, Codex, Gemini CLI) across your local Git projects.",
+  "private": true,
+  "main": "main.cjs",
+  "author": "Amit Gertner",
+  "license": "MIT",
+  "scripts": {
+    "start": "electron .",
+    "start:demo": "electron . --demo",
+    "dist": "electron-builder --win nsis --x64 --publish never"
+  },
+  "devDependencies": {
+    "electron": "45.2.2",
+    "electron-builder": "26.18.0"
+  },
+  "build": {
+    "appId": "com.aiagentcontrolcenter.desktop",
+    "productName": "AI Agent Control Center",
+    "directories": { "buildResources": "assets", "output": "out" },
+    "files": ["main.cjs", "preload.cjs", "splash.html", "assets/icon.png", "package.json"],
+    "extraResources": [
+      { "from": "../backend/dist-desktop/ControlCenterBackend", "to": "backend" },
+      { "from": "../frontend/dist-desktop", "to": "interface" },
+      { "from": "assets/icon.png", "to": "icon.png" }
+    ],
+    "asar": true,
+    "win": { "target": [{ "target": "nsis", "arch": ["x64"] }], "icon": "assets/icon.ico" },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "AI Agent Control Center",
+      "uninstallDisplayName": "AI Agent Control Center",
+      "deleteAppDataOnUninstall": false,
+      "artifactName": "AI-Agent-Control-Center-Setup-${version}.${ext}"
+    }
+  }
+}
