@@ -231,8 +231,12 @@ app.whenReady().then(async () => {
   const splash = new BrowserWindow({ width: 420, height: 260, frame: false, resizable: false, show: true, backgroundColor: '#EAEEF4',
     icon: icon(), webPreferences: { sandbox: true } })
   splash.loadFile(path.join(__dirname, 'splash.html'))
+  // Closing the splash before the window exists (Alt+F4, or Windows asking the app to close while
+  // it starts) quits cleanly instead of leaving the app running without a window.
+  splash.on('close', () => { if (!window) { quitting = true; app.quit() } })
   try {
     await startBackend()
+    if (quitting) return
     if (DEMO) await seedDemo().catch((error) => backendLog?.write(`--- demo seeding failed: ${error.message}
 `))
     createWindow()
