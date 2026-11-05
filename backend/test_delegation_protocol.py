@@ -325,7 +325,7 @@ class RuntimeTests(unittest.TestCase):
         self.patch(patch.object(manager.notifications, 'transition'))
         self.patch(patch.object(manager.notifications, 'cancel'))
         self.commands = []
-        def spawn(command, agent_type, *, cwd):
+        def spawn(command, agent_type, *, cwd, sandbox=None):
             self.commands.append(command)
             process = Mock(pid=123, stdin=io.StringIO(), stdout=io.StringIO(), stderr=io.StringIO())
             process.poll.return_value = None

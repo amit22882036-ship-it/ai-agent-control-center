@@ -2026,7 +2026,7 @@ def _journal_unsupervised(journal, process):
         raise
 
 
-def _spawn_process(command: str | list[str], agent_type: AgentType, *, cwd) -> subprocess.Popen:
+def _spawn_process(command: str | list[str], agent_type: AgentType, *, cwd, sandbox=None) -> subprocess.Popen:
     stream = _stream_command(command)
     structured = isinstance(command, StructuredCommand) or (stream and command.structured)
     real = agent_type in providers.REAL
@@ -2047,8 +2047,10 @@ def _spawn_process(command: str | list[str], agent_type: AgentType, *, cwd) -> s
     )
     if real:
         # Variables that would silently switch billing to a paid API route are
-        # removed; the provider uses the sign-in that readiness verified.
-        options['env'] = providers.adapter(agent_type).environment()
+        # removed; the provider uses the sign-in that readiness verified. With Full
+        # Access the agent can run other programs (including another provider's CLI),
+        # so every provider's paid-route variables are removed, not only its own.
+        options['env'] = providers.launch_environment(agent_type, sandbox)
     if agent_type == 'gemini' and getattr(command, 'policy', None) is not None:
         # The effective configuration of this execution's own workspace, never a
         # readiness result observed for another one.
@@ -2501,7 +2503,7 @@ def _admitted_spawn(task_id, agent_id, command, agent_type, cwd, *, materializat
     if _store is None:
         providers.admission_check(None, agent_type, model=model, policy=getattr(command, 'policy', None),
                                   override=_usage_override())
-        return _spawn_process(command, agent_type, cwd=cwd)
+        return _spawn_process(command, agent_type, cwd=cwd, sandbox=sandbox)
     # Phase 0: a durable reservation, committed before any process exists. If
     # it cannot be committed, or conflicts, nothing is created.
     resolved = getattr(command, 'resolved', None)
@@ -2589,7 +2591,7 @@ def _admitted_spawn(task_id, agent_id, command, agent_type, cwd, *, materializat
             # Authorization above was revalidated here; the reservation is still ours alone.
             executions.require_reserved(db, reservation[0], _controller_identity()['instance_id'], agent_id, task_id)
             with _journal(db, task_id, agent_id, agent_type, reservation) as journal:
-                process = _spawn_process(command, agent_type, cwd=cwd)
+                process = _spawn_process(command, agent_type, cwd=cwd, sandbox=sandbox)
                 if not journal.consumed:
                     # A process this supervisor did not journal itself: record
                     # it as unsupervised, never as contained.

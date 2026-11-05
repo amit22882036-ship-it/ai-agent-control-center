@@ -58,7 +58,8 @@ if provider == 'codex' and args[:1] == ['debug']:
     print(os.environ.get('FAKE_CODEX_MODELS') or json.dumps(DEFAULT_CODEX_MODELS))
     sys.exit(0)
 if '--help' in args:
-    print('' if os.environ.get('FAKE_' + provider.upper() + '_OLD') else HELP[provider])
+    # FAKE_HELP_EXTRA: a newer CLI that also documents its unrestricted mode (bypassPermissions, yolo).
+    print('' if os.environ.get('FAKE_' + provider.upper() + '_OLD') else HELP[provider] + ' ' + os.environ.get('FAKE_HELP_EXTRA', ''))
     sys.exit(0)
 # Stage 2G: the official sign-in and sign-out commands change a sign-in kept in a state file.
 state_file = os.environ.get('FAKE_AUTH_STATE')

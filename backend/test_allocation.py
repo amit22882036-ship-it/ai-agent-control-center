@@ -569,7 +569,7 @@ class AllocationPromotionTests(unittest.TestCase):
         observed = []
         original = manager._spawn_process
 
-        def spawn(command, agent_type, *, cwd):
+        def spawn(command, agent_type, *, cwd, sandbox=None):
             # Popen happens inside the admission transaction: a concurrent policy write
             # cannot commit in between, so the committed policy still permits this launch.
             with AgentStore(self.store.path)._connection() as db:

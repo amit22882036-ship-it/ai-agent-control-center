@@ -1108,6 +1108,18 @@ ADAPTERS = {adapter.id: adapter for adapter in (MockAdapter(), CodexAdapter(), C
 CODEX, CLAUDE, GEMINI = ADAPTERS['codex'], ADAPTERS['claude'], ADAPTERS['gemini']
 
 
+
+def launch_environment(provider, sandbox=None):
+    """The environment an agent process starts with. Each provider loses its own paid-route
+    variables; a Full Access agent loses every provider's, because it can start other programs."""
+    own = adapter(provider)
+    if sandbox != 'full-access':
+        return own.environment()
+    names = set(own.scrubbed_env)
+    for name in REAL:
+        names.update(adapter(name).scrubbed_env)
+    return _scrubbed(sorted(names))
+
 def adapter(provider):
     try:
         return ADAPTERS[provider]

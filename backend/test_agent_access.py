@@ -11,6 +11,7 @@ from app import agent_manager as manager
 from app import delegation_safety, providers
 import provider_test_support as fake
 import test_project_lifecycle
+import test_providers
 
 SESSION = '0f9a3c5e-1d2b-4c3a-9e8f-7a6b5c4d3e2f'
 
@@ -144,6 +145,75 @@ class HelperAccessTests(unittest.TestCase):
         manager.agents[agent] = None
         with self.assertRaisesRegex(ValueError, 'cannot be widened'):
             manager.change_agent_provider(agent, provider='codex', sandbox='full-access')
+
+
+class SupervisedAccessMatrixTests(unittest.TestCase):
+    """Every provider at every level, launched for real (supervised processes) against fake CLIs that
+    record their arguments: what each CLI is actually told, and which levels a CLI that does not
+    document its unrestricted mode refuses before anything starts."""
+    setUp = test_providers.SupervisedFakeProviderTests.setUp
+    tearDown = test_providers.SupervisedFakeProviderTests.tearDown
+    rows = test_providers.SupervisedFakeProviderTests.rows
+    wait_status = test_providers.SupervisedFakeProviderTests.wait_status
+
+    EXPECTED = {
+        'claude': {'read-only': ('--permission-mode', 'dontAsk'), 'workspace-write': ('--permission-mode', 'acceptEdits'),
+                   'full-access': ('--permission-mode', 'bypassPermissions')},
+        'codex': {'read-only': ('--sandbox', 'read-only'), 'workspace-write': ('--sandbox', 'workspace-write'),
+                  'full-access': ('--sandbox', 'danger-full-access')},
+        'gemini': {'read-only': ('--approval-mode', 'default'), 'workspace-write': ('--approval-mode', 'auto_edit'),
+                   'full-access': ('--approval-mode', 'yolo')},
+    }
+
+    def run_level(self, provider, level):
+        before = len(fake.runs(self.log, provider))
+        agent_id = manager.start_agent(f'Audit {level}', provider, level)
+        self.assertEqual(self.wait_status(agent_id, 'finished'), 'finished')
+        runs = fake.runs(self.log, provider)
+        self.assertEqual(len(runs), before + 1)
+        return agent_id, runs[-1]
+
+    def test_each_provider_is_told_exactly_its_level(self):
+        with patch.dict(os.environ, FAKE_HELP_EXTRA='bypassPermissions yolo'):
+            providers.invalidate()
+            for provider, levels in self.EXPECTED.items():
+                for level, (flag, value) in levels.items():
+                    with self.subTest(provider=provider, level=level):
+                        agent_id, run = self.run_level(provider, level)
+                        args = run['args']
+                        self.assertEqual(args[args.index(flag) + 1], value)
+                        self.assertEqual(args.count(flag), 1)
+                        # The provider's own paid route never reaches it; with Full Access (which can start
+                        # other programs, another provider's CLI included) no provider's paid route does.
+                        keys = {'ANTHROPIC_API_KEY', 'GEMINI_API_KEY', 'CODEX_API_KEY', 'OPENAI_API_KEY'}
+                        own = keys & set(providers.adapter(provider).scrubbed_env)
+                        self.assertTrue(own)
+                        self.assertFalse((keys if level == 'full-access' else own) & set(run['env']))
+                        execution = self.rows('SELECT * FROM executions WHERE agent_id=?', agent_id)[-1]
+                        self.assertEqual(execution['containment'], 'job_kill_on_close')  # Supervised at every level.
+                        self.assertEqual(manager.agent_sandboxes[agent_id], level)
+                        if provider == 'claude':
+                            denied = args[args.index('--disallowedTools') + 1].split(',') if '--disallowedTools' in args else []
+                            if level == 'full-access':
+                                self.assertEqual(args[args.index('--setting-sources') + 1], 'user,project,local')
+                                self.assertFalse({'Bash', 'PowerShell', 'WebFetch', 'WebSearch', 'Edit', 'Write'} & set(denied))
+                            else:
+                                self.assertTrue({'Bash', 'PowerShell', 'WebFetch', 'WebSearch'} <= set(denied))
+                                self.assertIn('--strict-mcp-config', args)
+                            if level == 'read-only':
+                                self.assertTrue({'Edit', 'Write'} <= set(denied))
+                        if provider == 'codex':
+                            self.assertNotIn('--dangerously-bypass-approvals-and-sandbox', args)
+
+    def test_full_access_is_refused_before_launch_when_the_cli_does_not_document_it(self):
+        providers.invalidate()
+        for provider in ('claude', 'gemini'):
+            with self.subTest(provider=provider):
+                before = len(fake.runs(self.log, provider))
+                with self.assertRaises(Exception) as caught:
+                    manager.start_agent('Audit full access', provider, 'full-access')
+                self.assertRegex(str(caught.exception), 'bypassPermissions|yolo')
+                self.assertEqual(len(fake.runs(self.log, provider)), before)  # Nothing started.
 
 
 if __name__ == '__main__':
