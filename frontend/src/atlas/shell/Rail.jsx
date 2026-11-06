@@ -130,7 +130,8 @@ export default function Rail({ route, markPush, directory, projectFacts, needs, 
     </>}
     <div className="a-rail-sep" aria-hidden="true" />
     <nav className="a-rail-projects" aria-label="Your projects">
-      <span className="a-rail-head" aria-hidden="true"><span className="a-rail-text">Your projects</span></span>
+      {/* The heading appears once there is a project to list under it. */}
+      {(projects.length > 0 || hidden > 0) && <span className="a-rail-head" aria-hidden="true"><span className="a-rail-text">Your projects</span></span>}
       {projects.map((project, index) => {
         const facts = projectFacts(project.id)
         const state = facts.needsYou ? 'need' : facts.working ? 'live' : facts.open ? 'open' : 'quiet'

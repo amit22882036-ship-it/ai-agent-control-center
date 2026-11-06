@@ -26,16 +26,16 @@ its history is in [Atlas migration](atlas-migration.md) and the
 
 ## Visual language
 
-Lumen uses one plain signal language (see [DESIGN.md](../DESIGN.md)). Every state is a word, a
+Lumen uses the "Living light" language (see [DESIGN.md](../DESIGN.md)). Every state is a word, a
 familiar symbol in a circle and one colour, and each colour keeps its meaning on every screen:
 
 | Colour | Means |
 | --- | --- |
-| Orange (filled "!") | Only what needs you |
-| Blue (half-filled ring) | An agent recorded working |
-| Slate (three dots) | Waiting on something else |
-| Green (check) | Finished |
-| Red (filled "×") | Failed |
+| Amber (filled "!") | Only what needs you |
+| Ultramarine (half-filled ring) | An agent recorded working; a gleam of light marks it running |
+| Violet (three dots) | Waiting on something else |
+| Mint (check) | Finished |
+| Coral (filled "×") | Failed |
 | Grey | Resting: paused, blocked, not started, canceled |
 
 A family's progress is a bar and a "finished/total" count; the Now strip adds one bar that shows

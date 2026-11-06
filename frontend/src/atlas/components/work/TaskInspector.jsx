@@ -7,7 +7,7 @@ import Icon from '../Icon'
 import { tabPanelProps } from '../../a11y.mjs'
 import { API_BASE } from '../../../apiClient.mjs'
 import { useLiveResource } from '../../hooks'
-import { TOOLS } from '../../vocabulary.mjs'
+import { TOOLS, tagOf } from '../../vocabulary.mjs'
 import { helpersView, plannedView, resultView } from '../../model/taskStatus.mjs'
 import { agentLabel, nowView, timeView, whoView } from '../../model/workList.mjs'
 import { pathTo } from '../../model/tasks.mjs'
@@ -75,32 +75,30 @@ function Family({ store, derived, id, onSelect, onShowInMap, lens }) {
   const more = all.length - children.length
   const above = pathTo(forest, id).length
   const siblings = parent ? forest.children[parent] || [] : null
-  const face = (taskId, size) => {
-    const who = whoView(derived, taskId)
+  // The family in the Map's language: small cards with their mark, title and state, the lead above,
+  // this task highlighted, its helpers below on a thread.
+  const inside = (taskId) => {
     const status = derived.status[taskId]
-    return <span className="a-fam-face">
-      {who.agent ? <Avatar name={who.name} color={who.agent.color} tool={who.agent.tool} size={size} removed={who.removed} decorative />
-        : <span className="a-avatar-empty" style={{ width: size, height: size }} aria-hidden="true" />}
-      <span className="a-fam-bead"><StatusBead state={status.bead} size={12} decorative /></span>
-    </span>
+    return <>
+      <StatusBead state={status.bead} size={15} decorative live={status.key === 'running' || status.key === 'reviewing'} />
+      <span className="a-fam2-text"><span className="a-fam2-title a-bidi" dir="auto">{store.tasks[taskId].title || 'Untitled task'}</span>
+        <span className={`a-fam2-state a-tone-${status.tone}`}>{status.label}</span></span>
+    </>
   }
-  const node = (taskId, size, role) => <button key={taskId} type="button" className="a-fam-node" onClick={() => onSelect(taskId)}
-    title={store.tasks[taskId].title || 'Untitled task'}>
-    {face(taskId, size)}<span className="a-sr">{role}: </span><span className="a-fam-label a-bidi" dir="auto">{store.tasks[taskId].title || 'Untitled task'}</span>
-    <span className="a-sr">, {derived.status[taskId].label}</span>
-  </button>
+  const tag = (taskId) => { const who = whoView(derived, taskId); return tagOf(who.agent, who.removed) || undefined }
+  const node = (taskId, role) => <button key={taskId} type="button" className="a-fam2-card" data-tag={tag(taskId)} onClick={() => onSelect(taskId)}
+    title={store.tasks[taskId].title || 'Untitled task'}><span className="a-sr">{role}: </span>{inside(taskId)}</button>
   const where = [above === 0 ? 'Top of its family' : `Level ${above + 1}${above > 1 ? ` · ${above - 1} more level${above - 1 === 1 ? '' : 's'} above its lead` : ''}`,
     siblings && siblings.length > 1 ? `helper ${siblings.indexOf(id) + 1} of ${siblings.length} under its lead` : null,
     all.length ? `${all.length} helper task${all.length === 1 ? '' : 's'} below` : null].filter(Boolean).join(' · ')
   return <>
-    <div className="a-fam" role="group" aria-label="Lead and helpers">
-      {parent && <>{node(parent, 26, 'Its lead')}<span className="a-fam-line" aria-hidden="true" /></>}
-      <div className="a-fam-self" aria-current="true" title="This task">{face(id, 36)}</div>
-      {children.length > 0 && <>
-        <span className="a-fam-line" aria-hidden="true" />
-        <div className={`a-fam-kids${children.length > 1 ? ' a-fam-kids--many' : ''}`}>{children.map((child) => node(child, 26, 'Helper'))}</div>
+    <div className="a-fam2" role="group" aria-label="Lead and helpers">
+      {parent && <div className="a-fam2-lead">{node(parent, 'Its lead')}</div>}
+      <div className={`a-fam2-card is-self${parent ? ' has-lead' : ''}`} data-tag={tag(id)} aria-current="true" title="This task">{inside(id)}</div>
+      {children.length > 0 && <div className="a-fam2-kids">
+        {children.map((child) => node(child, 'Helper'))}
         {more > 0 && <span className="a-fine">and {more} more</span>}
-      </>}
+      </div>}
     </div>
     <div className="a-fam-foot"><span className="a-fine">{where}</span>
       <Button size="sm" variant="ghost" icon="map" onClick={() => onShowInMap(id)}>{lens === 'map' ? 'Centre in map' : 'Show in map'}</Button></div>

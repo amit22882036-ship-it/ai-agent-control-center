@@ -25,12 +25,27 @@ helper's result comes back through conflict-checked integration.
 <sub>Screenshots of the built interface with synthetic data (no real project or model run). See
 [verification](#status) for what was tested with real providers.</sub>
 
+## What this project demonstrates
+
+- **Systems design under concurrency:** several AI agents work in parallel on the same repository
+  without stepping on each other: per-task Git worktrees, admission limits, journaled and
+  conflict-checked integration, and recovery after crashes.
+- **Reliable process control on Windows:** every agent runs inside a Job Object, so stopping,
+  crashing or closing the app never leaves an orphaned process.
+- **Security for a local API:** Host and Origin checks, a per-process CSRF token and side-effect-free
+  reads keep a web page from driving the backend.
+- **Product and interface craft:** a desktop interface designed for hundreds or thousands of tasks,
+  with a List and a delegation Map, live updates, full keyboard access, light and dark appearances,
+  reduced-motion support and automated accessibility checks.
+- **Testing discipline:** backend, interface and browser suites against temporary databases, real
+  Git repositories and fake provider CLIs.
+
 ## Highlights
 
 - **One place to steer every agent.** A Work list and a Work Map of every task family, a sidebar of
   smart lists (Needs you, Working, Waiting, On hold, Done) and colour labels, and replies, redirects,
   stops and resumes from the same window. Every state reads at a glance: a word, a familiar symbol
-  and one colour.
+  and one colour, and only agents that are really working are drawn in light.
 - **Isolation by default.** Each task works in its own Git worktree; your folder is never edited
   directly, and results come back only through journaled, conflict-checked integration.
 - **Explicit access levels.** Read only, Workspace or Full Access, mapped to each provider's own
@@ -89,7 +104,7 @@ paid-route API keys from every agent's environment.
 | A local API reachable from the browser | Host and Origin checks, a per-process CSRF token, JSON-only bodies, side-effect-free reads. ([API security](docs/api-security.md)) |
 
 **Stack:** Python, FastAPI and SQLite (no ORM, no task queue); React 19 and Vite with plain CSS;
-Electron and PyInstaller for the desktop app. About 1,700 backend tests, 350 interface unit tests
+Electron and PyInstaller for the desktop app. About 1,700 backend tests, 220 interface unit tests
 and 190 browser tests run against temporary databases, real temporary Git repositories and fake
 provider CLIs.
 
