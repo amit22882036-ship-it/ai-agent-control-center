@@ -3,7 +3,7 @@
 // covered by the side list or a floating panel: { l, w, h } (left offset, width, height).
 // Pure functions; the Map component applies the result.
 
-export const ZOOM = { min: 0.25, max: 1.6, legible: 0.7, step: 1.2 }
+export const ZOOM = { min: 0.25, max: 1.6, legible: 0.85, step: 1.2 }
 const PAD = { x: 36, top: 64, bottom: 28 }
 
 export const clampZoom = (k) => Math.max(ZOOM.min, Math.min(ZOOM.max, k))

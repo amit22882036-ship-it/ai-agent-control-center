@@ -11,9 +11,9 @@
 // oldest to newest, so a new family is added at the end instead of pushing every other one aside.
 
 export const MAP = {
-  NODE_W: 168, ROOT_H: 132, NODE_H: 122, CHIPS: 26, ROW_W: 216, ROW_H: 54, ROW_GAP: 8, ROW_INDENT: 26,
-  GAP_X: 24, GAP_Y: 60, GAP_X_ACROSS: 64, GAP_Y_ACROSS: 18, FAMILY_GAP: 76, FAMILY_ROW_GAP: 70, BAND_GAP: 54, BAND_HEAD: 40, LABEL: 30, PAD: 48,
-  MAX_ROW: 2600, RADIUS: 10, SHELF_W: 272, SHELF_H: 62, SHELF_GAP: 12,
+  NODE_W: 272, ROOT_H: 122, NODE_H: 122, CHIPS: 0, ROW_W: 252, ROW_H: 60, ROW_GAP: 10, ROW_INDENT: 30,
+  GAP_X: 28, GAP_Y: 56, GAP_X_ACROSS: 52, GAP_Y_ACROSS: 16, FAMILY_GAP: 100, FAMILY_ROW_GAP: 40, BAND_GAP: 64, BAND_HEAD: 52, LABEL: 12, PAD: 56,
+  MAX_ROW: 2600, RADIUS: 14, SHELF_W: 300, SHELF_H: 100, SHELF_GAP: 16,
 }
 // From this many families in a band, closed families sit on a shelf (see the band loop).
 const SHELF_FROM = 6
@@ -47,6 +47,8 @@ function orderedFamilies(section) {
 // stacks families under each other; the default draws top to bottom and wraps families into rows.
 export function mapLayout(view, derived, { maxRow = MAP.MAX_ROW, chips = (id, row) => row.hasChildren, bands: banded = true, direction = 'down' } = {}) {
   const across = direction === 'right'
+  // Left to right, rows wrap sooner: each family already grows sideways.
+  const acrossRow = Math.min(maxRow, 1900)
   const children = new Map()
   const rows = new Map()
   const familyOf = new Map()
@@ -167,12 +169,19 @@ export function mapLayout(view, derived, { maxRow = MAP.MAX_ROW, chips = (id, ro
     families.filter((family) => !shelf.has(family.topId)).forEach((family, index) => {
       const w = measureFrom(family.topId)
       if (across) {
-        // One family per line, each growing to the right.
-        if (index > 0) rowTop = rowBottom + MAP.FAMILY_ROW_GAP + MAP.LABEL
-        const far = place(family.topId, rowTop, MAP.PAD)
-        zones.push({ topId: family.topId, x: MAP.PAD - 16, y: rowTop - MAP.LABEL, w: far.maxX - MAP.PAD + 32, h: far.maxY - rowTop + MAP.LABEL + 16, section: section.key })
+        // Families sit side by side, each growing to the right, and wrap into rows, so a busy
+        // workspace reads as a field of small trees instead of one endless column.
+        let far = place(family.topId, rowTop, x)
+        if (x > MAP.PAD && far.maxX > MAP.PAD + acrossRow) {
+          x = MAP.PAD
+          rowTop = rowBottom + MAP.FAMILY_ROW_GAP + MAP.LABEL
+          rowBottom = rowTop
+          far = place(family.topId, rowTop, x)
+        }
+        zones.push({ topId: family.topId, x: x - 16, y: rowTop - MAP.LABEL, w: far.maxX - x + 32, h: far.maxY - rowTop + MAP.LABEL + 16, section: section.key })
         tops.push(family.topId)
-        rowBottom = Math.max(rowTop + w, far.maxY)
+        rowBottom = Math.max(rowBottom, rowTop + w, far.maxY)
+        x = far.maxX + MAP.FAMILY_GAP
         maxX = Math.max(maxX, far.maxX)
         return
       }
@@ -204,8 +213,11 @@ export function mapLayout(view, derived, { maxRow = MAP.MAX_ROW, chips = (id, ro
     y = rowBottom + MAP.BAND_GAP
   }
 
-  // Edges: only between a shown Task and its shown parent Task.
+  // Edges: only between a shown Task and its shown parent Task. Each is also listed on its own, keyed
+  // by the Task below it, with the point where it meets that Task.
   const paths = { plain: [], work: [], ask: [], gone: [], fail: [] }
+  const edgeList = []
+  const add = (id, from, tone, d, end) => { paths[tone].push(d); edgeList.push({ id, from, tone, d, end }) }
   const r = MAP.RADIUS
   for (const id of Object.keys(nodes)) {
     const node = nodes[id]
@@ -217,7 +229,7 @@ export function mapLayout(view, derived, { maxRow = MAP.MAX_ROW, chips = (id, ro
       const sx = from.spine
       // Left to right, the list can sit above the lead's middle as well as below it.
       const above = across && my < from.y + from.h / 2
-      paths[tone].push(`M${sx},${above ? my + r : my - r}Q${sx},${my} ${sx + r},${my}H${node.x}`)
+      add(id, node.parentId, tone, `M${sx},${above ? my + r : my - r}Q${sx},${my} ${sx + r},${my}H${node.x}`, [node.x, my])
       continue
     }
     if (across) {
@@ -226,8 +238,8 @@ export function mapLayout(view, derived, { maxRow = MAP.MAX_ROW, chips = (id, ro
       const cx = node.x + 2
       const mx = px + (cx - px) / 2
       const sg = my > py ? 1 : -1
-      paths[tone].push(Math.abs(my - py) < 1 ? `M${px},${py}H${cx}`
-        : `M${px},${py}H${mx - r}Q${mx},${py} ${mx},${py + sg * r}V${my - sg * r}Q${mx},${my} ${mx + r},${my}H${cx}`)
+      add(id, node.parentId, tone, Math.abs(my - py) < 1 ? `M${px},${py}H${cx}`
+        : `M${px},${py}H${mx - r}Q${mx},${py} ${mx},${py + sg * r}V${my - sg * r}Q${mx},${my} ${mx + r},${my}H${cx}`, [cx, my])
       continue
     }
     const px = from.x + from.w / 2
@@ -236,8 +248,8 @@ export function mapLayout(view, derived, { maxRow = MAP.MAX_ROW, chips = (id, ro
     const cy = node.y + 2
     const midY = py + (cy - py) / 2
     const sg = cx > px ? 1 : -1
-    paths[tone].push(Math.abs(cx - px) < 1 ? `M${px},${py}V${cy}`
-      : `M${px},${py}V${midY - r}Q${px},${midY} ${px + sg * r},${midY}H${cx - sg * r}Q${cx},${midY} ${cx},${midY + r}V${cy}`)
+    add(id, node.parentId, tone, Math.abs(cx - px) < 1 ? `M${px},${py}V${cy}`
+      : `M${px},${py}V${midY - r}Q${px},${midY} ${px + sg * r},${midY}H${cx - sg * r}Q${cx},${midY} ${cx},${midY + r}V${cy}`, [cx, cy])
   }
   // The shared spine of a stacked group of helpers.
   for (const id of Object.keys(nodes)) {
@@ -253,17 +265,20 @@ export function mapLayout(view, derived, { maxRow = MAP.MAX_ROW, chips = (id, ro
       const top2 = Math.min(py, first.y + first.h / 2 + r)
       const bottom2 = Math.max(py, last.y + last.h / 2 - r)
       paths.plain.unshift(`M${px},${py}H${sx}M${sx},${top2}V${bottom2}`)
+      edgeList.unshift({ id: `spine:${id}`, from: id, tone: 'plain', d: `M${px},${py}H${sx}M${sx},${top2}V${bottom2}`, end: null })
       continue
     }
     const px = node.x + node.w / 2
     const py = node.y + node.h - 2
     const jy = py + MAP.GAP_Y * 0.3
-    paths.plain.unshift(`M${px},${py}V${jy - r}Q${px},${jy} ${px - r},${jy}H${sx + r}Q${sx},${jy} ${sx},${jy + r}V${last.y + last.h / 2 - r}`)
+    const spine = `M${px},${py}V${jy - r}Q${px},${jy} ${px - r},${jy}H${sx + r}Q${sx},${jy} ${sx},${jy + r}V${last.y + last.h / 2 - r}`
+    paths.plain.unshift(spine)
+    edgeList.unshift({ id: `spine:${id}`, from: id, tone: 'plain', d: spine, end: null })
   }
   const edges = Object.fromEntries(Object.entries(paths).map(([tone, list]) => [tone, list.join('')]))
   const width2 = Math.max(maxX, ...Object.values(nodes).map((node) => node.x + node.w)) + MAP.PAD
   const height = Math.max(y - MAP.BAND_GAP, ...Object.values(nodes).map((node) => node.y + node.h)) + MAP.PAD
-  return { nodes, edges, edgeCount: Object.values(paths).reduce((sum, list) => sum + list.length, 0), bands, zones, tops,
+  return { nodes, edges, edgeList, edgeCount: Object.values(paths).reduce((sum, list) => sum + list.length, 0), bands, zones, tops,
     direction: across ? 'right' : 'down',
     parent, children: Object.fromEntries(children), order: [...rows.keys()], width: view.sections.length ? width2 : 0, height: view.sections.length ? height : 0 }
 }

@@ -7,15 +7,28 @@ import { MenuButton } from '../overlays'
 import { boxOf, branchIds, mapKey } from '../../model/mapLayout.mjs'
 import { ZOOM, ensureVisible, fitCamera, followAnchor, intersects, panBy, worldRect, zoomAt } from '../../model/mapCamera.mjs'
 import { PLACEMENT_NOTES, descendantCount, timeView, whoView } from '../../model/workList.mjs'
-import { familyStrand } from '../../model/workSheet.mjs'
+import { familyStrand, teamCounts } from '../../model/workSheet.mjs'
 
 // Above this many shown Tasks, only the ones near the view are drawn (the selected and the
 // keyboard-focused Task always are). Smaller maps are drawn whole.
 const CULL_AT = 300
 const ENDED = new Set(['completed', 'integrated', 'canceled', 'stopped'])
-const BADGES = new Set(['ask', 'paused', 'blocked', 'failed', 'done', 'review', 'stopped', 'removed'])
-const RINGS = { work: 'work', ask: 'ask', helpers: 'idle' }
 const reducedMotion = () => Boolean(window.matchMedia?.('(prefers-reduced-motion: reduce)').matches)
+// A critically damped spring for what moves, and a confident deceleration for what arrives.
+const SPRING = 'linear(0, 0.157 4.6%, 0.48 11.5%, 0.73 19.2%, 0.877 27.5%, 0.953 37%, 0.986 48.5%, 1)'
+const ARRIVE = 'cubic-bezier(0.16, 1, 0.3, 1)'
+// Lines draw themselves from the lead outwards.
+function drawLines(root, ids, delay = 0) {
+  let index = 0
+  for (const path of root.querySelectorAll('.a-edges path[data-edge]')) {
+    if (!ids.has(path.dataset.edge)) continue
+    const length = path.getTotalLength?.() || 0
+    if (!length) continue
+    path.animate([{ strokeDasharray: `${length} ${length}`, strokeDashoffset: length }, { strokeDasharray: `${length} ${length}`, strokeDashoffset: 0 }],
+      { duration: 620, delay: delay + Math.min(index, 14) * 32, easing: 'cubic-bezier(.3, .7, .2, 1)', fill: 'backwards' })
+    index += 1
+  }
+}
 const box = (node) => ({ minX: node.x, minY: node.y, maxX: node.x + node.w, maxY: node.y + node.h })
 
 // The camera and the open area live outside React state so that effects, gestures and the wheel
@@ -64,10 +77,15 @@ function Face({ who, size }) {
   return <Avatar name={who.name} color={who.agent.color} tool={who.agent.tool} size={size} removed={who.removed} decorative />
 }
 
+// One task on the Map: a card in the same material as the task page's panels. Its mark and words
+// say its state; a lead also shows its agent, its project and its family's progress; a running
+// agent's card carries the living light. Helpers in a stacked list are slimmer cards.
 const MapNode = memo(function MapNode({ node, row, info, selected, tabbable, dim, historic, away, onPick, onOpen, onFold }) {
   const bead = info.status.bead
-  const ring = selected ? 'sel' : RINGS[bead]
   const root = node.depth === 0
+  const slim = node.kind === 'row' && !node.shelf
+  const tone = info.status.tone
+  const live = info.status.key === 'running' || info.status.key === 'reviewing'
   const tag = tagOf(info.who.agent, info.who.removed)
   const common = {
     role: 'treeitem', 'data-id': node.id, 'data-tag': tag || undefined, tabIndex: tabbable ? 0 : -1, 'aria-selected': selected,
@@ -75,43 +93,35 @@ const MapNode = memo(function MapNode({ node, row, info, selected, tabbable, dim
     'aria-expanded': row.hasChildren ? row.expanded : undefined,
     onClick: () => onPick(node.id), onDoubleClick: () => onOpen(node.id),
   }
-  const fold = row.hasChildren && <button type="button" className="a-gfold" tabIndex={-1} aria-hidden="true"
-    title={row.expanded ? 'Hide the helpers below' : 'Show the helpers below'}
+  const fold = row.hasChildren && <button type="button" className="a-mc-fold" tabIndex={-1} aria-hidden="true"
+    title={row.expanded ? 'Hide the helpers' : 'Show the helpers'}
     onClick={(event) => { event.stopPropagation(); onFold(node.id, !row.expanded) }}>
-    {row.expanded ? <Icon name="down" size={12} stroke={2.4} /> : <>+{info.hidden}</>}
+    {row.expanded ? <Icon name="left" size={12} stroke={2.4} /> : <>+{info.hidden}</>}
   </button>
-  if (node.kind === 'row') {
-    return <div {...common} className={`a-gr${node.shelf ? ' a-gr--shelf' : ''}${selected ? ' is-selected' : ''}${dim ? ' is-dim' : ''}${historic ? ' is-historic' : ''}${away ? ' is-away' : ''}${info.status.tone === 'ask' ? ' a-gr--ask' : ''}${info.status.key === 'canceled' ? ' is-canceled' : ''}`}
-      style={{ left: node.x, top: node.y, width: node.w, height: node.h }}>
-      <span className="a-gav">{ring && <span className={`a-ring a-ring--${ring}`} />}<Face who={info.who} size={30} />
-        {BADGES.has(bead) && <span className="a-gbadge a-gbadge--sm"><StatusBead state={bead} size={13} decorative /></span>}</span>
-      <span className="a-grt"><span className="a-t a-bidi" dir="auto">{info.title}</span>
-        <span className={`a-s a-tone-${info.status.tone}`}><span className="a-sr">. </span>{info.status.label}{info.time ? ` · ${info.time}` : ''}
-          {node.shelf && info.project ? <span className="a-gr-proj" aria-hidden="true">{' · '}{info.project}</span> : null}</span>
-        {node.shelf && info.strand && <span className="a-gr-strand" aria-hidden="true">
-          <ProgressBar counts={info.strand.counts} /><span className="a-strand-n a-num">{info.strand.finished}/{info.strand.size}</span></span>}</span>
-      <span className="a-sr">. {info.extra}{tag ? `. Colour label: ${tag}` : ''}.</span>
-      {tag && <span className="a-tag" aria-hidden="true" />}
-      {fold}
-    </div>
-  }
-  return <div {...common} className={`a-gn${root ? ' a-gn--root' : ''}${selected ? ' is-selected' : ''}${dim ? ' is-dim' : ''}${historic ? ' is-historic' : ''}${away ? ' is-away' : ''}${info.status.key === 'canceled' ? ' is-canceled' : ''}`}
-    style={{ left: node.x, top: node.y, width: node.w }}>
-    <span className="a-gav">{ring && <span className={`a-ring a-ring--${ring}`} />}<Face who={info.who} size={root ? 54 : 44} />
-      {BADGES.has(bead) && <span className="a-gbadge"><StatusBead state={bead} size={16} decorative /></span>}</span>
-    <span className="a-gt a-bidi" dir="auto">{info.title}</span>
-    <span className={`a-gs a-tone-${info.status.tone}`}><span className="a-sr">. </span>{info.status.label}{info.time ? ` · ${info.time}` : ''}</span>
-    <span className="a-sr">. {info.extra}{tag ? `. Colour label: ${tag}` : ''}.</span>
+  const classes = ['a-mcard', slim ? 'a-mcard--slim' : root ? 'a-mcard--lead' : 'a-mcard--helper', node.shelf && 'a-mcard--shelf',
+    `is-${tone}`, live && 'is-live', selected && 'is-selected', dim && 'is-dim', historic && 'is-historic', away && 'is-away',
+    info.status.key === 'canceled' && 'is-canceled'].filter(Boolean).join(' ')
+  return <div {...common} className={classes} style={{ left: node.x, top: node.y, width: node.w, height: node.h }}>
     {tag && <span className="a-tag" aria-hidden="true" />}
-    {info.project && <span className="a-gproj a-bidi" dir="auto" aria-hidden="true">{info.project}</span>}
-    {info.strand && <span className="a-gstrand" aria-hidden="true" title={`${info.strand.size} tasks, ${info.strand.finished} finished`}>
-      <ProgressBar counts={info.strand.counts} /><span className="a-strand-n a-num">{info.strand.finished}/{info.strand.size}</span></span>}
-    {(info.notLoaded > 0 || info.planned > 0 || row.hasChildren || info.placement) && <span className="a-gchips">
-      {info.placement && <span className="a-gchip a-gchip--warn" title={info.placement}><Icon name="info" size={11} />{info.placement}</span>}
+    <span className="a-mc-head">
+      <StatusBead state={bead} size={root && !slim ? 18 : 16} decorative live={live} />
+      <span className="a-mc-title a-gt a-bidi" dir="auto">{info.title}</span>
+      {slim && fold}
+    </span>
+    <span className={`a-mc-state a-tone-${tone}`}><span className="a-sr">. </span>{info.status.label}{info.time ? <span className="a-mc-time"> · {info.time}</span> : ''}</span>
+    {!slim && <span className="a-mc-foot">
+      <Face who={info.who} size={22} />
+      <span className="a-mc-who a-bidi" dir="auto">{info.who.agent ? info.who.name : 'No agent'}</span>
+      {info.project && <span className="a-mc-proj a-bidi" dir="auto">{info.project}</span>}
+      <span className="a-sp" />
+      {info.strand && <span className="a-mc-prog" title={`${info.strand.size} tasks, ${info.strand.finished} finished`}>
+        <ProgressBar counts={info.strand.counts} /><span className="a-strand-n a-num">{info.strand.finished}/{info.strand.size}</span></span>}
+      {info.placement && <span className="a-mc-chip a-mc-chip--warn" title={info.placement}><Icon name="info" size={11} />{info.placement}</span>}
+      {info.notLoaded > 0 && <span className="a-mc-chip" title="On pages that aren’t loaded yet">{info.notLoaded} not loaded</span>}
+      {info.planned > 0 && <span className="a-mc-chip a-mc-chip--plan" title="Planned by the lead; not a task yet">{info.planned} planned<span className="a-sr">, not started</span></span>}
       {fold}
-      {info.notLoaded > 0 && <span className="a-gchip" title="On pages that aren’t loaded yet">{info.notLoaded} not loaded</span>}
-      {info.planned > 0 && <span className="a-gchip a-gchip--plan" title="Planned by the lead; not a task yet">{info.planned} planned<span className="a-sr">, not started</span></span>}
     </span>}
+    <span className="a-sr">. {info.extra}{tag ? `. Colour label: ${tag}` : ''}.</span>
   </div>
 })
 
@@ -145,7 +155,7 @@ const Minimap = memo(function Minimap({ layout, derived, camera, view, onJump })
 // branches and focus), drawn as a hierarchy. A tree for assistive technology, with arrow keys that
 // follow what is drawn; pan, zoom and fit with the pointer, the keyboard or the controls.
 export default function TaskMap({ layout, view, store, derived, projectName, now, selectedId, onSelect, onToggle, onFocusBranch,
-  focusBranch, side, onToggleSide, onDirection, cameraRef, request, onLoadMore, loadingMore, empty, course = null }) {
+  focusBranch, side, onToggleSide, onDirection, cameraRef, request, onLoadMore, loadingMore, empty }) {
   const pane = useRef(null)
   const [store2] = useState(createCameraStore)
   const { camera, animated, view: area, pane: paneSize } = useSyncExternalStore(store2.subscribe, store2.get)
@@ -218,6 +228,49 @@ export default function TaskMap({ layout, view, store, derived, projectName, now
     const all = boxOf(layout)
     if (all && !intersects(worldRect(store2.camera(), viewRect()), all)) defaultCamera(false)
   }, [layout, selectedId, focusId, setCamera, viewRect, defaultCamera, store2])
+
+  // Choreography. The first drawing draws its lines; when a branch opens, its cards grow out of the
+  // lead and slide into place while their lines draw; cards a change moves glide to their new place.
+  // Nothing moves under reduced motion, or when a different view replaces the whole map.
+  const drawnLayout = useRef(null)
+  useLayoutEffect(() => {
+    const before = drawnLayout.current
+    drawnLayout.current = layout
+    const root = pane.current?.querySelector('.a-minner')
+    if (!root || before === layout) return
+    const still = reducedMotion()
+    if (!before) { if (!still) drawLines(root, new Set(layout.edgeList.map((edge) => edge.id)), 120); return }
+    const born = []
+    const moved = []
+    for (const id of layout.order) {
+      const now = layout.nodes[id]
+      const was = before.nodes[id]
+      if (!now) continue
+      if (!was) born.push(id)
+      else if (Math.abs(now.x - was.x) > 1 || Math.abs(now.y - was.y) > 1) moved.push([id, was.x - now.x, was.y - now.y])
+    }
+    if (born.length > 160 || moved.length > 400) return
+    const card = (id) => root.querySelector(`[data-id="${CSS.escape(id)}"]`)
+    // Reduced motion: new cards fade in where they are; nothing travels.
+    if (still) { for (const id of born) card(id)?.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 180 }); return }
+    for (const [id, dx, dy] of moved) card(id)?.animate([{ transform: `translate(${dx}px, ${dy}px)` }, { transform: 'none' }], { duration: 520, easing: SPRING })
+    born.forEach((id, index) => {
+      let anchor = layout.parent[id]
+      while (anchor && !before.nodes[anchor]) anchor = layout.parent[anchor]
+      const node = layout.nodes[id]
+      const from = anchor ? layout.nodes[anchor] : null
+      const dx = from ? from.x + from.w / 2 - (node.x + node.w / 2) : 0
+      const dy = from ? from.y + from.h / 2 - (node.y + node.h / 2) : 16
+      card(id)?.animate([{ transform: `translate(${dx}px, ${dy}px) scale(.6)`, opacity: 0 }, { transform: 'none', opacity: 1 }],
+        { duration: 560, delay: Math.min(index, 14) * 36, easing: ARRIVE, fill: 'backwards' })
+    })
+    const fresh = new Set(born)
+    drawLines(root, new Set(layout.edgeList.filter((edge) => fresh.has(edge.id) || fresh.has(edge.from)).map((edge) => edge.id)), 140)
+    const shifted = new Set(moved.map(([id]) => id))
+    for (const path of root.querySelectorAll('.a-edges path[data-edge]')) {
+      if (shifted.has(path.dataset.edge)) path.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 360, delay: 300, fill: 'backwards' })
+    }
+  }, [layout])
 
   // Entering or leaving a focused branch frames it.
   const lastFocus = useRef(focusBranch)
@@ -343,7 +396,7 @@ export default function TaskMap({ layout, view, store, derived, projectName, now
     event.preventDefault()
     if (action.focus) moveTo(action.focus)
     if (action.expand) { onToggle(action.expand, true); if (action.descend) descend.current = action.expand }
-    if (action.collapse) onToggle(action.collapse, false)
+    if (action.collapse) fold(action.collapse, false)
     if (action.select) onSelect(action.select)
   }
 
@@ -379,20 +432,53 @@ export default function TaskMap({ layout, view, store, derived, projectName, now
 
   const pick = useCallback((id) => { setFocusId(id); onSelect(id) }, [onSelect])
   const open = useCallback((id) => onFocusBranch(id), [onFocusBranch])
-  const fold = useCallback((id, openIt) => onToggle(id, openIt), [onToggle])
+  const closing = useRef(new Set())
+  const fold = useCallback((id, openIt) => {
+    if (openIt || reducedMotion()) { onToggle(id, openIt); return }
+    if (closing.current.has(id)) return
+    const root = pane.current?.querySelector('.a-minner')
+    const lead = layout.nodes[id]
+    const members = branchIds(layout, id).filter((member) => member !== id)
+    if (!root || !lead || !members.length || members.length > 120) { onToggle(id, false); return }
+    closing.current.add(id)
+    const runs = []
+    const anims = []
+    for (const member of members) {
+      const node = layout.nodes[member]
+      const element = root.querySelector(`[data-id="${CSS.escape(member)}"]`)
+      if (!node || !element) continue
+      const dx = lead.x + lead.w / 2 - (node.x + node.w / 2)
+      const dy = lead.y + lead.h / 2 - (node.y + node.h / 2)
+      const run = element.animate([{ transform: 'none', opacity: 1 }, { transform: `translate(${dx}px, ${dy}px) scale(.6)`, opacity: 0 }],
+        { duration: 220, easing: 'cubic-bezier(.4, 0, 1, 1)', fill: 'forwards' })
+      anims.push(run)
+      runs.push(run.finished.catch(() => {}))
+    }
+    const lines = new Set(members)
+    for (const path of root.querySelectorAll('.a-edges path[data-edge], .a-edges circle')) {
+      const key = path.dataset.edge || ''
+      if (lines.has(key) || key === `spine:${id}`) anims.push(path.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 160, fill: 'forwards' }))
+    }
+    // Whatever is still drawn after the branch closes (a held selection keeps it open) comes back.
+    Promise.all(runs).then(() => {
+      closing.current.delete(id)
+      onToggle(id, false)
+      requestAnimationFrame(() => requestAnimationFrame(() => { for (const anim of anims) anim.cancel() }))
+    })
+  }, [onToggle, layout])
 
+  // Where work is happening, its family's tray is lit from within; what needs the person, warmly.
+  const auras = useMemo(() => Object.fromEntries(layout.zones.map((zone) => {
+    const family = derived.byTop[zone.topId]
+    const counts = family ? teamCounts(derived, family) : null
+    return [zone.topId, counts?.needs ? 'is-ask' : counts?.working ? 'is-live' : '']
+  })), [layout, derived])
+  const lights = !reducedMotion()
   const whole = { l: 0, w: paneSize.w, h: paneSize.h }
   const near = camera && layout.order.length > CULL_AT ? worldRect(camera, whole, 480) : null
   const shown = near ? layout.order.filter((id) => id === selectedId || id === focusTarget || intersects(near, box(layout.nodes[id]))) : layout.order
-  // Control circles sit around each marked task's face: a tile's face is centred near its top, a
-  // capsule's sits at its left.
-  const courseMarks = course?.size ? [...course].filter(([id]) => layout.nodes[id]).sort((a, b) => a[1] - b[1]).map(([id, n]) => {
-    const node = layout.nodes[id]
-    const row = node.kind === 'row'
-    return { id, n, x: row ? node.x + 25 : node.x + node.w / 2, y: row ? node.y + node.h / 2 : node.y + (node.depth === 0 ? 37 : 32), r: row ? 20 : node.depth === 0 ? 31 : 26, topId: node.topId }
-  }) : []
-  // One course: a single line through every control in the order A steps through them.
-  const courseLegs = courseMarks.length > 1 ? courseMarks.map((m, i) => `${i ? 'L' : 'M'}${m.x} ${m.y}`).join('') : null
+  const shownSet = near ? new Set(shown) : null
+  const edges = shownSet ? layout.edgeList.filter((edge) => shownSet.has(edge.id) || shownSet.has(edge.from)) : layout.edgeList
   const far = camera && camera.k < 0.62
   const empty2 = !layout.order.length
   const anchorTop = selectedId && layout.nodes[selectedId] ? layout.nodes[selectedId].topId : null
@@ -409,24 +495,21 @@ export default function TaskMap({ layout, view, store, derived, projectName, now
       <div className={`a-minner${animated ? ' is-animated' : ''}${anchorTop ? ' has-anchor' : ''}`}
         style={camera ? { width: layout.width, height: layout.height, transform: `translate(${camera.x}px, ${camera.y}px) scale(${camera.k})` } : { visibility: 'hidden' }}>
         {/* Finished families (the "Completed and history" band) are drawn quieter, never hidden. */}
-        {layout.zones.map((zone) => <div key={zone.topId} className={`a-mzone${anchorTop === zone.topId ? ' is-current' : ''}${derived.byTop[zone.topId]?.section === 'done' ? ' is-historic' : ''}`} aria-hidden="true"
+        {layout.zones.map((zone) => <div key={zone.topId} className={`a-mzone${anchorTop === zone.topId ? ' is-current' : ''}${derived.byTop[zone.topId]?.section === 'done' ? ' is-historic' : ''}${auras[zone.topId] ? ` ${auras[zone.topId]}` : ''}`} aria-hidden="true"
           style={{ left: zone.x, top: zone.y, width: zone.w, height: zone.h }} />)}
         {!focusBranch && layout.bands.map((band) => <div key={band.key} className={`a-mband${band.key === 'needs' ? ' a-mband--needs' : ''}`} aria-hidden="true"
-          style={{ left: band.x, top: band.y }}>{band.label}<span className="a-num">{band.key === 'needs' && courseMarks.length ? courseMarks.length : band.count}</span></div>)}
+          style={{ left: band.x, top: band.y }}>{band.label}<span className="a-num">{band.count}</span></div>)}
         <svg className="a-edges" width={layout.width} height={layout.height} aria-hidden="true" focusable="false">
-          {Object.entries(layout.edges).map(([tone, d]) => d && <path key={tone} className={`a-e a-e--${tone}`} d={d} />)}
+          {edges.map((edge) => <path key={edge.id} data-edge={edge.id} className={`a-e a-e--${edge.tone}`} d={edge.d} />)}
+          {edges.map((edge) => edge.end && <circle key={`p:${edge.id}`} className={`a-port a-port--${edge.tone}`} cx={edge.end[0]} cy={edge.end[1]} r="3.5" />)}
+          {/* Light travels along every line that leads to an agent at work. */}
+          {lights && edges.filter((edge) => edge.tone === 'work' && edge.end).slice(0, 80).map((edge, index) => <circle key={`l:${edge.id}`} className="a-light" r="3.2">
+            <animateMotion dur="2.6s" begin={`${(index % 7) * 0.37}s`} repeatCount="indefinite" path={edge.d} /></circle>)}
         </svg>
         {shown.map((id) => <MapNode key={id} node={layout.nodes[id]} row={rows.get(id).row} info={infos[id]} selected={id === selectedId}
           tabbable={id === focusTarget} dim={view.searching && !rows.get(id).row.match} historic={rows.get(id).family?.section === 'done'}
           away={Boolean(anchorTop) && layout.nodes[id].topId !== anchorTop}
           onPick={pick} onOpen={open} onFold={fold} />)}
-        {/* The course: each task that needs the person is a control circled on the map, numbered in
-            the order A steps through them and joined by straight purple legs, as on an orienteering map. */}
-        {courseMarks.length > 0 && <svg className="a-mcourse" width={layout.width} height={layout.height} aria-hidden="true" focusable="false">
-          {courseLegs && <path className="a-mcourse-leg" d={courseLegs} />}
-          {courseMarks.map((m) => <g key={m.id} className={`a-mcontrol${m.id === selectedId ? ' is-current' : ''}`}>
-            <circle cx={m.x} cy={m.y} r={m.r} /><text x={m.x - m.r * .71 - 9} y={m.y - m.r * .71 - 9} dy=".36em">{m.n}</text></g>)}
-        </svg>}
       </div>
     </div>
     <p id="map-keys" className="a-sr">{layout.direction === 'right' ? 'Arrow keys move between tasks: left to the lead, right to the first helper, up and down between tasks at the same level.' : 'Arrow keys move between tasks: up to the lead, down to the first helper, left and right between tasks at the same level.'}

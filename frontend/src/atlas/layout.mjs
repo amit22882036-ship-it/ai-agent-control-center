@@ -33,7 +33,8 @@ export function keyboardInspectorWidth(width, key) {
 export const MAP_DIRECTION_KEY = 'control-center.atlas.map-direction'
 
 export function readMapDirection(storage) {
-  try { return (storage ?? globalThis.localStorage)?.getItem(MAP_DIRECTION_KEY) === 'right' ? 'right' : 'down' } catch { return 'down' }
+  // Left to right unless the person chose top to bottom: a lead reads first, its helpers follow it.
+  try { return (storage ?? globalThis.localStorage)?.getItem(MAP_DIRECTION_KEY) === 'down' ? 'down' : 'right' } catch { return 'right' }
 }
 
 export function saveMapDirection(direction, storage) {

@@ -206,8 +206,12 @@ test('left to right: helpers sit to the right of their lead, families stack, not
       assert.ok(a.x + a.w <= b.x || b.x + b.w <= a.x || a.y + a.h <= b.y || b.y + b.h <= a.y, `${a.id} overlaps ${b.id}`)
     }
   }
-  // Family tops all start in the same column.
-  assert.equal(new Set(right.tops.map((id) => right.nodes[id].x)).size, 1)
+  // Families sit side by side and wrap into rows: within a row, each starts to the right of the one before.
+  for (let i = 1; i < right.tops.length; i += 1) {
+    const a = right.nodes[right.tops[i - 1]]
+    const b = right.nodes[right.tops[i]]
+    assert.ok(b.x > a.x || b.y > a.y, `${b.id} is placed after ${a.id}`)
+  }
   assert.deepEqual(mapKey(right, 'release', 'ArrowRight'), { focus: right.children.release[0] })
   assert.deepEqual(mapKey(right, 'docs', 'ArrowLeft'), { focus: 'release' })
   assert.deepEqual(mapLayout(view, derived, { direction: 'right' }), right)

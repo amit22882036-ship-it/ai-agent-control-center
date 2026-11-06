@@ -117,27 +117,62 @@
 }
 .atlas .a-app--lumen .a-rail.is-open .a-rail-link { min-height: 30px; }
 
-/* ------------------------------------------------------------------ the Map, in the same language
-   A clean canvas (no dot grid), cards in the same white material as the List's groups, the same
-   progress bar and the same colour tags, and edges as quiet hairlines. */
-.atlas .a-mappane { background-image: none; background-color: var(--a-sheet); }
-.atlas .a-mappane .a-mzone { background: color-mix(in srgb, var(--a-group) 72%, transparent); border-radius: 18px; box-shadow: 0 0 0 .5px var(--a-line); }
-.atlas .a-mappane .a-gr { border: 0; border-radius: 12px; background: var(--a-group); box-shadow: var(--a-shadow-1); }
-.atlas .a-mappane .a-gr:hover, .atlas .a-mappane .a-gr.is-hl { box-shadow: var(--a-shadow-2); }
-.atlas .a-mappane .a-gr.is-selected { box-shadow: 0 0 0 2px var(--a-accent), var(--a-shadow-2); }
-.atlas .a-mappane .a-gr.a-gr--ask { background: var(--a-group); box-shadow: inset 0 0 0 1.5px var(--a-ask-line), var(--a-shadow-1); }
-.atlas .a-mappane .a-gn { border-radius: 16px; }
-.atlas .a-mappane .a-gn:hover, .atlas .a-mappane .a-gn.is-hl { background: var(--a-group); box-shadow: var(--a-shadow-1); }
-.atlas .a-mappane .a-gn.is-selected { background: var(--a-group); box-shadow: 0 0 0 2px var(--a-accent), var(--a-shadow-2); }
-.atlas .a-mappane .a-gn.is-selected .a-gt { color: var(--a-text); }
-.atlas .a-mappane .a-gav .a-ring.a-ring--sel { border-color: transparent; }
-.atlas .a-mappane .a-gav .a-gbadge { box-shadow: 0 0 0 2.5px var(--a-group); background: var(--a-group); }
-.atlas .a-mappane .a-gr-strand, .atlas .a-mappane .a-gstrand { display: inline-flex; align-items: center; gap: 8px; }
-.atlas .a-mappane .a-gstrand .a-prog { width: 72px; }
-.atlas .a-mappane .a-gr-strand .a-prog { width: 54px; height: 5px; }
-.atlas .a-mappane .a-gn > .a-tag, .atlas .a-mappane .a-gr > .a-tag { position: absolute; pointer-events: none; border-radius: 3px; }
-.atlas .a-mappane .a-gr > .a-tag { left: 3px; top: 8px; bottom: 8px; width: 4px; }
-.atlas .a-mappane .a-gn > .a-tag { top: 2px; left: 50%; width: 34px; height: 4px; transform: translateX(-50%); }
+/* ------------------------------------------------------------------ the Map
+   The same families as the List, drawn as a delegation tree from left to right in cards of the
+   task page's material: generous, legible, with real depth. A lead card carries its agent, its
+   project and its family's progress; helpers follow it on quiet curves; the line to a working
+   helper carries the light. The canvas is calm: no dot grid, no boxes around families. */
+.atlas .a-mappane { background: radial-gradient(1200px 600px at 20% -10%, color-mix(in srgb, var(--a-lumen) 5%, transparent), transparent 70%), var(--a-sheet); }
+/* Each family sits on its own soft tray, so what belongs together reads as one piece. */
+.atlas .a-mappane .a-mzone { border: 0; border-radius: 24px; background: color-mix(in srgb, var(--a-group) 46%, transparent); box-shadow: inset 0 0 0 1px var(--a-line-3); }
+.atlas .a-mappane .a-mzone.is-current { background: color-mix(in srgb, var(--a-lumen) 6%, var(--a-group) 50%); box-shadow: inset 0 0 0 1px var(--a-accent-line); }
+.atlas .a-app--lumen .a-mappane .a-mband { display: inline-flex; align-items: baseline; gap: 8px; font: 700 20px/1.2 var(--a-display); letter-spacing: -.015em; color: var(--a-text); }
+.atlas .a-app--lumen .a-mappane .a-mband .a-num { font-size: 15px; font-weight: 600; color: var(--a-text-3); }
+.atlas .a-app--lumen .a-mappane .a-mband.a-mband--needs { color: var(--a-ask); }
+
+.atlas .a-mappane .a-mcard { position: absolute; display: flex; flex-direction: column; gap: 6px; padding: 13px 14px 12px 16px; border-radius: 16px;
+  background: var(--a-group); box-shadow: var(--a-shadow-1); cursor: pointer; outline: none; text-align: left; overflow: hidden;
+  transition: box-shadow .25s var(--a-ease), transform .25s var(--a-spring), opacity .24s ease; }
+.atlas .a-mappane .a-mcard:hover, .atlas .a-mappane .a-mcard.is-hl { box-shadow: var(--a-shadow-2); transform: translateY(-1px); }
+.atlas .a-mappane .a-mcard:focus-visible { box-shadow: 0 0 0 2.5px var(--a-accent), var(--a-shadow-2); }
+.atlas .a-mappane .a-mcard.is-selected { box-shadow: 0 0 0 2px var(--a-accent), 0 18px 40px -18px var(--a-lumen-glow), var(--a-shadow-2); }
+.atlas .a-mappane .a-mcard.is-dim { opacity: .38; }
+.atlas .a-mappane .a-mcard.is-historic { box-shadow: 0 0 0 .5px var(--a-line); background: color-mix(in srgb, var(--a-group) 70%, transparent); }
+.atlas .a-mappane .a-mcard.is-historic .a-mc-title { color: var(--a-text-2); }
+.atlas .a-mappane .a-mcard.is-ask { box-shadow: inset 0 0 0 1.5px var(--a-ask-line), 0 14px 32px -20px color-mix(in srgb, var(--a-ask-fill) 55%, transparent), var(--a-shadow-1); }
+.atlas .a-mappane .a-mcard.is-live { box-shadow: 0 16px 36px -22px var(--a-lumen-glow), var(--a-shadow-1); }
+.atlas .a-mappane .a-mcard.is-ask.is-selected, .atlas .a-mappane .a-mcard.is-live.is-selected { box-shadow: 0 0 0 2px var(--a-accent), 0 18px 40px -18px var(--a-lumen-glow), var(--a-shadow-2); }
+.atlas .a-mappane .a-mcard > .a-tag { position: absolute; left: 0; top: 14px; bottom: 14px; width: 4px; border-radius: 0 3px 3px 0; pointer-events: none; }
+.atlas .a-mappane .a-mc-head { display: flex; align-items: flex-start; gap: 9px; min-width: 0; flex: none; }
+.atlas .a-mappane .a-mc-state { flex: none; }
+.atlas .a-mappane .a-mc-head .a-bead { margin-top: 1px; }
+.atlas .a-mappane .a-mc-title { flex: 1; min-width: 0; font: 600 14.5px/1.3 var(--a-font); letter-spacing: -.005em; color: var(--a-text);
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.atlas .a-mappane .a-mcard--lead .a-mc-title { font-size: 15px; font-weight: 650; }
+.atlas .a-mappane .a-mc-state { padding-left: 27px; font-size: 12.5px; font-weight: 600; color: var(--a-text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.atlas .a-mappane .a-mc-state .a-mc-time { font-weight: 500; color: var(--a-text-3); }
+.atlas .a-mappane .a-mc-state.a-tone-work { color: var(--a-work); }
+.atlas .a-mappane .a-mc-state.a-tone-ask { color: var(--a-ask); }
+.atlas .a-mappane .a-mc-state.a-tone-alert { color: var(--a-fail); }
+.atlas .a-mappane .a-mc-state.a-tone-wait { color: var(--a-block); }
+.atlas .a-mappane .a-mc-state.a-tone-done { color: var(--a-ok); }
+.atlas .a-mappane .a-mc-foot { display: flex; align-items: center; gap: 7px; min-width: 0; margin-top: auto; padding-top: 7px; flex: none; border-top: 1px solid var(--a-hairline); }
+.atlas .a-mappane .a-mc-who { min-width: 0; max-width: 104px; font-size: 12.5px; font-weight: 550; color: var(--a-text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.atlas .a-mappane .a-mc-proj { min-width: 0; font-size: 12px; color: var(--a-text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.atlas .a-mappane .a-mc-proj::before { content: '\00B7'; margin-right: 6px; color: var(--a-text-4); }
+.atlas .a-mappane .a-mc-prog { display: inline-flex; align-items: center; gap: 6px; flex: none; }
+.atlas .a-mappane .a-mc-prog .a-prog { width: 48px; height: 5px; }
+.atlas .a-mappane .a-mc-chip, .atlas .a-mappane .a-mc-fold { flex: none; display: inline-flex; align-items: center; gap: 3px; height: 20px; padding: 0 7px; border-radius: 10px;
+  background: var(--a-sunken); font-size: 11.5px; font-weight: 650; color: var(--a-text-2); white-space: nowrap; }
+.atlas .a-mappane .a-mc-fold { cursor: pointer; }
+.atlas .a-mappane .a-mc-fold:hover { background: var(--a-accent-soft); color: var(--a-accent); }
+.atlas .a-mappane .a-mc-chip--plan { box-shadow: inset 0 0 0 1px var(--a-line-2); background: transparent; color: var(--a-text-3); }
+.atlas .a-mappane .a-mc-chip--warn { color: var(--a-block); max-width: 120px; overflow: hidden; text-overflow: ellipsis; }
+.atlas .a-mappane .a-mcard--slim { justify-content: center; gap: 3px; padding: 9px 12px 9px 14px; border-radius: 13px; }
+.atlas .a-mappane .a-mcard--slim .a-mc-title { -webkit-line-clamp: 1; font-size: 13.5px; }
+.atlas .a-mappane .a-mcard--slim .a-mc-state { padding-left: 25px; font-size: 12px; }
+.atlas .a-mappane .a-mcard--slim > .a-tag { top: 10px; bottom: 10px; }
+.atlas .a-mappane .a-avatar { flex: none; }
 .atlas .a-mappane [data-tag="violet"] > .a-tag { background: var(--a-tag-violet); }
 .atlas .a-mappane [data-tag="blue"] > .a-tag { background: var(--a-tag-blue); }
 .atlas .a-mappane [data-tag="cyan"] > .a-tag { background: var(--a-tag-cyan); }
@@ -146,25 +181,56 @@
 .atlas .a-mappane [data-tag="orange"] > .a-tag { background: var(--a-tag-orange); }
 .atlas .a-mappane [data-tag="red"] > .a-tag { background: var(--a-tag-red); }
 .atlas .a-mappane [data-tag="pink"] > .a-tag { background: var(--a-tag-pink); }
-.atlas .a-mappane .a-edges .a-e { stroke: var(--a-line-2); }
-.atlas .a-mappane .a-edges .a-e.a-e--ask { stroke: var(--a-ask-line); }
+/* Connectors: quiet curves; the line to a helper that needs the person is amber, and the line to a
+   working helper carries light along it. */
+.atlas .a-mappane .a-edges .a-e { stroke: var(--a-line-2); stroke-width: 1.6; }
+.atlas .a-mappane .a-edges .a-e.a-e--ask { stroke: var(--a-ask-line); stroke-width: 1.8; }
+.atlas .a-mappane .a-edges .a-e.a-e--work { stroke: var(--a-lumen); stroke-opacity: .7; stroke-width: 1.8; stroke-dasharray: 3 9; stroke-linecap: round; animation: atlas-flow 1.2s linear infinite; }
+/* Zoomed far out: titles and state only. */
+.atlas .a-mappane.is-far .a-mc-foot, .atlas .a-mappane.is-far .a-mc-time { display: none; }
+@media (prefers-reduced-motion: reduce) {
+  .atlas .a-mappane .a-mcard { transition: none; }
+  .atlas .a-mappane .a-mcard:hover { transform: none; }
+  .atlas .a-mappane .a-edges .a-e.a-e--work { animation: none; }
+}
+
+/* The Map's light. Lines meet each card at a small port; the line to a working agent is a steady
+   ultramarine and carries travelling light; a family with work under way is lit from within its
+   tray, and one that needs the person glows warm. Reduced motion keeps the light still. */
+.atlas .a-mappane .a-edges .a-e.a-e--work { stroke: var(--a-lumen); stroke-opacity: .5; stroke-width: 1.8; stroke-dasharray: none; animation: none; }
+.atlas .a-mappane .a-edges .a-port { fill: var(--a-group); stroke: var(--a-line-2); stroke-width: 1.5; }
+.atlas .a-mappane .a-edges .a-port--work { stroke: var(--a-lumen); }
+.atlas .a-mappane .a-edges .a-port--ask { stroke: var(--a-ask-fill); }
+.atlas .a-mappane .a-edges .a-port--fail { stroke: var(--a-fail); }
+.atlas .a-mappane .a-edges .a-light { fill: var(--a-lumen-2); filter: drop-shadow(0 0 3px var(--a-lumen)) drop-shadow(0 0 7px var(--a-lumen-glow)); }
+.atlas .a-mappane .a-mzone.is-live { background:
+  radial-gradient(90% 120% at 18% 0%, color-mix(in srgb, var(--a-lumen) 11%, transparent), transparent 62%),
+  color-mix(in srgb, var(--a-group) 46%, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--a-lumen) 16%, transparent); }
+.atlas .a-mappane .a-mzone.is-ask { background:
+  radial-gradient(90% 120% at 14% 0%, color-mix(in srgb, var(--a-ask-fill) 11%, transparent), transparent 62%),
+  color-mix(in srgb, var(--a-group) 46%, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--a-ask-fill) 18%, transparent); }
+.atlas .a-mappane .a-mzone.is-current { box-shadow: inset 0 0 0 1.5px var(--a-accent-line), 0 24px 60px -40px var(--a-lumen-glow); }
+.atlas .a-mappane .a-mzone.is-historic { opacity: .7; }
+@media (prefers-reduced-motion: reduce) {
+  .atlas .a-mappane .a-edges .a-light { display: none; }
+}
 
 /* ------------------------------------------------------------------ living light (the signature)
    Work in progress is light. A gleam travels round the mark of each running agent, a ring of light
    turns round a working agent's face on the Map, and a sheen crosses the working share of the
    workspace. Only real, recorded activity is lit; reduced motion keeps every light still. */
-.atlas .a-bead-gleam { stroke: var(--a-lumen-2); transform-origin: 8px 8px; transform-box: view-box; animation: lumen-orbit 2.4s linear infinite; }
+.atlas .a-bead-gleam { stroke: var(--a-lumen-2); transform-origin: 8px 8px; transform-box: view-box; animation: atlas-orbit 2.4s linear infinite; }
 .atlas .a-bead.is-live { filter: drop-shadow(0 0 3px var(--a-lumen-glow)); }
-@keyframes lumen-orbit { to { transform: rotate(360deg); } }
+@keyframes atlas-orbit { to { transform: rotate(360deg); } }
 .atlas .a-mappane .a-gav .a-ring.a-ring--work { inset: -5px; border: 0; opacity: 1; border-radius: 50%;
   background: conic-gradient(from 0deg, transparent 0 55%, color-mix(in srgb, var(--a-lumen) 30%, transparent) 72%, var(--a-lumen-2) 92%, var(--a-lumen) 100%);
   -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 2.5px), #000 calc(100% - 2px));
   mask: radial-gradient(farthest-side, transparent calc(100% - 2.5px), #000 calc(100% - 2px));
-  animation: lumen-orbit 2.6s linear infinite; }
+  animation: atlas-orbit 2.6s linear infinite; }
 .atlas .a-nowbar .is-working { position: relative; overflow: hidden; }
 .atlas .a-nowbar .is-working::after { content: ''; position: absolute; inset: 0; transform: translateX(-100%);
-  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, .55) 50%, transparent); animation: lumen-sheen 3.2s var(--a-ease) infinite; }
-@keyframes lumen-sheen { 0% { transform: translateX(-100%); } 60%, 100% { transform: translateX(100%); } }
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, .55) 50%, transparent); animation: atlas-sheen 3.2s var(--a-ease) infinite; }
+@keyframes atlas-sheen { 0% { transform: translateX(-100%); } 60%, 100% { transform: translateX(100%); } }
 .atlas .a-nowbar .is-needs { box-shadow: 0 0 10px -1px color-mix(in srgb, var(--a-ask-fill) 60%, transparent); }
 .atlas .a-nowbar { height: 6px; }
 @media (prefers-reduced-motion: reduce) {

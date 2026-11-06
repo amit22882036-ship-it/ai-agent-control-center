@@ -82,11 +82,12 @@ test('keyboard: arrows follow the drawing, Enter selects, Space opens and closes
   await openWork(page, '?lens=map&task=cli')
   const cli = node(page, 'JSON command-line interface')
   await cli.focus()
-  await page.keyboard.press('ArrowUp')
+  // Left to right: Left goes to the lead, Right to the first helper, Down to the next helper.
+  await page.keyboard.press('ArrowLeft')
   await expect(node(page, 'Build the CSV import pipeline')).toBeFocused()
-  await page.keyboard.press('ArrowDown')
-  await expect(node(page, 'Handle quoted fields')).toBeFocused()
   await page.keyboard.press('ArrowRight')
+  await expect(node(page, 'Handle quoted fields')).toBeFocused()
+  await page.keyboard.press('ArrowDown')
   await expect(cli).toBeFocused()
   await page.keyboard.press('Enter')
   await expect(page).toHaveURL(/task=cli/)
@@ -95,9 +96,9 @@ test('keyboard: arrows follow the drawing, Enter selects, Space opens and closes
   await expect(node(page, 'Document the CLI flags')).toHaveCount(0)
   await expect(cli).toHaveAttribute('aria-expanded', 'false')
   await expect(cli).toHaveAccessibleName(/1 task hidden below/)
-  await page.keyboard.press('ArrowDown') // opens it again on the way down
+  await page.keyboard.press('ArrowRight') // opens it again on the way in
   await expect(node(page, 'Document the CLI flags')).toBeFocused()
-  await page.keyboard.press('ArrowUp')
+  await page.keyboard.press('ArrowLeft')
   await page.keyboard.press(' ')
   await page.getByRole('radiogroup', { name: 'View as' }).getByRole('radio', { name: 'List' }).click()
   await expect(row(page, 'JSON command-line interface')).toHaveAttribute('aria-expanded', 'false')
@@ -184,11 +185,11 @@ test('camera: zoom, fit, show everything, the overview and dragging, without sel
   // Wheel zooms around the pointer.
   const zoomed = await pct.textContent()
   await page.mouse.move(pane.x + 500, pane.y + 300)
-  await page.mouse.wheel(0, -400)
+  await page.mouse.wheel(0, 400)
   await expect(pct).not.toHaveText(zoomed)
-  // The overview moves the camera.
-  await page.getByRole('button', { name: 'Zoom in' }).click()
+  // The overview moves the camera (it appears once the map is larger than the view).
   const mini = page.locator('.a-mini')
+  for (let i = 0; i < 6 && !(await mini.isVisible()); i += 1) await page.getByRole('button', { name: 'Zoom in' }).click()
   await expect(mini).toBeVisible()
   const atMini = await transform(page)
   const box = await mini.boundingBox()
@@ -395,7 +396,10 @@ test('large hierarchies: 1,000 tasks, deep chains and rapid selection stay respo
       return r.left > pane.left + 20 && r.right < pane.right - 220 && r.top > pane.top + 70 && r.bottom < pane.bottom - 70
     }).map((element) => element.dataset.id)
   })
-  const firstId = (await visibleIds())[3]
+  // Cards are drawn at a readable size; zoomed out to everything, many are on screen at once.
+  await page.getByRole('button', { name: 'Show everything' }).click()
+  await page.waitForTimeout(500)
+  const firstId = (await visibleIds())[1]
   const first = mapTree(page).locator(`[data-id="${firstId}"]`)
   const selectStart = Date.now()
   await first.click()
@@ -440,23 +444,23 @@ test('large hierarchies: 1,000 tasks, deep chains and rapid selection stay respo
   await expect(node(page, 'Level 31 under r000-c0')).toBeInViewport()
 })
 
-test('the map can be drawn left to right; the choice is remembered and the arrows turn with it', async ({ page }) => {
+test('the map is drawn left to right by default, can be drawn top to bottom; the choice is remembered and the arrows turn with it', async ({ page }) => {
   await openWork(page, '?lens=map&task=csv')
   const box = async (title) => node(page, title).boundingBox()
   const lead = await box('Build the CSV import pipeline')
   const helper = await box('HTML summary report')
-  expect(helper.y).toBeGreaterThan(lead.y + lead.height - 1) // Top to bottom by default.
-  await page.getByRole('button', { name: 'Draw the map left to right' }).click()
-  await expect(page.getByRole('button', { name: 'Draw the map top to bottom' })).toBeVisible()
+  expect(helper.x).toBeGreaterThan(lead.x + lead.width - 1) // Left to right by default.
+  await page.getByRole('button', { name: 'Draw the map top to bottom' }).click()
+  await expect(page.getByRole('button', { name: 'Draw the map left to right' })).toBeVisible()
   const lead2 = await box('Build the CSV import pipeline')
   const helper2 = await box('HTML summary report')
-  expect(helper2.x).toBeGreaterThan(lead2.x + lead2.width - 1)
-  expect(await page.evaluate(() => localStorage.getItem('control-center.atlas.map-direction'))).toBe('right')
+  expect(helper2.y).toBeGreaterThan(lead2.y + lead2.height - 1)
+  expect(await page.evaluate(() => localStorage.getItem('control-center.atlas.map-direction'))).toBe('down')
   await node(page, 'Build the CSV import pipeline').focus()
-  await page.keyboard.press('ArrowRight')
+  await page.keyboard.press('ArrowDown')
   await expect(page.locator(':focus')).not.toHaveAttribute('data-id', 'csv')
-  await page.keyboard.press('ArrowLeft')
+  await page.keyboard.press('ArrowUp')
   await expect(page.locator(':focus')).toHaveAttribute('data-id', 'csv')
   await page.reload()
-  await expect(page.getByRole('button', { name: 'Draw the map top to bottom' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Draw the map left to right' })).toBeVisible()
 })

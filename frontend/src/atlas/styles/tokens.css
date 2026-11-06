@@ -149,7 +149,7 @@
   --a-ink: #101828; --a-on-ink: #FFFFFF;
   --a-lumen: #4255FF; --a-lumen-2: #8E99FF; --a-lumen-glow: rgba(66, 85, 255, .28);
   --a-accent: #3346F0; --a-accent-soft: rgba(66, 85, 255, .1); --a-accent-line: rgba(66, 85, 255, .45); --a-primary: #3346F0;
-  --a-sel: rgba(66, 85, 255, .07);
+  --a-sel: rgba(66, 85, 255, .07); --a-dot: transparent;
   --a-ask: #B04A00; --a-ask-fill: #FF7A00; --a-ask-soft: rgba(255, 122, 0, .11); --a-ask-line: rgba(255, 122, 0, .45); --a-ask-light: rgba(255, 122, 0, .5); --a-mark: #FF7A00;
   --a-work: #3346F0; --a-work-soft: rgba(66, 85, 255, .1); --a-live: #4255FF;
   --a-block: #7A3FD6; --a-water: #9A5CF5;
@@ -174,7 +174,7 @@
     --a-ink: #F5F6FA; --a-on-ink: #101828;
     --a-lumen: #7C8AFF; --a-lumen-2: #B3BBFF; --a-lumen-glow: rgba(124, 138, 255, .35);
     --a-accent: #8F9BFF; --a-accent-soft: rgba(124, 138, 255, .18); --a-accent-line: rgba(124, 138, 255, .55); --a-primary: #3346F0;
-    --a-sel: rgba(124, 138, 255, .14);
+    --a-sel: rgba(124, 138, 255, .14); --a-dot: transparent;
     --a-ask: #FFB066; --a-ask-fill: #FF8A1F; --a-ask-soft: rgba(255, 138, 31, .14); --a-ask-line: rgba(255, 138, 31, .5); --a-ask-light: rgba(255, 138, 31, .5); --a-mark: #FF8A1F;
     --a-work: #9AA5FF; --a-work-soft: rgba(124, 138, 255, .16); --a-live: #7C8AFF;
     --a-block: #C4A3FF; --a-water: #B48CFF;
@@ -197,7 +197,7 @@
     --a-ink: #F5F6FA; --a-on-ink: #101828;
     --a-lumen: #7C8AFF; --a-lumen-2: #B3BBFF; --a-lumen-glow: rgba(124, 138, 255, .35);
     --a-accent: #8F9BFF; --a-accent-soft: rgba(124, 138, 255, .18); --a-accent-line: rgba(124, 138, 255, .55); --a-primary: #3346F0;
-    --a-sel: rgba(124, 138, 255, .14);
+    --a-sel: rgba(124, 138, 255, .14); --a-dot: transparent;
     --a-ask: #FFB066; --a-ask-fill: #FF8A1F; --a-ask-soft: rgba(255, 138, 31, .14); --a-ask-line: rgba(255, 138, 31, .5); --a-ask-light: rgba(255, 138, 31, .5); --a-mark: #FF8A1F;
     --a-work: #9AA5FF; --a-work-soft: rgba(124, 138, 255, .16); --a-live: #7C8AFF;
     --a-block: #C4A3FF; --a-water: #B48CFF;
