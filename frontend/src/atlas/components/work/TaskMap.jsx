@@ -143,7 +143,7 @@ const Minimap = memo(function Minimap({ layout, derived, camera, view, onJump })
 // branches and focus), drawn as a hierarchy. A tree for assistive technology, with arrow keys that
 // follow what is drawn; pan, zoom and fit with the pointer, the keyboard or the controls.
 export default function TaskMap({ layout, view, store, derived, projectName, now, selectedId, onSelect, onToggle, onFocusBranch,
-  focusBranch, side, onToggleSide, onDirection, cameraRef, request, onLoadMore, loadingMore, empty }) {
+  focusBranch, side, onToggleSide, onDirection, cameraRef, request, onLoadMore, loadingMore, empty, course = null }) {
   const pane = useRef(null)
   const [store2] = useState(createCameraStore)
   const { camera, animated, view: area, pane: paneSize } = useSyncExternalStore(store2.subscribe, store2.get)
@@ -382,6 +382,17 @@ export default function TaskMap({ layout, view, store, derived, projectName, now
   const whole = { l: 0, w: paneSize.w, h: paneSize.h }
   const near = camera && layout.order.length > CULL_AT ? worldRect(camera, whole, 480) : null
   const shown = near ? layout.order.filter((id) => id === selectedId || id === focusTarget || intersects(near, box(layout.nodes[id]))) : layout.order
+  // Control circles sit around each marked task's face: a tile's face is centred near its top, a
+  // capsule's sits at its left.
+  const courseMarks = course?.size ? [...course].filter(([id]) => layout.nodes[id]).sort((a, b) => a[1] - b[1]).map(([id, n]) => {
+    const node = layout.nodes[id]
+    const row = node.kind === 'row'
+    return { id, n, x: row ? node.x + 25 : node.x + node.w / 2, y: row ? node.y + node.h / 2 : node.y + (node.depth === 0 ? 37 : 32), r: row ? 20 : node.depth === 0 ? 31 : 26, topId: node.topId }
+  }) : []
+  // Legs join consecutive controls of the same family only: across families the Map's order (oldest
+  // first, so new work never pushes old work aside) differs from the List's, and long legs would cross.
+  const courseLegs = courseMarks.slice(1).map((m, i) => (courseMarks[i].topId === m.topId ? `M${courseMarks[i].x} ${courseMarks[i].y}L${m.x} ${m.y}` : ''))
+    .join('') || null
   const far = camera && camera.k < 0.62
   const empty2 = !layout.order.length
   const anchorTop = selectedId && layout.nodes[selectedId] ? layout.nodes[selectedId].topId : null
@@ -409,6 +420,13 @@ export default function TaskMap({ layout, view, store, derived, projectName, now
           tabbable={id === focusTarget} dim={view.searching && !rows.get(id).row.match} historic={rows.get(id).family?.section === 'done'}
           away={Boolean(anchorTop) && layout.nodes[id].topId !== anchorTop}
           onPick={pick} onOpen={open} onFold={fold} />)}
+        {/* The course: each task that needs the person is a control circled on the map, numbered in
+            the order A steps through them and joined by straight purple legs, as on an orienteering map. */}
+        {courseMarks.length > 0 && <svg className="a-mcourse" width={layout.width} height={layout.height} aria-hidden="true" focusable="false">
+          {courseLegs && <path className="a-mcourse-leg" d={courseLegs} />}
+          {courseMarks.map((m) => <g key={m.id} className={`a-mcontrol${m.id === selectedId ? ' is-current' : ''}`}>
+            <circle cx={m.x} cy={m.y} r={m.r} /><text x={m.x - m.r * .8} y={m.y - m.r * .8} dy=".36em">{m.n}</text></g>)}
+        </svg>}
       </div>
     </div>
     <p id="map-keys" className="a-sr">{layout.direction === 'right' ? 'Arrow keys move between tasks: left to the lead, right to the first helper, up and down between tasks at the same level.' : 'Arrow keys move between tasks: up to the lead, down to the first helper, left and right between tasks at the same level.'}

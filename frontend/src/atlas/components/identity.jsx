@@ -14,7 +14,7 @@ export function Avatar({ name, color, tool, size = 30, removed = false, decorati
 
 const SHAPES = {
   work: <><circle className="a-bead-pulse" cx="8" cy="8" r="7" fill="none" stroke="var(--a-work)" strokeWidth="1.4" /><circle cx="8" cy="8" r="4" fill="var(--a-work)" /></>,
-  ask: <><circle cx="8" cy="8" r="7" fill="var(--a-ask-fill)" /><path d="M6.2 9.2V5.8a.9.9 0 0 1 1.8 0V8.4M8 8V5.2a.9.9 0 0 1 1.8 0v3.4M9.8 8.2V6.4a.85.85 0 0 1 1.7 0v3.1a3 3 0 0 1-3 3h-.4a3 3 0 0 1-2.7-1.7l-.6-1.4a.8.8 0 0 1 1.4-.7" fill="none" stroke="#2a1b00" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round" /></>,
+  ask: <><circle cx="8" cy="8" r="7" fill="var(--a-ask-fill)" /><path d="M6.2 9.2V5.8a.9.9 0 0 1 1.8 0V8.4M8 8V5.2a.9.9 0 0 1 1.8 0v3.4M9.8 8.2V6.4a.85.85 0 0 1 1.7 0v3.1a3 3 0 0 1-3 3h-.4a3 3 0 0 1-2.7-1.7l-.6-1.4a.8.8 0 0 1 1.4-.7" fill="none" stroke="var(--a-on-ink)" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round" /></>,
   helpers: <><circle cx="8" cy="8" r="6.2" fill="none" stroke="var(--a-text-3)" strokeWidth="1.4" strokeDasharray="2.4 2.4" /><circle cx="8" cy="8" r="1.8" fill="var(--a-text-3)" /></>,
   paused: <><circle cx="8" cy="8" r="6.4" fill="none" stroke="var(--a-text-3)" strokeWidth="1.6" /><path d="M6.3 5.6v4.8M9.7 5.6v4.8" stroke="var(--a-text-3)" strokeWidth="1.7" strokeLinecap="round" /></>,
   blocked: <><path d="M8 1.6l6.4 6.4L8 14.4 1.6 8z" fill="none" stroke="var(--a-block)" strokeWidth="1.5" strokeLinejoin="round" /><path d="M5.6 8h4.8" stroke="var(--a-block)" strokeWidth="1.6" strokeLinecap="round" /></>,

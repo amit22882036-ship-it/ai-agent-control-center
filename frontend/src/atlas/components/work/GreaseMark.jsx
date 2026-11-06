@@ -10,6 +10,7 @@ export default function GreaseMark({ id, className = '' }) {
   const [fresh] = useState(() => Boolean(id) && !drawn.has(id))
   useEffect(() => { if (id) drawn.add(id) }, [id])
   return <svg className={`a-mark${fresh ? ' is-fresh' : ''}${className ? ` ${className}` : ''}`} viewBox="0 0 44 36" aria-hidden="true" focusable="false">
-    <path pathLength="100" d="M30.5 5.2C22 2.1 9.6 3.6 5.1 10.8 1.2 17.1 4.6 27.4 14.9 30.9c9.4 3.2 22.7.3 25.5-8.3 2.5-7.7-4.2-15.8-15-17.7-4.3-.7-8.6-.3-11.8 1" />
+    {/* An orienteering control: a true circle in course purple, drawn once when it first appears. */}
+    <path pathLength="100" d="M22 3.5a14.5 14.5 0 1 1 0 29a14.5 14.5 0 1 1 0-29" />
   </svg>
 }

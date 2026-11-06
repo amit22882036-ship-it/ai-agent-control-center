@@ -101,7 +101,7 @@ const TaskRow = memo(function TaskRow({ entry, top, height, store, derived, proj
         </button>
         : <span className="a-fold-pad" />}
       <span className="a-row-bead" title={status.label}>
-        {marked && <GreaseMark id={row.id} />}
+        {marked && compact && <GreaseMark id={row.id} />}
         <StatusBead state={status.bead} decorative />
       </span>
       <span className="a-r-title">
@@ -181,7 +181,7 @@ function Plain({ entry, top, height, onToggleFinished, onShowAll, compact }) {
 // close branches, Enter selects. Live changes keep the row the person is looking at where it is on
 // screen, and rows that move glide to their new place instead of jumping.
 export default function WorkSheet({ rows, viewKey, store, derived, projectName, hueOf, now, selectedId, focusId, setFocusId, onSelect, onToggle,
-  onShowAll, onToggleFinished, onLoadMore, loadingMore, empty, compact = false, onShowInMap, onOpenTask, onReply, changed, label }) {
+  onShowAll, onToggleFinished, onLoadMore, loadingMore, empty, compact = false, onShowInMap, onOpenTask, onReply, changed, label, course = null }) {
   const scroller = useRef(null)
   const keyboard = useRef(false)
   const lastScroll = useRef(0)
@@ -203,6 +203,17 @@ export default function WorkSheet({ rows, viewKey, store, derived, projectName, 
   const items = useMemo(() => rows.filter(focusable).map((entry) => entry.row), [rows])
   const height = (index) => Math.round(ROW[rows[index].kind] * scale)
   const focusTarget = items.some((row) => row.id === focusId) ? focusId : items.some((row) => row.id === selectedId) ? selectedId : items[0]?.id
+  // The course: each listed task that needs the person is a numbered control in the gutter, joined
+  // to the next by one line, in the order A steps through them.
+  const controls = useMemo(() => {
+    if (!course?.size) return []
+    const out = []
+    rows.forEach((row, index) => {
+      const n = TASK_KINDS.has(row.kind) ? course.get(row.id) : undefined
+      if (n) out.push({ n, id: row.id, y: tops[index] + Math.round(ROW[row.kind] * scale) / 2 })
+    })
+    return out
+  }, [course, rows, tops, scale])
 
   useLayoutEffect(() => {
     const element = scroller.current
@@ -401,7 +412,13 @@ export default function WorkSheet({ rows, viewKey, store, derived, projectName, 
     {pinned && !compact && <div className="a-sheet-pin" role="none" aria-hidden="true">
       <span className={`a-sheet-pin-label a-sheet-pin--${pinned.section}`}>{pinned.label}<span className="a-num">{pinned.count}</span></span>
     </div>}
-    <div className="a-sheet-space" role="none" style={{ height: rows.length ? total : 0 }}>{shown}</div>
+    <div className={`a-sheet-space${controls.length ? ' has-course' : ''}`} role="none" style={{ height: rows.length ? total : 0 }}>
+      {controls.length > 0 && <svg className="a-course" width="44" height={total} aria-hidden="true" focusable="false">
+        {controls.length > 1 && <path className="a-course-leg" d={controls.map((c, i) => `${i ? 'L' : 'M'}22 ${c.y}`).join(' ')} />}
+        {controls.filter((c) => c.y > port.top - 600 && c.y < port.top + port.height + 600).map((c) => <g key={c.id} className={`a-control${c.id === selectedId ? ' is-current' : ''}`}>
+          <circle cx="22" cy={c.y} r="12" /><text x="22" y={c.y} dy=".36em">{c.n}</text></g>)}
+      </svg>}
+      {shown}</div>
     {!items.length && empty}
     {!store.complete && <div className="a-ol-more" role="none">
       <span className="a-fine">{compact ? `${loaded} of ${store.total ?? 'all'} loaded` : `Showing ${loaded} of ${store.total ?? 'all'} tasks, newest first.`}</span>

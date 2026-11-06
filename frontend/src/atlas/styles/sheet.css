@@ -199,10 +199,10 @@
 .atlas .a-sm.is-lead { width: 8px; border-radius: 3px; margin-right: 3px; }
 .atlas .a-sm--needs { background: var(--a-mark); }
 .atlas .a-sm--working { background: var(--a-live); }
-.atlas .a-sm--waiting { background: color-mix(in srgb, var(--a-block) 55%, transparent); }
+.atlas .a-sm--waiting { background: var(--a-water); }
 .atlas .a-sm--held { background: var(--a-block); }
 .atlas .a-sm--pending { background: transparent; box-shadow: inset 0 0 0 1.25px color-mix(in srgb, var(--a-text-3) 60%, transparent); }
-.atlas .a-sm--done { background: color-mix(in srgb, var(--a-work) 34%, transparent); }
+.atlas .a-sm--done { background: color-mix(in srgb, var(--a-contour) 45%, transparent); }
 .atlas .a-sm--canceled { background: repeating-linear-gradient(135deg, color-mix(in srgb, var(--a-text-3) 40%, transparent) 0 2px, transparent 2px 4px); }
 .atlas .a-strand-n { margin-left: 8px; font: 600 11.5px/1 var(--a-mono); color: var(--a-text-3); white-space: nowrap; }
 .atlas .a-sheet .a-row.is-past .a-sm { height: 9px; opacity: .8; }
@@ -312,3 +312,33 @@
 .atlas .a-app--lumen .a-work > .a-inspector { animation: atlas-loupe-in .2s ease-out both; }
 @keyframes atlas-loupe-in { from { opacity: .4; } to { opacity: 1; } }
 @media (prefers-reduced-motion: reduce) { .atlas .a-app--lumen .a-work > .a-inspector { animation: none; } }
+
+/* ------------------------------------------------------------------ the course (orienteering map) */
+/* The main List keeps a gutter on its left edge; what needs the person is a numbered control there,
+   and one course line joins the controls in the order A steps through them. */
+.atlas .a-sheet:not(.a-outline--compact) .a-sheet-space > .a-row,
+.atlas .a-sheet:not(.a-outline--compact) .a-sheet-space > .a-sheet-sec,
+.atlas .a-sheet:not(.a-outline--compact) .a-sheet-space > .a-sheet-day,
+.atlas .a-sheet:not(.a-outline--compact) .a-sheet-space > .a-sheet-more,
+.atlas .a-sheet:not(.a-outline--compact) .a-sheet-space > .a-sheet-reveal { left: 46px; }
+.atlas .a-course { position: absolute; top: 0; left: 2px; overflow: visible; pointer-events: none; z-index: 2; }
+.atlas .a-course .a-course-leg { fill: none; stroke: var(--a-mark); stroke-width: 2; stroke-linecap: round; opacity: .75; }
+.atlas .a-course .a-control circle { fill: var(--a-group); stroke: var(--a-mark); stroke-width: 2.25; }
+.atlas .a-course .a-control text { fill: var(--a-ask); font: 700 12px/1 var(--a-font); font-stretch: 75%; text-anchor: middle;
+  font-variant-numeric: tabular-nums; }
+.atlas .a-course .a-control.is-current circle { fill: var(--a-mark); }
+.atlas .a-course .a-control.is-current text { fill: var(--a-on-ink); }
+/* Hierarchy lines are contour brown; marked rows keep only their state bead (the control is in the gutter). */
+.atlas .a-sheet .a-row.is-marked .a-row-bead .a-bead circle:first-child { fill: var(--a-ask-soft); }
+/* Selection is open-land yellow under black ink; focus is a black ring. */
+.atlas .a-sheet .a-row.is-selected::after { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--a-edge-print) 70%, transparent); }
+.atlas ::selection { background: rgba(242, 195, 58, .45); color: var(--a-text); }
+.atlas .a-sheet:not(.a-outline--compact) .a-sheet-pin-label { padding-left: 62px; }
+
+/* The course on the Map: control circles around the marked faces, numbered, joined by legs. */
+.atlas .a-mcourse { position: absolute; top: 0; left: 0; overflow: visible; pointer-events: none; z-index: 3; }
+.atlas .a-mcourse-leg { fill: none; stroke: var(--a-mark); stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; opacity: .7; }
+.atlas .a-mcontrol circle { fill: none; stroke: var(--a-mark); stroke-width: 2.5; }
+.atlas .a-mcontrol text { fill: var(--a-ask); font: 700 15px/1 var(--a-font); font-stretch: 75%; text-anchor: middle; paint-order: stroke;
+  stroke: var(--a-group); stroke-width: 4px; }
+.atlas .a-mcontrol.is-current circle { stroke-width: 4; }

@@ -26,8 +26,10 @@ test('a busy workspace opens as one line per family, with what needs you marked 
   await expect(page.locator('.a-sheet-sec').first()).toHaveText(/^Needs you/)
   expect(await page.locator('.a-sheet [role="treeitem"]').count()).toBeLessThan(80)
   // Families that need you show only the path to what needs you, and say what is not shown.
-  const marked = page.locator('.a-sheet .a-row.is-marked').first()
-  await expect(marked.locator('.a-mark')).toHaveCount(1)
+  // What needs you is the course: numbered controls in the gutter, in the order A steps through.
+  await expect(page.locator('.a-sheet .a-row.is-marked').first()).toBeVisible()
+  await expect(page.locator('.a-course .a-control text').first()).toHaveText('1')
+  await expect(page.locator('.a-course .a-course-leg')).toHaveCount(1)
   await expect(page.locator('.a-sheet-more').first()).toContainText(/more tasks? in this branch/)
   // History is offered, not listed, until asked for, and then grouped by day.
   await page.locator('.a-sheet').evaluate((sheet) => { sheet.scrollTop = sheet.scrollHeight })
@@ -216,7 +218,7 @@ test('the sheet keeps one Tab stop and moves by page with the keyboard', async (
 test('reduced motion: the grease mark is already drawn and rows do not glide', async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' })
   await openWork(page, { tasks: showcase() })
-  const path = page.locator('.a-sheet .a-mark path').first()
+  const path = page.locator('.a-now .a-mark path').first()
   expect(await path.evaluate((element) => getComputedStyle(element).animationName)).toBe('none')
   expect(await path.evaluate((element) => getComputedStyle(element).strokeDashoffset)).toMatch(/^0(px)?$/)
 })

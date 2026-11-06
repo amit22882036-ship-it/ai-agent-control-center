@@ -203,6 +203,8 @@ export default function WorkPage({ live, route, navigate, feed, derived, attenti
   // them, and moving opens the path to the Task in both views.
   const attentionIds = useMemo(() => attentionInView(store, derived, { filter, project, query, colors, focus }),
     [store, derived, filter, project, query, colors, focus])
+  // The course: what needs the person, numbered in the order A steps through it.
+  const course = useMemo(() => new Map(attentionIds.map((id, index) => [id, index + 1])), [attentionIds])
   const goAttention = useCallback((direction) => {
     const id = stepAttention(attentionIds, selectedId, direction)
     if (id) select(id)
@@ -319,7 +321,7 @@ export default function WorkPage({ live, route, navigate, feed, derived, attenti
     selectedId={selectedId} focusId={focusId} setFocusId={setFocusId} onSelect={select} onToggle={toggle} onShowAll={showAll}
     onToggleFinished={toggleFinished} onLoadMore={feed.loadMore} loadingMore={feed.loadingMore} empty={empty} compact={compact}
     onShowInMap={compact ? undefined : showInMap} onOpenTask={compact ? undefined : openTask} onReply={compact ? undefined : replyTo}
-    changed={changed} />
+    changed={changed} course={compact ? null : course} />
 
   let content
   if (!ready && feed.phase === 'error') {
@@ -334,7 +336,7 @@ export default function WorkPage({ live, route, navigate, feed, derived, attenti
       <TaskMap layout={layout} view={view} store={store} derived={derived} projectName={projectName} now={now} selectedId={selectedId}
         onSelect={select} onToggle={toggle} onFocusBranch={focusBranch} focusBranch={focus} side={side}
         onToggleSide={() => go({ side: side ? undefined : '1' })} onDirection={turnMap} cameraRef={cameraRef} request={mapRequest}
-        onLoadMore={feed.loadMore} loadingMore={feed.loadingMore} empty={empty} />
+        onLoadMore={feed.loadMore} loadingMore={feed.loadingMore} empty={empty} course={course} />
       {side && <div className="a-side" data-side-list>{sheet(true)}</div>}
     </>
   } else {
