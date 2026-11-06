@@ -1,0 +1,19 @@
+/* The massing model, last layer: rules that make every screen speak the same language. Loaded after
+   every other Lumen stylesheet; selectors stay at the same specificity as the rules they settle. */
+
+/* One voice for labels: a label is a small heading in sentence case, never tracked capitals. */
+.atlas .a-ol-sec, .atlas .a-blk h3, .atlas .a-pjh, .atlas .a-lc-l, .atlas .a-taskpage .a-tblock h3, .atlas .a-taskpage .a-tsub,
+.atlas .a-taskpage .a-quote .a-quote-by, .atlas .a-taskpage .a-rrow .a-rrow-k, .atlas .a-rail-head, .atlas .a-life-head, .atlas .a-field-label,
+.atlas .a-demo-label, .atlas .a-mappane .a-mband, .atlas .a-mappane .a-gn .a-gproj, .atlas .a-ntf-sec h3, .atlas .a-cx-card .a-cx-q h3,
+.atlas .a-cx-guide h3, .atlas .a-keygroup h3, .atlas .a-cx-models thead th {
+  text-transform: none; letter-spacing: -.003em; font-size: 13px; font-weight: 650; color: var(--a-text-2); }
+.atlas .a-rail-head { font-size: 12px; color: var(--a-film-text); }
+
+/* The tower in a row sits on the row's baseline, beside the count of its finished floors. */
+.atlas .a-sheet .a-c-team { gap: 8px; }
+.atlas .a-tower { flex: none; overflow: visible; }
+.atlas .a-sheet .a-row.is-past .a-tower { opacity: .8; }
+
+/* Selection is graphite: a quiet tint and a fine line, the same graphite that outlines a selected
+   building on the Site. */
+.atlas .a-sheet .a-row.is-selected::after { background: var(--a-sel); box-shadow: inset 0 0 0 1px var(--a-line-2); }

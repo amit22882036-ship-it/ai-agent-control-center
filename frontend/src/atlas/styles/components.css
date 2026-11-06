@@ -9,7 +9,7 @@
 .atlas .a-btn--primary:hover:not(:disabled) { background: var(--a-ink); opacity: .9; }
 .atlas .a-btn--ghost { border-color: transparent; background: transparent; color: var(--a-text-2); }
 .atlas .a-btn--ghost:hover:not(:disabled) { background: var(--a-hover-2); color: var(--a-text); }
-.atlas .a-btn--ask { background: var(--a-ask-fill); border-color: var(--a-ask-fill); color: var(--a-on-ink); }
+.atlas .a-btn--ask { background: var(--a-ask); border-color: var(--a-ask); color: var(--a-on-ink); }
 .atlas .a-btn--ask:hover:not(:disabled) { background: var(--a-ask-fill); opacity: .9; }
 .atlas .a-btn--danger { color: var(--a-fail); }
 .atlas .a-btn--sm { height: 28px; padding: 0 10px; font-size: 13px; border-radius: 7px; gap: 6px; }

@@ -1,6 +1,5 @@
 import { StatusBead } from '../identity'
 import Icon from '../Icon'
-import GreaseMark from './GreaseMark'
 
 const READOUTS = [
   { scope: 'needs', key: 'needs', bead: 'ask', label: 'Need you', one: 'Needs you' },
@@ -28,7 +27,6 @@ export default function NowStrip({ counts, families, filter, onScope, partial, c
       return <button key={item.scope} type="button" className={`a-now-item a-now-item--${item.key}${n ? '' : ' is-zero'}`} aria-pressed={on}
         onClick={() => onScope(on ? 'all' : item.scope)} title={`${n} ${n === 1 ? 'task' : 'tasks'}${partial ? ' among the loaded tasks' : ''}`}>
         <span className="a-now-n a-num">
-          {item.key === 'needs' && n > 0 && <GreaseMark id="now-strip-needs" className="a-now-mark" />}
           <StatusBead state={item.bead} size={13} decorative />{n}
         </span>{' '}
         <span className="a-now-l">{n === 1 ? item.one : item.label}</span>

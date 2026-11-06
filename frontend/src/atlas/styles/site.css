@@ -1,0 +1,29 @@
+/* The Site: the massing model of all work (full view) and its panorama above the List.
+   State rules use class-level selectors under .atlas so no element rule elsewhere can win. */
+.atlas .a-site { position: relative; width: 100%; height: 100%; outline: none; touch-action: none; cursor: grab; user-select: none; -webkit-user-select: none; }
+.atlas .a-site:focus-visible { box-shadow: inset 0 0 0 2px var(--a-accent); border-radius: inherit; }
+.atlas .a-site-canvas { position: absolute; inset: 0; display: block; }
+.atlas .a-site-tip { position: absolute; left: 0; top: 0; z-index: 2; display: grid; gap: 2px; max-width: 360px; padding: 8px 12px 9px; border-radius: 12px;
+  pointer-events: none; background: var(--a-ink); color: var(--a-on-ink); box-shadow: 0 10px 28px -12px rgba(0, 0, 0, .45); will-change: transform; }
+.atlas .a-site-tip[hidden] { display: none; }
+.atlas .a-site-tip b { font: 650 13px/1.25 var(--a-font); letter-spacing: -.005em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.atlas .a-site-tip small { font: 500 12px/1.3 var(--a-font); opacity: .78; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* The full Site fills the work area, on a studio sweep: lighter where the light falls. */
+.atlas .a-wbody.a-wbody--site { background:
+  radial-gradient(120% 90% at 30% 0%, var(--a-ground-1), transparent 70%), var(--a-bg); }
+.atlas .a-wbody--site .a-site { position: absolute; inset: 0; }
+.atlas .a-site-hint { position: absolute; left: 18px; bottom: 14px; z-index: 2; font: 500 12px/1.4 var(--a-font); color: var(--a-text-3); pointer-events: none; }
+
+/* The panorama: open work standing on its districts, history gathered at the back, above the List. */
+.atlas .a-panorama { position: relative; flex: none; height: 188px; margin: 2px 14px 6px; border-radius: 18px; overflow: hidden;
+  background: radial-gradient(140% 120% at 25% -10%, var(--a-ground-1), transparent 65%), var(--a-bg);
+  box-shadow: inset 0 0 0 1px var(--a-line-3); transition: height .42s var(--a-spring); }
+.atlas .a-panorama.is-closed { height: 34px; background: none; box-shadow: none; }
+.atlas .a-panorama-toggle { position: absolute; top: 8px; right: 10px; z-index: 3; display: inline-flex; align-items: center; gap: 6px; height: 26px;
+  padding: 0 10px; border-radius: 999px; font: 600 12px/1 var(--a-font); color: var(--a-text-2); background: var(--a-group);
+  box-shadow: 0 0 0 1px var(--a-line-2); }
+.atlas .a-panorama-toggle:hover { color: var(--a-text); }
+.atlas .a-panorama.is-closed .a-panorama-toggle { top: 4px; right: auto; left: 14px; }
+@media (max-width: 760px) { .atlas .a-panorama { height: 150px; } }
+@media (prefers-reduced-motion: reduce) { .atlas .a-panorama { transition: none; } }

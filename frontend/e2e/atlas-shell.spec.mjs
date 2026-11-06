@@ -78,9 +78,9 @@ test('keyboard focus is visible and the skip link reaches the page content', asy
 test('reduced motion removes animation and mixed-direction text keeps its own direction', async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' })
   await openApp(page, { path: '/#/gallery' })
-  const pulse = page.locator('.a-bead-pulse').first()
-  await expect(pulse).toBeAttached()
-  expect(await pulse.evaluate((element) => getComputedStyle(element).animationName)).toBe('none')
+  // Nothing runs an animation: state marks are still, and transitions are instant.
+  await page.waitForTimeout(400)
+  expect(await page.evaluate(() => document.getAnimations().filter((item) => item.playState === 'running').length)).toBe(0)
   const directions = await page.locator('.a-bidi-sample p[dir="auto"]').evaluateAll((items) => items.map((item) => getComputedStyle(item).direction))
   expect(directions).toEqual(['rtl', 'ltr', 'rtl'])
 })

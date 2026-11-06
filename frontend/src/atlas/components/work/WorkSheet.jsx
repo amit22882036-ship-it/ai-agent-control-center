@@ -3,6 +3,7 @@ import Icon from '../Icon'
 import { Avatar, StatusBead } from '../identity'
 import { Button } from '../primitives'
 import GreaseMark from './GreaseMark'
+import TowerGlyph from './TowerGlyph'
 import { PLACEMENT_NOTES, nowView, taskCategory, timeView, treeKey, whoView } from '../../model/workList.mjs'
 import { ROW, TASK_KINDS, familyStrand, focusable, sheetOffsets, sheetWindow } from '../../model/workSheet.mjs'
 
@@ -48,20 +49,17 @@ const TEAM = [
   ['pending', 'pending', 'not started'], ['done', 'done', 'finished'], ['canceled', 'stopped', 'canceled'],
 ]
 
-// A family's team at a glance: its strand (one mark per Task, lead first, coloured by state) and
-// how many of its Tasks are finished, never a percentage.
+// A family's team at a glance: its building from the Site (floors by state) and how many of its
+// Tasks are finished, never a percentage.
 function Team({ derived, family }) {
   const strand = familyStrand(derived, family)
   const { counts } = strand
-  if (counts.size < 2) return <div className="a-c-team" aria-hidden="true" />
   const parts = TEAM.filter(([key]) => counts[key] > 0)
   const words = parts.map(([key, , label]) => `${counts[key]} ${label}`)
-  return <div className="a-c-team" title={`${counts.size} tasks: ${words.join(' · ')}${strand.sampled ? ' (strand sampled)' : ''}`}>
-    <span className="a-sr">Team of {counts.size}: {words.join(', ')}.</span>
-    <span className="a-strand" aria-hidden="true">
-      {strand.marks.map((mark, index) => <i key={index} className={`a-sm a-sm--${mark.category}${mark.lead ? ' is-lead' : ''}`} />)}
-    </span>
-    <span className="a-strand-n a-num" aria-hidden="true">{strand.finished}/{counts.size}</span>
+  return <div className="a-c-team" title={`${counts.size} task${counts.size === 1 ? '' : 's'}: ${words.join(' · ')}`}>
+    {counts.size > 1 && <span className="a-sr">Team of {counts.size}: {words.join(', ')}.</span>}
+    <TowerGlyph counts={counts} />
+    {counts.size > 1 && <span className="a-strand-n a-num" aria-hidden="true">{strand.finished}/{counts.size}</span>}
   </div>
 }
 

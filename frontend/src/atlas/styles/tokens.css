@@ -18,11 +18,13 @@
   src: url('../fonts/jetbrains-mono-latin-ext.woff2') format('woff2');
   unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C4, U+2113, U+2C60-2C7F, U+A720-A7FF; }
 
-/* Orienteering map (daylight): map-paper white, a forest-black rail, and the map's inks, each with
-   one fixed meaning that never changes from screen to screen. Course purple: only what needs the
-   person (the course and its numbered controls). Forest green: an agent recorded working. Water
-   blue: waiting. Olive: on hold or blocked. Contour brown: the hierarchy's lines and finished
-   terrain. Black ink: text, primary actions and focus; open-land yellow marks the selection. */
+/* The massing model. The workspace is an architectural study model: every task family is a building,
+   every task a floor, and each state is the material it is built of, the same on the Site, in every
+   state mark and in every list. Wireframe: planned, not started. Glass: waiting. Lit from within:
+   an agent recorded working. Solid white card: built (done). Hatched grey: on hold or blocked. One
+   vermilion piece: what needs the person, and nothing else is vermilion. Graphite ink does the
+   rest (text, primary actions, selection and focus) on a cool studio ground; at night the model is
+   dark and only real work is lit. */
 .atlas {
   color-scheme: light;
   --a-font: 'Atlas Bricolage Grotesque', 'Atlas Heebo', 'Segoe UI Variable Text', 'Segoe UI', system-ui, sans-serif;
@@ -33,88 +35,131 @@
      after something the person dragged and dropped. */
   --a-spring: linear(0, 0.157 4.6%, 0.48 11.5%, 0.73 19.2%, 0.877 27.5%, 0.953 37%, 0.986 48.5%, 1);
   --a-spring-give: linear(0, 0.21 5%, 0.65 13%, 0.94 21%, 1.04 29%, 1.05 36%, 1.02 46%, 1);
-  --a-r: 12px; --a-r-sm: 9px; --a-r-lg: 18px; --a-r-xl: 24px; --a-r-2xl: 30px;
-  --a-bg: #EEF0EA; --a-ground-1: #F7F8F4; --a-ground-2: #E6E9E1;
-  --a-film: #132019; --a-film-2: #1D2C23; --a-film-3: #28392E; --a-film-text: #A3B3A8; --a-film-strong: #F3F5F1; --a-edge-print: #F2C33A;
-  --a-rail: var(--a-film); --a-surface: rgba(255, 255, 255, .9); --a-surface-2: rgba(255, 255, 255, .66);
-  --a-sunken: rgba(16, 18, 24, .045);
-  --a-glass: rgba(255, 255, 255, .6); --a-glass-2: rgba(255, 255, 255, .8); --a-glass-3: rgba(255, 255, 255, .97);
-  --a-blur: blur(22px) saturate(160%);
+  --a-r: 12px; --a-r-sm: 9px; --a-r-lg: 16px; --a-r-xl: 20px; --a-r-2xl: 24px;
+  --a-bg: #E9EBEE; --a-ground-1: #F3F4F6; --a-ground-2: #E1E4E8;
+  --a-film: #16181C; --a-film-2: #212429; --a-film-3: #2C3036; --a-film-text: #A4AAB3; --a-film-strong: #F4F5F7; --a-edge-print: #FF7A4D;
+  --a-rail: var(--a-film); --a-surface: #FFFFFF; --a-surface-2: #F7F8F9;
+  --a-sunken: rgba(18, 21, 26, .045);
+  --a-glass: #FFFFFF; --a-glass-2: #FFFFFF; --a-glass-3: #FFFFFF;
+  --a-blur: none;
   --a-edge: rgba(255, 255, 255, .9);
-  --a-hover: rgba(16, 18, 24, .04); --a-hover-2: rgba(16, 18, 24, .07);
-  --a-line: rgba(16, 18, 24, .08); --a-line-2: rgba(16, 18, 24, .15); --a-line-3: rgba(16, 18, 24, .05);
-  --a-text: #121512; --a-text-2: #454B46; --a-text-3: #5A615B; --a-text-4: #98A09A;
-  --a-ink: #121512; --a-on-ink: #F7F8F4;
-  --a-accent: #121512; --a-accent-soft: rgba(18, 21, 18, .07); --a-accent-line: rgba(18, 21, 18, .35);
-  --a-thread: #C4A47F; --a-thread-soft: #E4D6C3;
-  --a-work: #2B7A2F; --a-work-soft: rgba(43, 122, 47, .12); --a-live: #3FAE4A;
-  --a-ask: #8E1C7C; --a-ask-fill: #B02A9B; --a-ask-soft: rgba(176, 42, 155, .09); --a-ask-line: rgba(176, 42, 155, .4);
-  --a-ask-light: rgba(176, 42, 155, .5); --a-mark: #B02A9B;
-  --a-block: #6A7220; --a-water: #1F72B0; --a-contour: #A8733F; --a-fail: #C3332B; --a-fail-soft: rgba(195, 51, 43, .1);
-  --a-map: transparent; --a-dot: rgba(60, 68, 92, .14);
-  --a-shadow-1: 0 1px 0 rgba(255, 255, 255, .8) inset, 0 0 0 1px rgba(16, 18, 24, .05), 0 6px 18px -10px rgba(16, 20, 34, .28);
-  --a-shadow-2: 0 1px 0 rgba(255, 255, 255, .85) inset, 0 0 0 1px rgba(16, 18, 24, .06), 0 22px 50px -26px rgba(16, 20, 34, .42), 0 3px 8px -3px rgba(16, 20, 34, .12);
-  --a-shadow-3: 0 1px 0 rgba(255, 255, 255, .85) inset, 0 0 0 1px rgba(16, 18, 24, .07), 0 40px 90px -36px rgba(16, 20, 34, .5), 0 8px 18px -8px rgba(16, 20, 34, .16);
-  --a-spec: rgba(255, 255, 255, .55);
-  --a-veil: rgba(236, 238, 242, .62);
-  --a-sheet: rgba(251, 251, 253, .74); --a-group: #FFFFFF; --a-sidebar: var(--a-film);
-  --a-hairline: rgba(16, 18, 24, .075);
-  --a-group-shadow: 0 0 0 1px rgba(16, 18, 24, .05), 0 1px 2px rgba(16, 20, 34, .05), 0 12px 28px -20px rgba(16, 20, 34, .32);
-  --a-sel: rgba(242, 195, 58, .26);
+  --a-hover: rgba(18, 21, 26, .04); --a-hover-2: rgba(18, 21, 26, .07);
+  --a-line: rgba(18, 21, 26, .09); --a-line-2: rgba(18, 21, 26, .16); --a-line-3: rgba(18, 21, 26, .05);
+  --a-text: #15171B; --a-text-2: #474C55; --a-text-3: #5D636C; --a-text-4: #8F959E;
+  --a-ink: #15171B; --a-on-ink: #FFFFFF;
+  --a-accent: #15171B; --a-accent-soft: rgba(21, 23, 27, .07); --a-accent-line: rgba(21, 23, 27, .35);
+  --a-thread: #B7BCC4; --a-thread-soft: #DCDFE4;
+  --a-work: #7A4A00; --a-work-soft: rgba(245, 184, 61, .2); --a-live: #F2B23A;
+  --a-ask: #B83A0C; --a-ask-fill: #EE4F1B; --a-ask-soft: rgba(238, 79, 27, .09); --a-ask-line: rgba(238, 79, 27, .4);
+  --a-ask-light: rgba(238, 79, 27, .5); --a-mark: #EE4F1B;
+  --a-block: #5B626C; --a-water: #20699A; --a-contour: #6B717A; --a-fail: #B4262E; --a-fail-soft: rgba(180, 38, 46, .1);
+  --a-map: transparent; --a-dot: rgba(60, 66, 78, .12);
+  --a-shadow-1: 0 0 0 1px rgba(18, 21, 26, .06), 0 1px 2px rgba(18, 21, 26, .05), 0 8px 20px -14px rgba(18, 21, 26, .3);
+  --a-shadow-2: 0 0 0 1px rgba(18, 21, 26, .07), 0 2px 6px -2px rgba(18, 21, 26, .1), 0 24px 52px -28px rgba(18, 21, 26, .42);
+  --a-shadow-3: 0 0 0 1px rgba(18, 21, 26, .08), 0 8px 18px -8px rgba(18, 21, 26, .16), 0 44px 96px -40px rgba(18, 21, 26, .5);
+  --a-spec: rgba(255, 255, 255, .6);
+  --a-veil: rgba(233, 235, 238, .7);
+  --a-sheet: #F4F5F7; --a-group: #FFFFFF; --a-sidebar: var(--a-film);
+  --a-hairline: rgba(18, 21, 26, .08);
+  --a-group-shadow: 0 0 0 1px rgba(18, 21, 26, .06), 0 1px 2px rgba(18, 21, 26, .04), 0 14px 30px -22px rgba(18, 21, 26, .3);
+  --a-sel: rgba(21, 23, 27, .065);
+  /* Model materials: what each state is built of, on the Site and in every state mark. */
+  --a-mat-board: #F9FAFB; --a-mat-board-side: #D5D9DF; --a-mat-edge: rgba(20, 24, 30, .16); --a-mat-shadow: rgba(24, 28, 36, .09);
+  --a-mat-built-top: #FFFFFF; --a-mat-built-l: #EEF0F3; --a-mat-built-r: #DCDFE4;
+  --a-mat-archive-top: #FBFBFC; --a-mat-archive-l: #ECEEF1; --a-mat-archive-r: #DADDE2;
+  --a-mat-lit-top: #FFE7A8; --a-mat-lit-l: #FFD57D; --a-mat-lit-r: #F2BA4F;
+  --a-mat-glass-top: rgba(196, 226, 246, .62); --a-mat-glass-l: rgba(168, 210, 238, .55); --a-mat-glass-r: rgba(136, 190, 228, .6);
+  --a-mat-glass-edge: rgba(70, 130, 175, .55);
+  --a-mat-held-top: #D6DADF; --a-mat-held-l: #C4C9D0; --a-mat-held-r: #B0B6BE; --a-mat-hatch: rgba(52, 58, 68, .38);
+  --a-mat-wire: rgba(40, 44, 52, .62);
+  --a-mat-needs-top: #FF7D52; --a-mat-needs-l: #EE4F1B; --a-mat-needs-r: #C93F10;
+  --a-mat-lit-glow: rgba(255, 186, 72, .8); --a-mat-needs-glow: rgba(255, 92, 40, .8);
+  --a-mat-select: #15171B; --a-mat-hover: rgba(21, 23, 27, .45); --a-mat-night: 0; --a-mat-label: rgba(255, 255, 255, .92);
   --a-agent-neutral: #B9BEC9; --a-agent-violet: #A994F4; --a-agent-blue: #7FA2F6; --a-agent-cyan: #6FCBD8;
   --a-agent-green: #7FCF98; --a-agent-yellow: #E8C766; --a-agent-orange: #F2A66E; --a-agent-red: #EE8E8E; --a-agent-pink: #EE97C4;
   --canvas: var(--a-bg); --surface: var(--a-surface); --raised: var(--a-hover-2); --text: var(--a-text);
   --muted: var(--a-text-3); --line: var(--a-line); --accent: var(--a-accent); --motion: 150ms;
 }
-/* Darkroom: the same table after dark, on a neutral near-black (never navy). */
+/* The model at night: a dark board where only real work is lit. */
 :root[data-theme="dark"] .atlas {
-  color-scheme: dark;
-  --a-bg: #0D100E; --a-ground-1: #151915; --a-ground-2: #090B09;
-  --a-film: #050806; --a-film-2: #111813; --a-film-3: #1B241D; --a-film-text: #9CAEA2; --a-film-strong: #F1F4F0; --a-edge-print: #F2C33A;
-  --a-surface: rgba(30, 31, 36, .86); --a-surface-2: rgba(30, 31, 36, .6);
-  --a-sunken: rgba(255, 255, 255, .045);
-  --a-glass: rgba(30, 31, 36, .55); --a-glass-2: rgba(34, 35, 41, .8); --a-glass-3: rgba(37, 38, 44, .97);
-  --a-edge: rgba(255, 255, 255, .1);
-  --a-hover: rgba(255, 255, 255, .05); --a-hover-2: rgba(255, 255, 255, .085);
-  --a-line: rgba(255, 255, 255, .08); --a-line-2: rgba(255, 255, 255, .15); --a-line-3: rgba(255, 255, 255, .05);
-  --a-text: #EFF2ED; --a-text-2: #B4BCB5; --a-text-3: #949D96; --a-text-4: #5E6760;
-  --a-ink: #EFF2ED; --a-on-ink: #101310;
-  --a-accent: #EFF2ED; --a-accent-soft: rgba(239, 242, 237, .1); --a-accent-line: rgba(239, 242, 237, .4);
-  --a-thread: #5A4A38; --a-thread-soft: #352D24;
-  --a-work: #6CCB72; --a-work-soft: rgba(108, 203, 114, .14); --a-live: #6CCB72;
-  --a-ask: #EE8BDD; --a-ask-fill: #D752C2; --a-ask-soft: rgba(215, 82, 194, .13); --a-ask-line: rgba(215, 82, 194, .45);
-  --a-ask-light: rgba(215, 82, 194, .45); --a-mark: #E070CE;
-  --a-block: #BCC45E; --a-water: #6AB2EA; --a-contour: #C99A68; --a-fail: #FF7468; --a-fail-soft: rgba(255, 116, 104, .1);
-  --a-dot: rgba(220, 224, 235, .07);
-  --a-shadow-1: 0 1px 0 rgba(255, 255, 255, .05) inset, 0 0 0 1px rgba(255, 255, 255, .06), 0 8px 20px -12px rgba(0, 0, 0, .8);
-  --a-shadow-2: 0 1px 0 rgba(255, 255, 255, .07) inset, 0 0 0 1px rgba(255, 255, 255, .06), 0 26px 60px -28px rgba(0, 0, 0, .85);
-  --a-shadow-3: 0 1px 0 rgba(255, 255, 255, .08) inset, 0 0 0 1px rgba(255, 255, 255, .07), 0 44px 100px -40px rgba(0, 0, 0, .9);
-  --a-spec: rgba(255, 255, 255, .07);
-  --a-veil: rgba(6, 7, 9, .62);
-  --a-sheet: rgba(18, 22, 19, .72); --a-group: #171C18; --a-sidebar: var(--a-film);
-  --a-hairline: rgba(255, 255, 255, .07);
-  --a-group-shadow: 0 0 0 1px rgba(255, 255, 255, .05), 0 12px 30px -20px rgba(0, 0, 0, .9);
-  --a-sel: rgba(242, 195, 58, .16);
+    color-scheme: dark;
+    --a-bg: #0C0D10; --a-ground-1: #121418; --a-ground-2: #08090B;
+    --a-film: #050607; --a-film-2: #121419; --a-film-3: #1C1F25; --a-film-text: #9AA0AA; --a-film-strong: #F1F2F4; --a-edge-print: #FF8A5E;
+    --a-surface: #17191E; --a-surface-2: #1C1F25; --a-sunken: rgba(255, 255, 255, .045);
+    --a-glass: #1C1F25; --a-glass-2: #1C1F25; --a-glass-3: #1C1F25;
+    --a-edge: rgba(255, 255, 255, .1);
+    --a-hover: rgba(255, 255, 255, .05); --a-hover-2: rgba(255, 255, 255, .085);
+    --a-line: rgba(255, 255, 255, .08); --a-line-2: rgba(255, 255, 255, .15); --a-line-3: rgba(255, 255, 255, .05);
+    --a-text: #EEF0F3; --a-text-2: #B4B9C1; --a-text-3: #959BA4; --a-text-4: #626870;
+    --a-ink: #EEF0F3; --a-on-ink: #111317;
+    --a-accent: #EEF0F3; --a-accent-soft: rgba(238, 240, 243, .1); --a-accent-line: rgba(238, 240, 243, .4);
+    --a-thread: #3F444C; --a-thread-soft: #2A2E34;
+    --a-work: #FFCB6B; --a-work-soft: rgba(255, 199, 90, .14); --a-live: #FFC75A;
+    --a-ask: #FF946F; --a-ask-fill: #FF6A3D; --a-ask-soft: rgba(255, 106, 61, .13); --a-ask-line: rgba(255, 106, 61, .45);
+    --a-ask-light: rgba(255, 106, 61, .45); --a-mark: #FF6A3D;
+    --a-block: #A9B0BA; --a-water: #86C0EC; --a-contour: #959BA4; --a-fail: #FF7468; --a-fail-soft: rgba(255, 116, 104, .1);
+    --a-dot: rgba(220, 224, 235, .06);
+    --a-shadow-1: 0 0 0 1px rgba(255, 255, 255, .06), 0 8px 20px -12px rgba(0, 0, 0, .8);
+    --a-shadow-2: 0 0 0 1px rgba(255, 255, 255, .07), 0 26px 60px -28px rgba(0, 0, 0, .85);
+    --a-shadow-3: 0 0 0 1px rgba(255, 255, 255, .08), 0 44px 100px -40px rgba(0, 0, 0, .9);
+    --a-spec: rgba(255, 255, 255, .07);
+    --a-veil: rgba(6, 7, 9, .66);
+    --a-sheet: #101216; --a-group: #17191E; --a-sidebar: var(--a-film);
+    --a-hairline: rgba(255, 255, 255, .07);
+    --a-group-shadow: 0 0 0 1px rgba(255, 255, 255, .05), 0 12px 30px -20px rgba(0, 0, 0, .9);
+    --a-sel: rgba(238, 240, 243, .09);
+    --a-mat-board: #1B1E24; --a-mat-board-side: #0F1114; --a-mat-edge: rgba(255, 255, 255, .07); --a-mat-shadow: rgba(0, 0, 0, .42);
+    --a-mat-built-top: #3A3F47; --a-mat-built-l: #2F333A; --a-mat-built-r: #262A30;
+    --a-mat-archive-top: #2C3037; --a-mat-archive-l: #24282E; --a-mat-archive-r: #1E2126;
+    --a-mat-lit-top: #FFE39A; --a-mat-lit-l: #FFC75A; --a-mat-lit-r: #EEA83A;
+    --a-mat-glass-top: rgba(140, 190, 236, .3); --a-mat-glass-l: rgba(120, 175, 225, .24); --a-mat-glass-r: rgba(100, 160, 215, .3);
+    --a-mat-glass-edge: rgba(170, 210, 245, .55);
+    --a-mat-held-top: #50565F; --a-mat-held-l: #454A52; --a-mat-held-r: #3B4047; --a-mat-hatch: rgba(255, 255, 255, .16);
+    --a-mat-wire: rgba(200, 206, 214, .5);
+    --a-mat-needs-top: #FF8E64; --a-mat-needs-l: #FF6A3D; --a-mat-needs-r: #DE5228;
+    --a-mat-lit-glow: rgba(255, 196, 90, .95); --a-mat-needs-glow: rgba(255, 110, 60, .95);
+    --a-mat-select: #EEF0F3; --a-mat-hover: rgba(238, 240, 243, .5); --a-mat-night: 1; --a-mat-label: rgba(23, 25, 30, .92);
 }
-/* Before the appearance preference is applied (the classic code sets data-theme on mount). */
+/* Before the appearance preference is applied. */
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme]) .atlas {
     color-scheme: dark;
-    --a-bg: #0D100E; --a-ground-1: #151915; --a-ground-2: #090B09;
-    --a-film: #050806; --a-film-2: #111813; --a-film-3: #1B241D; --a-film-text: #9CAEA2; --a-film-strong: #F1F4F0; --a-edge-print: #F2C33A;
-    --a-surface: rgba(30, 31, 36, .86); --a-surface-2: rgba(30, 31, 36, .6); --a-sunken: rgba(255, 255, 255, .045);
-    --a-glass: rgba(30, 31, 36, .55); --a-glass-2: rgba(34, 35, 41, .8); --a-glass-3: rgba(37, 38, 44, .97);
+    --a-bg: #0C0D10; --a-ground-1: #121418; --a-ground-2: #08090B;
+    --a-film: #050607; --a-film-2: #121419; --a-film-3: #1C1F25; --a-film-text: #9AA0AA; --a-film-strong: #F1F2F4; --a-edge-print: #FF8A5E;
+    --a-surface: #17191E; --a-surface-2: #1C1F25; --a-sunken: rgba(255, 255, 255, .045);
+    --a-glass: #1C1F25; --a-glass-2: #1C1F25; --a-glass-3: #1C1F25;
+    --a-edge: rgba(255, 255, 255, .1);
     --a-hover: rgba(255, 255, 255, .05); --a-hover-2: rgba(255, 255, 255, .085);
     --a-line: rgba(255, 255, 255, .08); --a-line-2: rgba(255, 255, 255, .15); --a-line-3: rgba(255, 255, 255, .05);
-    --a-text: #EFF2ED; --a-text-2: #B4BCB5; --a-text-3: #949D96; --a-text-4: #5E6760; --a-ink: #EFF2ED; --a-on-ink: #101310;
-    --a-accent: #EFF2ED; --a-accent-soft: rgba(239, 242, 237, .1); --a-accent-line: rgba(239, 242, 237, .4);
-    --a-work: #6CCB72; --a-work-soft: rgba(108, 203, 114, .14); --a-live: #6CCB72;
-    --a-ask: #EE8BDD; --a-ask-fill: #D752C2; --a-ask-soft: rgba(215, 82, 194, .13); --a-ask-line: rgba(215, 82, 194, .45); --a-mark: #E070CE;
-    --a-block: #BCC45E; --a-water: #6AB2EA; --a-contour: #C99A68; --a-fail: #FF7468; --a-fail-soft: rgba(255, 116, 104, .1);
-    --a-spec: rgba(255, 255, 255, .07); --a-veil: rgba(6, 7, 9, .62);
-    --a-sheet: rgba(18, 22, 19, .72); --a-group: #171C18; --a-hairline: rgba(255, 255, 255, .07);
+    --a-text: #EEF0F3; --a-text-2: #B4B9C1; --a-text-3: #959BA4; --a-text-4: #626870;
+    --a-ink: #EEF0F3; --a-on-ink: #111317;
+    --a-accent: #EEF0F3; --a-accent-soft: rgba(238, 240, 243, .1); --a-accent-line: rgba(238, 240, 243, .4);
+    --a-thread: #3F444C; --a-thread-soft: #2A2E34;
+    --a-work: #FFCB6B; --a-work-soft: rgba(255, 199, 90, .14); --a-live: #FFC75A;
+    --a-ask: #FF946F; --a-ask-fill: #FF6A3D; --a-ask-soft: rgba(255, 106, 61, .13); --a-ask-line: rgba(255, 106, 61, .45);
+    --a-ask-light: rgba(255, 106, 61, .45); --a-mark: #FF6A3D;
+    --a-block: #A9B0BA; --a-water: #86C0EC; --a-contour: #959BA4; --a-fail: #FF7468; --a-fail-soft: rgba(255, 116, 104, .1);
+    --a-dot: rgba(220, 224, 235, .06);
+    --a-shadow-1: 0 0 0 1px rgba(255, 255, 255, .06), 0 8px 20px -12px rgba(0, 0, 0, .8);
+    --a-shadow-2: 0 0 0 1px rgba(255, 255, 255, .07), 0 26px 60px -28px rgba(0, 0, 0, .85);
+    --a-shadow-3: 0 0 0 1px rgba(255, 255, 255, .08), 0 44px 100px -40px rgba(0, 0, 0, .9);
+    --a-spec: rgba(255, 255, 255, .07);
+    --a-veil: rgba(6, 7, 9, .66);
+    --a-sheet: #101216; --a-group: #17191E; --a-sidebar: var(--a-film);
+    --a-hairline: rgba(255, 255, 255, .07);
     --a-group-shadow: 0 0 0 1px rgba(255, 255, 255, .05), 0 12px 30px -20px rgba(0, 0, 0, .9);
-    --a-sel: rgba(242, 195, 58, .16);
+    --a-sel: rgba(238, 240, 243, .09);
+    --a-mat-board: #1B1E24; --a-mat-board-side: #0F1114; --a-mat-edge: rgba(255, 255, 255, .07); --a-mat-shadow: rgba(0, 0, 0, .42);
+    --a-mat-built-top: #3A3F47; --a-mat-built-l: #2F333A; --a-mat-built-r: #262A30;
+    --a-mat-archive-top: #2C3037; --a-mat-archive-l: #24282E; --a-mat-archive-r: #1E2126;
+    --a-mat-lit-top: #FFE39A; --a-mat-lit-l: #FFC75A; --a-mat-lit-r: #EEA83A;
+    --a-mat-glass-top: rgba(140, 190, 236, .3); --a-mat-glass-l: rgba(120, 175, 225, .24); --a-mat-glass-r: rgba(100, 160, 215, .3);
+    --a-mat-glass-edge: rgba(170, 210, 245, .55);
+    --a-mat-held-top: #50565F; --a-mat-held-l: #454A52; --a-mat-held-r: #3B4047; --a-mat-hatch: rgba(255, 255, 255, .16);
+    --a-mat-wire: rgba(200, 206, 214, .5);
+    --a-mat-needs-top: #FF8E64; --a-mat-needs-l: #FF6A3D; --a-mat-needs-r: #DE5228;
+    --a-mat-lit-glow: rgba(255, 196, 90, .95); --a-mat-needs-glow: rgba(255, 110, 60, .95);
+    --a-mat-select: #EEF0F3; --a-mat-hover: rgba(238, 240, 243, .5); --a-mat-night: 1; --a-mat-label: rgba(23, 25, 30, .92);
   }
 }
 @media (prefers-contrast: more) {
