@@ -48,7 +48,7 @@
 .atlas .a-mappane .a-edges { position: absolute; left: 0; top: 0; overflow: visible; pointer-events: none; }
 .atlas .a-mappane .a-edges .a-e { fill: none; stroke: var(--a-thread); stroke-width: 1.6; }
 .atlas .a-mappane .a-edges .a-e.a-e--work { stroke: var(--a-work); stroke-opacity: .6; stroke-dasharray: 6 6; animation: atlas-flow 1.1s linear infinite; }
-.atlas .a-mappane .a-edges .a-e.a-e--ask { stroke: var(--a-ask-fill); stroke-width: 2; }
+.atlas .a-mappane .a-edges .a-e.a-e--ask { stroke: var(--a-contour); stroke-width: 1.6; }
 .atlas .a-mappane .a-edges .a-e.a-e--gone { stroke: var(--a-text-4); stroke-dasharray: 2 5; }
 .atlas .a-mappane .a-edges .a-e.a-e--fail { stroke: var(--a-fail); stroke-opacity: .65; }
 @keyframes atlas-flow { to { stroke-dashoffset: -12; } }

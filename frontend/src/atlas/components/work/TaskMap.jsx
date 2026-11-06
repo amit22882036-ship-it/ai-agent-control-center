@@ -389,10 +389,8 @@ export default function TaskMap({ layout, view, store, derived, projectName, now
     const row = node.kind === 'row'
     return { id, n, x: row ? node.x + 25 : node.x + node.w / 2, y: row ? node.y + node.h / 2 : node.y + (node.depth === 0 ? 37 : 32), r: row ? 20 : node.depth === 0 ? 31 : 26, topId: node.topId }
   }) : []
-  // Legs join consecutive controls of the same family only: across families the Map's order (oldest
-  // first, so new work never pushes old work aside) differs from the List's, and long legs would cross.
-  const courseLegs = courseMarks.slice(1).map((m, i) => (courseMarks[i].topId === m.topId ? `M${courseMarks[i].x} ${courseMarks[i].y}L${m.x} ${m.y}` : ''))
-    .join('') || null
+  // One course: a single line through every control in the order A steps through them.
+  const courseLegs = courseMarks.length > 1 ? courseMarks.map((m, i) => `${i ? 'L' : 'M'}${m.x} ${m.y}`).join('') : null
   const far = camera && camera.k < 0.62
   const empty2 = !layout.order.length
   const anchorTop = selectedId && layout.nodes[selectedId] ? layout.nodes[selectedId].topId : null
@@ -412,7 +410,7 @@ export default function TaskMap({ layout, view, store, derived, projectName, now
         {layout.zones.map((zone) => <div key={zone.topId} className={`a-mzone${anchorTop === zone.topId ? ' is-current' : ''}${derived.byTop[zone.topId]?.section === 'done' ? ' is-historic' : ''}`} aria-hidden="true"
           style={{ left: zone.x, top: zone.y, width: zone.w, height: zone.h }} />)}
         {!focusBranch && layout.bands.map((band) => <div key={band.key} className={`a-mband${band.key === 'needs' ? ' a-mband--needs' : ''}`} aria-hidden="true"
-          style={{ left: band.x, top: band.y }}>{band.label}<span className="a-num">{band.count}</span></div>)}
+          style={{ left: band.x, top: band.y }}>{band.label}<span className="a-num">{band.key === 'needs' && courseMarks.length ? courseMarks.length : band.count}</span></div>)}
         <svg className="a-edges" width={layout.width} height={layout.height} aria-hidden="true" focusable="false">
           {Object.entries(layout.edges).map(([tone, d]) => d && <path key={tone} className={`a-e a-e--${tone}`} d={d} />)}
         </svg>
@@ -425,7 +423,7 @@ export default function TaskMap({ layout, view, store, derived, projectName, now
         {courseMarks.length > 0 && <svg className="a-mcourse" width={layout.width} height={layout.height} aria-hidden="true" focusable="false">
           {courseLegs && <path className="a-mcourse-leg" d={courseLegs} />}
           {courseMarks.map((m) => <g key={m.id} className={`a-mcontrol${m.id === selectedId ? ' is-current' : ''}`}>
-            <circle cx={m.x} cy={m.y} r={m.r} /><text x={m.x - m.r * .8} y={m.y - m.r * .8} dy=".36em">{m.n}</text></g>)}
+            <circle cx={m.x} cy={m.y} r={m.r} /><text x={m.x - m.r * .71 - 9} y={m.y - m.r * .71 - 9} dy=".36em">{m.n}</text></g>)}
         </svg>}
       </div>
     </div>

@@ -32,8 +32,10 @@ export function edgeTone(derived, id) {
 }
 
 function orderedFamilies(section) {
-  // Oldest family first inside a band (the List shows newest first): new work appears at the end.
-  return [...section.families].reverse()
+  // What needs the person keeps the List's order, the order the course numbers it in, so the course
+  // reads forwards on the Map too. Other bands put the oldest family first (the List shows newest
+  // first): new work appears at the end instead of pushing every other family aside.
+  return section.key === 'needs' ? [...section.families] : [...section.families].reverse()
 }
 
 // `view` is visibleRows(...). Returns node boxes, edge paths grouped by tone, band headings and
@@ -160,7 +162,7 @@ export function mapLayout(view, derived, { maxRow = MAP.MAX_ROW, chips = (id, ro
     let rowBottom = rowTop
     // At scale, a closed family (one shown node) is a capsule on the band's shelf instead of a
     // full tile: open branches stand out as trees, and the rest read as a tidy list of families.
-    const shelved = !across && families.length > SHELF_FROM ? families.filter((family) => family.rows.length === 1) : []
+    const shelved = !across && section.key !== 'needs' && families.length > SHELF_FROM ? families.filter((family) => family.rows.length === 1) : []
     const shelf = new Set(shelved.map((family) => family.topId))
     families.filter((family) => !shelf.has(family.topId)).forEach((family, index) => {
       const w = measureFrom(family.topId)

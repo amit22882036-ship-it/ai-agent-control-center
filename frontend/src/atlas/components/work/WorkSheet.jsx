@@ -402,7 +402,9 @@ export default function WorkSheet({ rows, viewKey, store, derived, projectName, 
         changed={Boolean(changed?.(entry.id))} onSelect={onSelect} onToggle={toggleRow} onFocusRow={setFocusId} compact={compact}
         onShowInMap={onShowInMap} onOpenTask={onOpenTask} onReply={onReply} />)
     } else {
-      shown.push(<Plain key={entry.key} entry={entry} top={tops[i]} height={h} onToggleFinished={toggleHistory} onShowAll={showAllRow} compact={compact} />)
+      // "Needs you" counts what needs the person (the course's controls), as the legend does.
+      const counted = entry.kind === 'section' && entry.section === 'needs' && controls.length ? { ...entry, count: controls.length } : entry
+      shown.push(<Plain key={entry.key} entry={counted} top={tops[i]} height={h} onToggleFinished={toggleHistory} onShowAll={showAllRow} compact={compact} />)
     }
   }
   const loaded = Object.values(store.tasks).filter((task) => task.source === 'page').length

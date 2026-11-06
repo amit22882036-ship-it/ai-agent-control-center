@@ -342,3 +342,20 @@
 .atlas .a-mcontrol text { fill: var(--a-ask); font: 700 15px/1 var(--a-font); font-stretch: 75%; text-anchor: middle; paint-order: stroke;
   stroke: var(--a-group); stroke-width: 4px; }
 .atlas .a-mcontrol.is-current circle { stroke-width: 4; }
+
+/* ------------------------------------------------------------------ finish review, round 1 */
+/* Counts in the legend are the map's condensed lettering; the control circle sits on the numeral only. */
+.atlas .a-now .a-now-n { font: 700 24px/1 var(--a-display); font-stretch: 75%; letter-spacing: -.01em; }
+.atlas .a-now .a-now-mark { width: 44px; height: 36px; left: -10px; top: 50%; translate: 0 -50%; }
+/* No decorative glow or glass: the sheet is paper, the Go to field an ordinary field. */
+.atlas .a-app--lumen .a-wmain { background: var(--a-sheet); }
+.atlas .a-topbar .a-goto-btn { background: var(--a-surface-2); backdrop-filter: none; -webkit-backdrop-filter: none; box-shadow: inset 0 0 0 1px var(--a-line-2); }
+.atlas .a-topbar .a-goto-btn:hover { box-shadow: inset 0 0 0 1px var(--a-text-4); }
+/* Labels are headings in their own right, sentence case, never tracked capitals above a heading. */
+.atlas .a-mappane .a-gn .a-gproj { text-transform: none; letter-spacing: -.005em; font: 600 12px/1 var(--a-font); color: var(--a-text-2); }
+.atlas .a-life-head, .atlas .a-cx-card .a-cx-q h3, .atlas .a-cx-guide h3, .atlas .a-keygroup h3 { text-transform: none; letter-spacing: -.005em;
+  font: 650 13.5px/1.3 var(--a-font); color: var(--a-text-2); }
+/* Finished terrain recedes. */
+.atlas .a-sheet .a-row.is-past .a-r-title .a-t { color: var(--a-text-3); font-weight: 500; }
+.atlas .a-now .a-now-mark { width: 54px; height: 44px; left: auto; right: -14px; }
+
