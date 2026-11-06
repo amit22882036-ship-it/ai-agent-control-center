@@ -65,7 +65,7 @@ codex login status
 
 `codex login` opens a browser so you can sign in. The backend launches Codex through npm's global launcher at `%APPDATA%\npm\codex.cmd`, which is where `npm install -g` puts it by default; if you changed npm's global prefix, real agents report that Codex was not found.
 
-Claude Code (`%USERPROFILE%\.local\bin\claude.exe` or `%APPDATA%\npm\claude.cmd`) and Gemini CLI (`%APPDATA%\npm\gemini.cmd`) are installed and signed in with their own official instructions, or from **Connections** in the rail (**AI Providers** in the classic interface): it shows what is missing and offers reviewed install, update, sign-in and sign-out operations that run only after you approve them (Gemini CLI's sign-in and Claude Code's native installer stay manual steps). Connections is also where you choose which providers agents may use. Their supported sign-in routes and billing checks are described in [providers](providers.md).
+Claude Code (`%USERPROFILE%\.local\bin\claude.exe` or `%APPDATA%\npm\claude.cmd`) and Gemini CLI (`%APPDATA%\npm\gemini.cmd`) are installed and signed in with their own official instructions, or from **Connections** in the rail: it shows what is missing and offers reviewed install, update, sign-in and sign-out operations that run only after you approve them (Gemini CLI's sign-in and Claude Code's native installer stay manual steps). Connections is also where you choose which providers agents may use. Their supported sign-in routes and billing checks are described in [providers](providers.md).
 
 No Control Center configuration is required. Optional settings are listed in [configuration](configuration.md).
 
@@ -98,7 +98,7 @@ Go to <http://127.0.0.1:5173>.
 | `5173` | Vite dev server for the React interface | The page you open in the browser |
 | `8000` | FastAPI backend | REST API, live events, local API docs at `/docs` |
 
-In development the interface calls the backend at `127.0.0.1:8000`, so the backend must run on that port. Both servers listen only on `127.0.0.1`. The interface opens in **Lumen**; **Open the classic interface** at the bottom of the rail switches to the classic one, and **New interface** there switches back. Both use the same backend and data.
+In development the interface calls the backend at `127.0.0.1:8000`, so the backend must run on that port. Both servers listen only on `127.0.0.1`. The interface is **Lumen**; it is the only one (the earlier classic interface was removed once Lumen covered everything it did).
 
 ## 10. Register an existing Git project
 

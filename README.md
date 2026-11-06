@@ -113,7 +113,7 @@ spending budget. More in [limitations](docs/lumen-parity.md#not-done-yet) and [p
 | --- | --- |
 | [Desktop app](docs/desktop.md) | Behaviour, data locations, build and verification |
 | [Run from source](docs/getting-started.md) | Backend and interface for development, first project, first agent, checks |
-| [Interface](docs/lumen-parity.md) | Feature checklist against the classic interface, and what is not done yet |
+| [Interface](docs/lumen-parity.md) | What the interface does, its visual language, and what is not done yet |
 | [Agent access](docs/agent-access.md) | Read only, Workspace and Full Access per provider, and the audit |
 | [Project lifecycle](docs/project-lifecycle.md) | Rename, order, hide, Trash, restore and permanent deletion |
 | [Providers](docs/providers.md) | Readiness, billing, models and effort, Auto allocation, setup |
