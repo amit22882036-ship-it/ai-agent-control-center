@@ -9,7 +9,7 @@ its questions, redirect it or stop it, and keeps a durable record of everything 
 agent can bring in helper agents for parts of the work; the backend decides what may start, and every
 helper's result comes back through conflict-checked integration.
 
-![Work in the Control Center: 120 task families grouped by what they need, with smart lists and colour labels in the sidebar](docs/images/lumen/work.png)
+![AI Agent Control Center: one window to run a team of AI coding agents. The Work list shows 120 task families grouped by what they need, with smart lists and colour labels in the sidebar](docs/images/lumen/cover.png)
 
 <table>
   <tr>
