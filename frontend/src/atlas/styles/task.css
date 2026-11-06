@@ -101,3 +101,12 @@
 .atlas .a-apply { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin-top: 10px; }
 .atlas .a-pathlist { max-height: 220px; overflow-y: auto; font-size: 12.5px; }
 
+
+/* Coordination: resources and work areas a task holds. */
+.atlas .a-coord { list-style: none; margin: 4px 0 10px; padding: 0; display: grid; gap: 2px; }
+.atlas .a-coord > li { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 8px 0; border-top: 1px solid var(--a-hairline); }
+.atlas .a-coord > li > div { flex: 1; min-width: 0; display: grid; gap: 2px; }
+.atlas .a-coord b { font-weight: 600; overflow-wrap: anywhere; }
+.atlas .a-coord small { color: var(--a-text-3); }
+.atlas .a-coord-confirm { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
+

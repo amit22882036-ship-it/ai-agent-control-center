@@ -12,6 +12,7 @@ import { projectDirectory, projectLabel } from '../model/projects.mjs'
 import { assignmentsView, controlState, pauseHeld, progressView, resultView, when } from '../model/taskPage.mjs'
 import { lastWork } from '../workContext'
 import TaskTitle from '../components/task/TaskTitle'
+import { CoordinationCard } from '../components/task/Coordination'
 
 const EMPTY = emptyStore()
 const encode = encodeURIComponent
@@ -47,6 +48,10 @@ export default function TaskPage({ live, route, navigate }) {
   const operations = useLiveResource(base && `${base}/control-operations`, version)
   const dependencies = useLiveResource(base && `${base}/dependencies`, version)
   const dependents = useLiveResource(base && `${base}/dependents`, version)
+  const claims = useLiveResource(base && `${base}/resource-claims`, version)
+  const intents = useLiveResource(base && `${base}/work-intents`, version)
+  const overlaps = useLiveResource(base && `${base}/work-overlaps`, version)
+  const deadlocks = useLiveResource(base && `${base}/deadlocks`, version)
   const task = taskId ? store.tasks[taskId] : null
   const parentId = task?.parentId ?? detail.data?.parent_task_id ?? null
   const parentDelegations = useLiveResource(parentId ? `${API_BASE}/tasks/${encode(parentId)}/delegations` : null, version)
@@ -160,6 +165,7 @@ export default function TaskPage({ live, route, navigate }) {
       <div className="a-tside">
         <AgentCard derived={derived} taskId={taskId} history={history} assignments={assignments} onOpenWork={() => toWork()} />
         <PlaceCard store={store} taskId={taskId} projectName={projectName} dependencies={dependencies} dependents={dependents} onOpenTask={openTask} />
+        <CoordinationCard taskId={taskId} claims={claims} intents={intents} overlaps={overlaps} deadlocks={deadlocks} onChanged={refresh} />
         <AdvancedCard taskId={taskId} detail={detail} orchestration={orchestration} operations={operations} task={task} />
       </div>
     </div>

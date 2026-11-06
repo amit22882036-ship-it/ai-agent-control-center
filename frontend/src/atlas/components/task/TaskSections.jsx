@@ -14,7 +14,7 @@ import { when } from '../../model/taskPage.mjs'
 const TEAM_ROWS = 150
 const clip = (text, limit) => (text && text.length > limit ? text.slice(0, limit - 1).trimEnd() + '…' : text)
 
-function Section({ id, title, aside, children, className }) {
+export function Section({ id, title, aside, children, className }) {
   return <section className={`a-card a-tsec${className ? ` ${className}` : ''}`} aria-labelledby={id}>
     <div className="a-card-head"><h2 className="a-card-title" id={id}>{title}</h2><span className="a-sp" />{aside}</div>
     <div className="a-card-body">{children}</div>

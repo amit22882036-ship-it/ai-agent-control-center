@@ -64,6 +64,9 @@ export const agentActions = {
   // backend's single integrate step (which re-checks every safety condition itself).
   integrationPreview: (taskId, options) => send('GET', `${task(taskId)}/integration-preview`, undefined, options),
   applyToProject: (taskId, options) => send('POST', `${task(taskId)}/integrate`, undefined, options),
+  // Coordination: release a stuck resource claim or work intent (the backend re-evaluates waiters).
+  releaseClaim: (taskId, claimId, options) => send('DELETE', `${task(taskId)}/resource-claims/${encode(claimId)}`, undefined, options),
+  releaseIntent: (taskId, intentId, options) => send('DELETE', `${task(taskId)}/work-intents/${encode(intentId)}`, undefined, options),
   // Connections (M8): the same endpoints and payloads as Classic's AI Providers view. Setup runs
   // only from a reviewed plan (plan_id + digest, used once); checks and catalog refreshes are
   // non-billable local reads; settings payloads come from model/connections.mjs (billingView).

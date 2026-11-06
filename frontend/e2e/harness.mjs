@@ -237,6 +237,12 @@ export async function openApp(page, { backend = 'online', path = '/?ui=classic',
       if (request.method() === 'GET' && url.pathname === '/providers/onboarding' && providers === null) {
         return route.fulfill({ status: 503, contentType: 'application/json', body: '{"detail":"unavailable"}' })
       }
+      // Coordination reads: nothing held unless a test scripts it.
+      const coordination = request.method() === 'GET' && url.pathname.match(/^\/tasks\/[^/]+\/(resource-claims|work-intents|work-overlaps|deadlocks)$/)
+      if (coordination) {
+        const key = { 'resource-claims': 'claims', 'work-intents': 'intents', 'work-overlaps': 'overlaps', deadlocks: 'deadlocks' }[coordination[1]]
+        return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ [key]: [] }) })
+      }
       const found = request.method() === 'GET' ? detail(url.pathname, url.search, tasks, projects, agents, providers) : null
       if (found) return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(found) })
       // GET /providers/notifications: `notices` is the list (or a function returning it); null answers 503.

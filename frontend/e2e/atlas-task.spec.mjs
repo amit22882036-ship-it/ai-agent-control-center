@@ -140,6 +140,31 @@ test('results keep reported, recorded, verified, combined and applied apart, and
   await expect(page.getByRole('button', { name: /apply/i })).toHaveCount(0)
 })
 
+test('coordination shows the resources and work a task holds, and a stuck claim can be released after confirming', async ({ page }) => {
+  let released = 0
+  const api = ({ method, path }) => {
+    if (method === 'GET' && path === '/tasks/csv/resource-claims') {
+      return { body: { claims: released ? [] : [{ claim_id: 'c1', task_id: 'csv', resource_type: 'file', resource_key: 'src/importer.py', scope: 'project', mode: 'exclusive',
+        lifetime: 'task', recursive: 0, status: 'active', acquired_at: '2026-10-29T11:30:00Z' }] } }
+    }
+    if (method === 'GET' && path === '/tasks/csv/work-intents') return { body: { intents: [{ intent_id: 'i1', task_id: 'csv', namespace: 'feature', key: 'CSV import', mode: 'single_owner', status: 'active', holds_authority: 1 }] } }
+    if (method === 'GET' && path === '/tasks/csv/deadlocks') return { body: { deadlocks: [{ deadlock_id: 'd1', status: 'open' }] } }
+    if (method === 'DELETE' && path === '/tasks/csv/resource-claims/c1') { released += 1; return { body: { status: 'released' } } }
+    return undefined
+  }
+  await open(page, 'task?id=csv', { api })
+  const card = page.locator('#t-coord').locator('xpath=ancestor::section[1]')
+  await expect(card).toContainText('src/importer.py')
+  await expect(card).toContainText('exclusive')
+  await expect(card).toContainText('CSV import')
+  await expect(card).toContainText('A deadlock involves this task')
+  await card.getByRole('button', { name: 'Release src/importer.py' }).click()
+  expect(released).toBe(0)
+  await card.getByRole('button', { name: 'Release', exact: true }).click()
+  await expect.poll(() => released).toBe(1)
+  await expect(card).not.toContainText('src/importer.py')
+})
+
 test('a finished root task is applied to its project only after its files are reviewed, and the backend’s refusals are shown', async ({ page }) => {
   const tasks = showcase()
   Object.assign(tasks.tasks.find((item) => item.task_id === 'rename'), { integration: null })
