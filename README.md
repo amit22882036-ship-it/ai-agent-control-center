@@ -25,6 +25,10 @@ helper's result comes back through conflict-checked integration.
 <sub>Screenshots of the built interface with synthetic data (no real project or model run). See
 [verification](#status) for what was tested with real providers.</sub>
 
+## Video demo
+
+https://github.com/user-attachments/assets/ef86b56f-d75c-4235-8612-5d25ad88af97
+
 ## What this project demonstrates
 
 - **Systems design under concurrency:** several AI agents work in parallel on the same repository
