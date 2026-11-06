@@ -62,8 +62,10 @@ export default function GoTo({ open, onClose, store, derived, projects, recent, 
     for (const taskId of Object.keys(store.tasks)) {
       const task = store.tasks[taskId]
       const agent = derived.agents[taskId]?.current || derived.agents[taskId]?.last
-      const best = Math.max(score(task.title || '', q) * 3, score(agentLabel(agent) || '', q), score(projectName(task.projectId), q),
-        taskId.toLowerCase() === q ? 9 : 0)
+      // Earlier agents count too, so a task is found by any agent that ever held it, or by an id.
+      const earlier = (derived.agents[taskId]?.previous || []).filter((item) => !item.unknown).map((item) => score(agentLabel(item) || '', q))
+      const best = Math.max(score(task.title || '', q) * 3, score(agentLabel(agent) || '', q), ...earlier, score(projectName(task.projectId), q),
+        taskId.toLowerCase() === q || agent?.id?.toLowerCase() === q ? 9 : 0)
       if (best > 0) tasks.push([best, task.createdAt || '', taskId])
     }
     tasks.sort((a, b) => b[0] - a[0] || (a[1] < b[1] ? 1 : a[1] > b[1] ? -1 : 0))
