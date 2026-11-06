@@ -29,12 +29,16 @@ function Who({ who }) {
       <span className="a-w"><b>No agent</b><small>Nobody is assigned</small></span>
     </div>
   }
-  return <div className={`a-c-who${who.role === 'last' ? ' a-c-who--last' : ''}`}>
+  // The tool and model of an agent doing its job are in the tooltip and the details panel; the row
+  // spends a second line only on exceptions (an ended, removed or replaced agent), so a long list
+  // doesn't repeat "Codex · GPT-5.5" on every line.
+  const notable = who.role !== 'current' || who.removed || who.replaced
+  return <div className={`a-c-who${who.role === 'last' ? ' a-c-who--last' : ''}${notable ? '' : ' a-c-who--plain'}`} title={notable ? undefined : who.detail}>
     <Avatar name={who.name} color={who.agent.color} tool={who.agent.tool} size={26} removed={who.removed} decorative />
     <span className="a-w">
       <b className="a-bidi" dir="auto"><span className="a-sr">{who.role === 'current' ? 'Agent: ' : 'Last agent: '}</span>{who.name}</b>
-      <small>{who.detail}{who.replaced && <span className="a-replaced" title={`${who.previousCount} earlier agent${who.previousCount === 1 ? '' : 's'} worked on this task`}>
-        {' · '}replaced</span>}</small>
+      {notable ? <small>{who.detail}{who.replaced && <span className="a-replaced" title={`${who.previousCount} earlier agent${who.previousCount === 1 ? '' : 's'} worked on this task`}>
+        {' · '}replaced</span>}</small> : <span className="a-sr">. {who.detail}</span>}
     </span>
   </div>
 }
