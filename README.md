@@ -9,7 +9,7 @@ its questions, redirect it or stop it, and keeps a durable record of everything 
 agent can bring in helper agents for parts of the work; the backend decides what may start, and every
 helper's result comes back through conflict-checked integration.
 
-![Work in the Control Center: task families grouped by what they need, with agents, status and time](docs/images/lumen/work.png)
+![Work in the Control Center: 120 task families grouped by what they need, with smart lists and colour labels in the sidebar](docs/images/lumen/work.png)
 
 <table>
   <tr>
@@ -17,7 +17,7 @@ helper's result comes back through conflict-checked integration.
     <td width="50%"><img src="docs/images/lumen/task.png" alt="A task page in the dark appearance: request, progress, responsible agent"></td>
   </tr>
   <tr>
-    <td><sub>The Work Map, left to right: who works on what, and what waits for whom.</sub></td>
+    <td><sub>The Work Map, left to right: each family on its own tray, light along the lines to working agents.</sub></td>
     <td><sub>A task page in the dark appearance.</sub></td>
   </tr>
 </table>
@@ -53,7 +53,7 @@ No release is published yet; the installer is built from this repository.
 .\desktop\build.ps1
 ```
 
-Then run `desktop\out\AI-Agent-Control-Center-Setup-0.9.1.exe`. It installs for your Windows user
+Then run `desktop\out\AI-Agent-Control-Center-Setup-0.12.0.exe`. It installs for your Windows user
 (no administrator rights) and opens straight into the app; there is nothing else to start. The
 installer is not code-signed, so SmartScreen asks before the first run. To look around without a
 project or any model usage, start the app with `--demo`.

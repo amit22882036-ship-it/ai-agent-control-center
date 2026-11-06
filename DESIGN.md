@@ -74,7 +74,7 @@ Rules
 ## Living light (the signature)
 
 - A gleam of light travels round the mark of every task whose agent is recorded running.
-- On the Map, a ring of light turns round a working agent's face.
+- On the Map, light travels along every line that leads to an agent at work, and a working family's tray is lit from within (warm amber while it needs the person).
 - In the Now bar, a sheen crosses the working share of the workspace.
 - Nothing else moves by itself. Nothing is lit unless the backend recorded the agent running. Reduced motion keeps every light still.
 
@@ -102,7 +102,7 @@ All marks are 16 px circles drawn in `components/identity.jsx` (`StatusBead`; `l
 - **Work header:** project, colour filter, search, List / Map.
 - **Now strip:** counts of loaded tasks, each a toggle that scopes the page, with Next (A) to step through what needs you. Under it one bar shows open work in proportion.
 - **List:** Needs you first, then open work, then history folded by day. A family is one row with its progress bar and "finished/total"; helpers open beneath with tree guides; a question carries its Reply button in the row.
-- **Map:** the same families as a hierarchy on a clean canvas: what needs the person in one band, open work as compact cards, history quieter. Same marks, bars and tags as the List.
+- **Map:** the same families as a delegation tree, left to right (top to bottom is one click away). Every task is a card in the task page's material: mark, title, state in words, agent, project and the family's progress. Each family sits on its own soft tray, families sit side by side in rows, and bands follow the List (Needs you, Open, History). Lines meet cards at small ports; the line to a helper that needs the person is amber, the line to a working helper is ultramarine and carries light.
 - **Quiet state:** with nothing filtered and nothing open: "Nothing is running or waiting for you right now".
 
 ## Typography
@@ -111,7 +111,7 @@ The platform's text face (Segoe UI Variable on Windows, SF Pro on macOS) for its
 
 ## Motion
 
-Critically damped springs (`--a-spring`). Rows that move because of a live change glide from where they were while the selected row stays still; progress segments animate their share. The living light is the only ambient motion, and only for real activity.
+Critically damped springs (`--a-spring`) for what moves and a confident deceleration (`cubic-bezier(0.16, 1, 0.3, 1)`) for what arrives; exits are faster than entrances. Rows that move because of a live change glide from where they were while the selected row stays still; progress segments animate their share. On the Map, lines draw themselves from the lead, a branch that opens grows its cards out of the lead (36 ms apart, 560 ms), cards a change moves glide, and a branch that closes draws its cards back in (220 ms). The living light is the only ambient motion, and only for real activity. Reduced motion: new cards only fade in and nothing travels.
 
 ## Do
 
