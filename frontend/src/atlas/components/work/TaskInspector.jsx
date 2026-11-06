@@ -11,9 +11,7 @@ import { TOOLS } from '../../vocabulary.mjs'
 import { helpersView, plannedView, resultView } from '../../model/taskStatus.mjs'
 import { agentLabel, nowView, timeView, whoView } from '../../model/workList.mjs'
 import { pathTo } from '../../model/tasks.mjs'
-import { exitAtlas } from '../../uiMode.mjs'
 import { onReplyRequest } from '../../workContext'
-import { classicHandoffAgent } from '../../model/agentTarget.mjs'
 import { AgentFooterActions, AgentNowPanels, AgentSettingsPanels, AgentStopResult } from '../agent/AgentPanels'
 import { useAgentScope } from '../agent/useAgentScope'
 import { OutputHistory } from '../agent/OutputHistory'
@@ -37,14 +35,7 @@ const clock = (value) => {
 }
 const clip = (text, limit) => (text && text.length > limit ? text.slice(0, limit - 1).trimEnd() + '…' : text)
 
-// Classic opens with this task's current agent selected when there is one (never an ended or
-// removed agent); otherwise it opens without a selection.
-function ClassicHint({ handoff, children }) {
-  return <p className="a-fine a-insp-classic">{children} <button type="button" className="a-link"
-    onClick={() => exitAtlas(undefined, { agentId: handoff })}>Open Classic view</button></p>
-}
-
-function StateNotes({ store, derived, id, activity, handoff, controls }) {
+function StateNotes({ store, derived, id, activity, controls }) {
   const status = derived.status[id]
   const { current, last } = derived.agents[id]
   const agent = current || last
@@ -54,7 +45,7 @@ function StateNotes({ store, derived, id, activity, handoff, controls }) {
     notes.push(<div key="q" className="a-qcard">
       <div className="a-qh"><Icon name="hand" size={15} stroke={2} />Asked you</div>
       {question ? <p className="a-qt a-bidi" dir="auto">{clip(question, 1200)}</p> : <p className="a-fine">Loading the question…</p>}
-      <ClassicHint handoff={handoff}>Reply controls for this agent aren’t available here right now.</ClassicHint>
+      <p className="a-fine">Reply controls for this agent aren’t available right now; they return when the backend reports the agent can take a reply.</p>
     </div>)
   }
   if (status.key === 'provider_wait' && !controls?.providerWait) notes.push(<Notice key="p" tone="warn" title={status.label}>
@@ -117,7 +108,7 @@ function Family({ store, derived, id, onSelect, onShowInMap, lens }) {
   </>
 }
 
-function NowTab({ store, derived, id, projectName, onSelect, task, activity, now, handoff, agent, onShowInMap, lens, onOpenTask, onRenamed }) {
+function NowTab({ store, derived, id, projectName, onSelect, task, activity, now, agent, onShowInMap, lens, onOpenTask, onRenamed }) {
   const data = store.tasks[id]
   const parent = data.parentId ? store.tasks[data.parentId] : null
   const children = derived.forest.children[id] || []
@@ -128,7 +119,7 @@ function NowTab({ store, derived, id, projectName, onSelect, task, activity, now
   const description = task?.data?.task_id === id ? task.data.description : null
   return <>
     <AgentNowPanels agent={agent} store={store} taskId={id} now={now} />
-    <StateNotes store={store} derived={derived} id={id} activity={activity} handoff={handoff} controls={agent.scope?.caps} />
+    <StateNotes store={store} derived={derived} id={id} activity={activity} controls={agent.scope?.caps} />
     <section className="a-blk" aria-labelledby={`resp-${id}`}>
       <h3 id={`resp-${id}`}>Responsible for</h3>
       <div className="a-resp">
@@ -274,7 +265,6 @@ export default function TaskInspector({ store, derived, taskId, selection, proje
 
   const status = derived.status[taskId]
   const data = store.tasks[taskId]
-  const handoff = classicHandoffAgent(store, taskId)
   const nowLine = nowView(store, derived, taskId)
   const time = timeView(store, taskId, now)
   const header = <div className="a-ih">
@@ -302,7 +292,7 @@ export default function TaskInspector({ store, derived, taskId, selection, proje
     <div {...tabPanelProps(idBase, tab)} className="a-insp-panel">
       <AgentStopResult agent={agentScope} />
       {tab === 'now' && <NowTab store={store} derived={derived} id={taskId} projectName={projectName} onSelect={onSelect} task={task} activity={activity.data} now={now}
-        handoff={handoff} agent={agentScope} onShowInMap={onShowInMap} lens={lens} onOpenTask={onOpenTask}  onRenamed={onRefresh} />}
+        agent={agentScope} onShowInMap={onShowInMap} lens={lens} onOpenTask={onOpenTask}  onRenamed={onRefresh} />}
       {tab === 'activity' && <ActivityTab store={store} derived={derived} id={taskId} activity={activity} assignments={assignments} />}
       {tab === 'output' && (agentScope.agentId ? <OutputHistory key={agentScope.agentId} agentId={agentScope.agentId} version={version}
         historical={agentScope.target.kind !== 'current'} /> : <EmptyState icon="layers" title="No output yet">No agent has worked on this task.</EmptyState>)}

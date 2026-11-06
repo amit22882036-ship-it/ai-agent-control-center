@@ -6,7 +6,6 @@ import { Switch } from '../components/controls'
 import { rovingTarget } from '../a11y.mjs'
 import { connectionView } from '../status.mjs'
 import { THEME_LABELS } from '../vocabulary.mjs'
-import { exitAtlas } from '../uiMode.mjs'
 import { API_BASE, API_HOST } from '../../apiClient.mjs'
 import { useLiveResource } from '../hooks'
 import { INSPECTOR, readInspectorWidth, saveInspectorWidth } from '../layout.mjs'
@@ -74,14 +73,11 @@ export default function SettingsPage({ appearance, live, navigate, route, notifi
       </nav>
       <div>
         <Card className="a-section" id="atlas-settings-appearance" titleId="atlas-settings-appearance-h" title="Appearance">
-          <p className="a-fine a-section-lead">Automatic follows your system’s light or dark setting. The choice is saved in this browser and shared with Classic view.</p>
+          <p className="a-fine a-section-lead">Automatic follows your system’s light or dark setting. The choice is saved in this browser.</p>
           <ThemeTiles mode={appearance.mode} onChoose={appearance.choose} />
         </Card>
         <Card className="a-section" id="atlas-settings-interface" titleId="atlas-settings-interface-h" title="Interface">
           <div className="a-rows">
-            <div className="a-row"><div><b>Classic interface (temporary)</b><small>The earlier interface stays reachable here only until everything it does
-              is also in Lumen; then it is removed. It opens in this window; its own button brings you back.</small></div>
-              <Button icon="swap" onClick={() => exitAtlas()}>Open Classic interface</Button></div>
             <div className="a-row"><div><b>Details panel width</b><small>{width} px{width === INSPECTOR.default ? ' (default)' : ''}. Drag the panel’s edge in Work, or use
               the arrow keys on it. Saved in this browser.</small></div>
               <Button disabled={width === INSPECTOR.default} onClick={() => { saveInspectorWidth(INSPECTOR.default); setWidth(INSPECTOR.default) }}>Reset to default</Button></div>
@@ -108,10 +104,10 @@ export default function SettingsPage({ appearance, live, navigate, route, notifi
           <dl className="a-kv a-settings-kv">
             <dt>One at a time</dt><dd>While this page shows them, it tells the backend so, and the backend holds back its Windows notification for
               the same event. Otherwise the backend may try a Windows notification; Windows settings and Focus assist decide whether it appears.
-              In this browser, only one Control Center tab shows them, Atlas or Classic view, and only while it has every task loaded and current; otherwise the Windows notification is the fallback when available. Another browser or browser profile open at the same time is not coordinated with this one and can show the same event.</dd>
-            <dt>In Atlas</dt><dd>The bell lists what needs you now, from the live task list; it keeps no history.</dd>
+              In this browser, only one Control Center tab shows them, and only while it has every task loaded and current; otherwise the Windows notification is the fallback when available. Another browser or browser profile open at the same time is not coordinated with this one and can show the same event.</dd>
+            <dt>The bell</dt><dd>The bell lists what needs you now, from the live task list; it keeps no history.</dd>
             <dt>Also needed</dt><dd>{notice.prerequisite} Windows Focus assist (Do not disturb) can hide them.</dd>
-            <dt>Shared</dt><dd>The same preference as Classic view’s bell in this browser. The backend keeps one setting for its Windows notifications: turning them on in any browser turns that on; turning them off here turns it off until a browser that has them on says so again.</dd>
+            <dt>Shared</dt><dd>The same preference in every Control Center tab of this browser. The backend keeps one setting for its Windows notifications: turning them on in any browser turns that on; turning them off here turns it off until a browser that has them on says so again.</dd>
           </dl>
           </Disclosure>
         </Card>
@@ -125,15 +121,15 @@ export default function SettingsPage({ appearance, live, navigate, route, notifi
         <Card className="a-section" id="atlas-settings-accessibility" titleId="atlas-settings-accessibility-h" title="Accessibility">
           <dl className="a-kv a-settings-kv">
             <dt>Motion</dt><dd>{media('(prefers-reduced-motion: reduce)') ? 'Reduced: your system asks for less motion, so transitions are instant.'
-              : 'Transitions are short. If you turn off “Animation effects” in Windows, Atlas makes them instant.'}</dd>
-            <dt>Contrast</dt><dd>{media('(forced-colors: active)') ? 'Windows contrast themes are on; Atlas uses their colours.' : 'Colour is never the only signal: every state also has a shape or words.'}</dd>
+              : 'Transitions are short. If you turn off “Animation effects” in Windows, they become instant.'}</dd>
+            <dt>Contrast</dt><dd>{media('(forced-colors: active)') ? 'Windows contrast themes are on; the interface uses their colours.' : 'Colour is never the only signal: every state also has a shape or words.'}</dd>
             <dt>Right-to-left text</dt><dd>Task titles and agent text in Hebrew or Arabic are shown right to left automatically.</dd>
             <dt>Screen readers</dt><dd>Each page moves focus to its heading. Changes and results are announced.</dd>
           </dl>
         </Card>
         <Card className="a-section" id="atlas-settings-about" titleId="atlas-settings-about-h" title="About and diagnostics">
           <dl className="a-kv">
-            <dt>Interface</dt><dd>Lumen. The Classic interface remains available as a fallback.</dd>
+            <dt>Interface</dt><dd>Lumen.</dd>
             <dt>Backend</dt><dd>{API_HOST} · {connection.label}. {connection.detail}</dd>
             <dt>Process supervision</dt><dd className={supervised.tone === 'alert' ? 'a-tone-alert-text' : undefined}>{supervised.text}</dd>
             <dt>Tools</dt><dd>{connections.data ? (attention?.any ? 'Some need attention (see Connections).' : 'Read; none needs attention.') : connections.error ? 'Couldn’t be read.' : 'Reading…'}</dd>

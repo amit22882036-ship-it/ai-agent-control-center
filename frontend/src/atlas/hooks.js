@@ -3,7 +3,6 @@ import { apiFetch, API_BASE } from '../apiClient.mjs'
 import { connectAgentEvents, createRefreshQueue } from '../agentEventStream.mjs'
 import { connectTheme, readTheme } from '../theme.mjs'
 import { formatHash, parseHash } from './router.mjs'
-import { rememberAtlasHash } from './uiMode.mjs'
 import { readTasks } from './model/taskSource.mjs'
 import { createTaskFeed } from './model/taskFeed.mjs'
 
@@ -22,7 +21,6 @@ export function useAtlasRoute() {
   const hash = useSyncExternalStore(subscribeLocation, () => window.location.hash)
   const route = useMemo(() => parseHash(hash), [hash])
   const navigationRef = useRef('initial')
-  useEffect(() => { rememberAtlasHash(hash) }, [hash])
   const navigate = useCallback((name, params = {}) => {
     const next = formatHash(name, params)
     if (next === window.location.hash) return

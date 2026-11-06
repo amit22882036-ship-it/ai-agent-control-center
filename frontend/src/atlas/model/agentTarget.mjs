@@ -26,9 +26,3 @@ export function targetStillCurrent(store, taskId, captured) {
   return now.kind === 'current' && now.agentId === captured.agentId
     && (!captured.assignmentId || !now.assignmentId || now.assignmentId === captured.assignmentId)
 }
-
-// The agent Classic should open with when leaving Atlas from this task, or null.
-export function classicHandoffAgent(store, taskId) {
-  const target = actionTarget(store, taskId)
-  return target.kind === 'current' ? target.agentId : null
-}

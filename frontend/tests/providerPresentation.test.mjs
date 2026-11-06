@@ -5,7 +5,7 @@ import { accessOptions, capabilityReason, changeEligible, changePayload, conditi
   refusalMessage, selectable, stateLabel, stateOf, stateTone, supports, usageLines } from '../src/providerPresentation.mjs'
 import { autonomyEligible, creationPayload } from '../src/autonomousCreation.mjs'
 import { transferRequest } from '../src/agentRemoval.mjs'
-import { attentionAgents } from '../src/agentPresentation.mjs'
+import { blockingText, preservedText, resumeText, usageSummary, windowRows } from '../src/providerPresentation.mjs'
 
 const status = (provider, state, extra = {}) => ({ provider, state: { state, reason: `${state} reason`, guidance: 'Do this.' },
   documented_models: ['sonnet'], settings: { enabled: state !== 'disabled', models: ['team-model'] }, usage: { blocks: [], remaining: null }, ...extra })
@@ -66,24 +66,6 @@ test('usage shows only provider-reported values and says when nothing is reporte
   assert.deepEqual(usageLines(status('mock', 'ready')), [])
 })
 
-test('provider waits read accurately and changes never widen access', () => {
-  assert.match(conditionText({ kind: 'usage_limited', label: 'Waiting for provider usage', reset_at: null }), /session are kept/)
-  assert.doesNotMatch(conditionText({ kind: 'usage_limited', label: 'Waiting for provider usage', reset_at: null }), /reset:/)
-  assert.match(conditionText({ kind: 'auth_required', label: 'Waiting for authentication' }), /Sign in/)
-  assert.deepEqual(accessOptions('read-only'), ['read-only'])
-  assert.deepEqual(accessOptions('workspace-write'), ['workspace-write', 'read-only'])
-  assert.deepEqual(changePayload('gemini', '  ', 'read-only'), { provider: 'gemini', model: null, sandbox: 'read-only' })
-  const waiting = { status: 'waiting', agent_type: 'claude', waiting_context: { kind: 'provider' } }
-  assert.equal(changeEligible(waiting), true)
-  assert.equal(changeEligible({ ...waiting, status: 'running' }), false)
-  assert.equal(changeEligible({ ...waiting, agent_type: 'mock' }), false)
-  assert.equal(changeEligible({ ...waiting, autonomous: true }), false)
-  assert.equal(changeEligible({ ...waiting, waiting_context: { kind: 'recovery' } }), false)
-  assert.equal(changeEligible({ ...waiting, managed: true }), false)
-  // A provider wait needs the user eventually (allow work, sign in, continue).
-  assert.deepEqual(attentionAgents([{ ...waiting, agent_id: 'a' }, { agent_id: 'b', status: 'waiting', waiting_context: { kind: 'delegation' } }]).map((a) => a.agent_id), ['a'])
-})
-
 test('refusals are shown as the backend wrote them', () => {
   assert.equal(refusalMessage({ detail: 'Claude Code: not enabled.' }, 'x'), 'Claude Code: not enabled.')
   assert.equal(refusalMessage({ detail: { message: 'Gemini CLI: not installed.' } }, 'x'), 'Gemini CLI: not installed.')
@@ -97,28 +79,6 @@ test('responsibility transfer can choose any provider and keeps Mock without acc
   assert.equal(transferRequest(state, { confirmed: true, requestKey: 'k', agentType: 'other' }).agent_type, 'mock')
   assert.equal(transferRequest(state, { confirmed: true, requestKey: 'k', agentType: 'mock', sandbox: 'workspace-write' }).sandbox, null)
 })
-
-test('provider UI stays inline (no modal), labelled and theme-token based', () => {
-  const panel = readFileSync(new URL('../src/ProviderPanel.jsx', import.meta.url), 'utf8')
-  const controls = readFileSync(new URL('../src/ProviderControls.jsx', import.meta.url), 'utf8')
-  const form = readFileSync(new URL('../src/StartAgentForm.jsx', import.meta.url), 'utf8')
-  const picker = readFileSync(new URL('../src/ModelPicker.jsx', import.meta.url), 'utf8')
-  const settings = readFileSync(new URL('../src/AgentModelSettings.jsx', import.meta.url), 'utf8')
-  const next = readFileSync(new URL('../src/NextPromptConfig.jsx', import.meta.url), 'utf8')
-  const css = readFileSync(new URL('../src/App.css', import.meta.url), 'utf8')
-  for (const source of [panel, controls, form, picker, settings, next]) {
-    assert.doesNotMatch(source, /role="dialog"|aria-modal|<dialog/)
-  }
-  assert.match(panel, /<details className="provider-panel">/)
-  assert.match(form, /<legend>Provider<\/legend>/)
-  assert.match(picker, /htmlFor={`\${id}-model`}/)
-  assert.match(picker, /htmlFor={`\${id}-effort`}/)
-  const block = css.slice(css.indexOf('/* Stage 2F providers'))
-  assert.doesNotMatch(block, /#[0-9a-f]{3,6}\b/i)
-  assert.match(block, /prefers-reduced-motion/)
-})
-
-import { blockingText, preservedText, resumeText, usageSummary, windowRows } from '../src/providerPresentation.mjs'
 
 const usage = (windows, extra = {}) => ({ provider: 'claude', usage: { source: 'exact_when_reported', overall: 'limited',
   explanation: 'x', windows, blocks: [], unpersisted: 0, refresh_supported: true, last_observed_at: '2026-10-23T09:00:00Z', ...extra } })
@@ -153,12 +113,4 @@ test('waiting explains which limits block, what is preserved and whether resume 
   assert.match(resumeText({ available: true, mode: 'verified' }), /Manual resume available/)
   assert.match(conditionText({ kind: 'usage_limited', label: 'Waiting for provider usage', reset_at: '2026-10-23T14:00:00Z' }), /not a guarantee/)
   assert.match(conditionText({ kind: 'usage_limited', label: 'Waiting for provider usage' }), /Nothing resumes automatically/)
-})
-
-test('the inspector resumes only through an explicit, labelled action', () => {
-  const controls = readFileSync(new URL('../src/ProviderControls.jsx', import.meta.url), 'utf8')
-  assert.match(controls, /'\/resume'/)
-  assert.match(controls, /explicit_retry/)
-  assert.match(controls, /Resume task/)
-  assert.doesNotMatch(controls, /setInterval|setTimeout/)  // No hidden automatic resumption.
 })

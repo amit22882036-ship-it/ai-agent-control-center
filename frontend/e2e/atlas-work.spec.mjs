@@ -351,15 +351,6 @@ test('section counts say when they cover only the loaded tasks', async ({ page }
   await expect(now.getByRole('button', { name: /Need(s)? you$/ })).not.toHaveAttribute('title', /loaded/)
 })
 
-test('the task panel no longer offers Classic; Settings keeps it as a temporary fallback', async ({ page }) => {
-  await openWork(page, { tasks: showcase() }, '?task=quoted')
-  const inspector = page.getByRole('complementary', { name: 'Task details' })
-  await expect(inspector.getByRole('button', { name: 'Open in Classic' })).toHaveCount(0)
-  await page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: 'Settings' }).click()
-  await page.getByRole('button', { name: 'Open Classic interface' }).click()
-  await expect(page.getByRole('heading', { level: 1, name: 'Agent Workspace' })).toBeVisible()
-})
-
 test('capture M3 review screenshots', async ({ page }) => {
   const dir = process.env.ATLAS_SCREENSHOTS
   test.skip(!dir, 'Set ATLAS_SCREENSHOTS to a folder to capture screenshots.')

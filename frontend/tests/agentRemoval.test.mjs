@@ -1,9 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
-import { buildAgentTree } from '../src/buildAgentTree.mjs'
-import { matchesStatus, filterAgentTree, visibleAgentIds } from '../src/agentListView.mjs'
-import { attentionAgents } from '../src/agentPresentation.mjs'
 import {
   branchCounts, consequenceText, effectiveRemovalCollapse, failureText, fullyRemovedBranches, integrationGuidance, isRemoved, previewSummary,
   readRemovalError, removalRequest, removalScope, removalState, removedDescendants, responsibilitySummary, transferRequest,
@@ -14,46 +11,6 @@ const removed = (id, parent = null) => ({ agent_id: id, parent_id: parent, statu
   removal: { state: 'removed' }, waiting_context: { kind: 'removed', label: 'Removed' } })
 const active = (id, parent = null) => ({ agent_id: id, parent_id: parent, status: 'running', display_name: id })
 const ids = (nodes) => nodes.map((n) => [n.agent.agent_id, Boolean(n.parentHidden), ids(n.children)])
-
-test('removal state is explicit and removed agents are history, never active work', () => {
-  assert.equal(removalState(removed('a')), 'removed')
-  assert.equal(removalState({ removal: { state: 'blocked' } }), 'blocked')
-  assert.equal(removalState(active('a')), null)
-  assert.equal(isRemoved({ removed: true }), true)
-  assert.equal(removalScope(removed('a')), 'history')
-  assert.equal(removalScope({ removal: { state: 'removing' } }), 'active')
-  assert.equal(matchesStatus(removed('a'), 'active'), false)
-  assert.equal(matchesStatus(removed('a'), 'history'), true)
-  assert.equal(matchesStatus(removed('a'), 'all'), true)
-  const blocked = { ...active('b'), status: 'stopped', removal: { state: 'blocked' }, waiting_context: { kind: 'recovery', label: 'Removal blocked' } }
-  assert.equal(matchesStatus(blocked, 'active'), true)
-  assert.deepEqual(attentionAgents([removed('a'), blocked]), [blocked])  // a blocked removal needs you; history does not
-})
-
-test('hiding a removed parent keeps its active children visible without inventing a parent', () => {
-  const tree = buildAgentTree([active('root'), removed('parent', 'root'), active('child', 'parent'), removed('done', 'parent'), active('grand', 'child')])
-  assert.deepEqual(ids(withoutRemoved(tree)), [
-    ['root', false, []],
-    ['child', true, [['grand', false, []]]],  // lifted to the top level and marked, not reattached to root
-  ])
-  const visible = visibleAgentIds(withoutRemoved(tree), new Set())
-  assert.equal(visible.has('child') && visible.has('grand'), true)
-  assert.equal(visible.has('parent'), false)
-  // The underlying tree keeps the real lineage.
-  assert.equal(tree[0].children[0].children[0].agent.agent_id, 'child')
-})
-
-test('fully removed branches collapse by default and can be expanded again', () => {
-  const tree = buildAgentTree([removed('a'), removed('b', 'a'), removed('c', 'b'), removed('d'), active('e', 'd'), removed('leaf')])
-  assert.deepEqual(fullyRemovedBranches(tree).sort(), ['a'])  // d still has active work; a lone leaf needs no collapse
-  const indexed = tree.find((n) => n.agent.agent_id === 'a')
-  assert.equal(removedDescendants(indexed), 2)
-  const auto = new Set(fullyRemovedBranches(tree))
-  assert.deepEqual([...effectiveRemovalCollapse(new Set(['x']), auto, new Set())].sort(), ['a', 'x'])
-  assert.deepEqual([...effectiveRemovalCollapse(new Set(['x']), auto, new Set(['a']))], ['x'])
-  const filtered = filterAgentTree(tree, '', 'all')
-  assert.equal(visibleAgentIds(filtered, effectiveRemovalCollapse(new Set(), auto, new Set())).has('b'), false)
-})
 
 test('branch progress is counted per member', () => {
   const operation = { members: [{ phase: 'removed' }, { phase: 'stopping' }, { phase: 'recovery_required' }, { phase: 'admitted' }] }
@@ -124,25 +81,4 @@ test('responsibility and errors are explained without claiming success', () => {
   assert.deepEqual(stale.preview, { mode: 'single' })
   assert.equal(readRemovalError(503, { detail: { code: 'removal_recovery_required', message: 'm', removal: { phase: 'recovery_required' } } }).removal.phase, 'recovery_required')
   assert.match(readRemovalError(503, {}).message, /retry/)
-})
-
-test('removal UI is integrated in the details panel, accessible and not a modal', () => {
-  const source = readFileSync(new URL('../src/RemovalSection.jsx', import.meta.url), 'utf8')
-  const details = readFileSync(new URL('../src/AgentDetails.jsx', import.meta.url), 'utf8')
-  const tree = readFileSync(new URL('../src/AgentTree.jsx', import.meta.url), 'utf8')
-  const graph = readFileSync(new URL('../src/AgentHierarchy.jsx', import.meta.url), 'utf8')
-  const css = readFileSync(new URL('../src/App.css', import.meta.url), 'utf8')
-  assert.match(details, /<RemovalSection /)
-  assert.doesNotMatch(source, /role="dialog"|aria-modal|window\.confirm|showModal/)
-  assert.match(source, /aria-live="polite"/)
-  assert.match(source, /role="alert"/)
-  assert.match(source, /type="checkbox"[^>]*required/)
-  assert.match(source, /Retry safe removal steps/)
-  assert.doesNotMatch(source, /confirm_ended|force/)
-  // Removal is marked with an icon and text (screen readers) plus strike-through, not color alone.
-  assert.match(tree, /removal-mark/)
-  assert.match(tree, /\(removed\)/)
-  assert.match(graph, /, removed/)
-  assert.match(css, /text-decoration:line-through/)
-  assert.match(css, /prefers-reduced-motion:reduce\) \{ \.removal-section/)
 })

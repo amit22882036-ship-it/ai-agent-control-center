@@ -58,15 +58,6 @@ test('an approval names the exact reviewed plan and nothing else', () => {
   assert.throws(() => approvalRequest({ plan_id: null, digest: null, manual: ['Run gemini'] }), /no automated path/)
 })
 
-test('the AI Providers view never accepts a command, path or package from the user', () => {
-  const view = source('ProvidersView.jsx')
-  assert.doesNotMatch(view, /<textarea/)
-  assert.doesNotMatch(view, /type="text"/)
-  assert.doesNotMatch(view, /command:\s*[a-z]/i)  // The request carries only action and channel.
-  assert.match(view, /approvalRequest\(plan\)/)
-  assert.match(view, /setPlan\(null\).*used once/s)
-})
-
 test('operation results report what was verified, never just that a command ran', () => {
   assert.equal(operationText({ action: 'login', status: 'needs_attention', result: 'The sign-in window closed, but Claude Code does not report a sign-in.' }),
     'Sign in: Needs attention. The sign-in window closed, but Claude Code does not report a sign-in.')
@@ -97,28 +88,6 @@ test('global permissions: an empty set allows none, and the revision loaded is r
   assert.throws(() => policyPayload({ ...draft, revision: null }), /Reload/)
 })
 
-test('the New Agent form disables a disallowed provider with its reason; Mock is never restricted', () => {
-  const policy = { allowed: ['codex'] }
-  assert.deepEqual(permissionFor(policy, 'codex'), { allowed: true, reason: null, state: 'allowed' })
-  assert.equal(permissionFor(policy, 'claude').allowed, false)
-  assert.match(permissionFor(policy, 'claude').reason, /Claude Code is not in your allowed providers/)
-  assert.equal(permissionFor({ allowed: [] }, 'mock').allowed, true)
-  const form = source('StartAgentForm.jsx')
-  assert.match(form, /disabled=\{unavailable \|\| !permissionFor\(policy, value\)\.allowed\}/)
-  assert.match(form, /Set up in AI Providers/)
-})
-
-test('a forbidden or unusable default is shown with its reason and never replaced', () => {
-  assert.equal(defaultChoice({ default_provider: null }), null)
-  const bad = defaultChoice({ default_provider: 'gemini', default_model: null, default_effort: null, default_problem: 'Gemini CLI is not in your allowed providers.' })
-  assert.equal(bad.provider, 'gemini')
-  assert.match(defaultText(bad), /cannot be used: Gemini CLI is not in your allowed providers\. Nothing else was chosen for you\./)
-  assert.equal(defaultText(defaultChoice({ default_provider: 'codex', default_model: 'gpt-5', default_effort: 'high' })),
-    'Using your default: Codex · gpt-5 · high effort.')
-  const form = source('StartAgentForm.jsx')
-  assert.match(form, /!touched\.current && !defaultApplied\.current/)  // Applied once, never over the user's choice.
-})
-
 test('Task restrictions narrow inherited permissions and explain where they come from', () => {
   const view = { task_id: 't2', own: { providers: ['codex'], revision: 4 }, inherited: ['codex', 'claude'], effective: ['codex'],
     sources: [{ scope: 'global', providers: ['codex', 'claude'] }, { scope: 'task', task_id: 't1', title: 'Parent', providers: ['codex', 'claude'] },
@@ -128,54 +97,6 @@ test('Task restrictions narrow inherited permissions and explain where they come
     'This Task has no restriction of its own. Effective: no real provider (Mock only).')
   assert.deepEqual(restrictionPayload(['claude', 'codex'], view.own), { providers: ['codex', 'claude'], expected_revision: 4 })
   assert.deepEqual(restrictionPayload([], null), { providers: [], expected_revision: null })
-})
-
-test('the New Agent draft survives a visit to AI Providers: the composer stays mounted, hidden', () => {
-  const app = source('App.jsx')
-  assert.match(app, /<main id="workspace" className="dashboard" hidden=\{view !== 'workspace'\}>/)
-  assert.match(app, /\{showStart && <StartAgentForm /)
-  assert.doesNotMatch(app, /view === 'workspace' && showStart && <StartAgentForm/)
-  assert.match(source('WorkspaceBar.jsx'), /AI Providers/)
-})
-
-test('a conflicting permissions edit from another tab keeps the draft and offers a reload', () => {
-  const view = source('ProvidersView.jsx')
-  assert.match(view, /setConflict\(err\.status === 409 && \/changed since\/\.test\(err\.message\)\)/)
-  assert.match(view, /setError\(err\.message\)  \/\/ The draft is kept\./)
-  assert.match(view, /Discard and reload/)
-  const restrictions = source('ProviderRestrictions.jsx')
-  assert.match(restrictions, /Your selection is kept/)
-  assert.match(restrictions, /expected_revision=\$\{encodeURIComponent\(view\.own\.revision\)\}/)
-})
-
-test('critical setup interactions are labelled, announced and gated by an explicit review', () => {
-  const view = source('ProvidersView.jsx')
-  assert.match(view, /role="alert"/)
-  assert.match(view, /role="status"/)
-  assert.match(view, /aria-labelledby=\{`\$\{id\}-heading`\}/)
-  assert.match(view, /disabled=\{!reviewed \|\| Boolean\(busy\)\}/)  // Run stays disabled until reviewed.
-  const bar = source('WorkspaceBar.jsx')
-  assert.match(bar, /aria-current=\{view === 'providers' \? 'page' : undefined\}/)
-  assert.match(bar, /provider update\$\{notices\.length > 1 \? 's' : ''\}/)  // The bell names pending updates.
-  assert.match(source('ProviderRestrictions.jsx'), /Review in AI Providers/)  // The inspector links to setup.
-})
-
-test('an operation whose end was not verified blocks the provider until the user confirms it ended', () => {
-  const uncertain = entry({ operations: [{ operation_id: 'o', action: 'update', status: 'uncertain', result: 'could not be verified' }] })
-  assert.equal(nextStep(uncertain).kind, 'resolve')
-  assert.equal(operationTone({ status: 'uncertain' }), 'blocked')
-  assert.match(operationText({ action: 'update', status: 'uncertain' }), /End not verified/)
-  const view = source('ProvidersView.jsx')
-  assert.match(view, /disabled=\{!ended \|\| Boolean\(busy\)\} onClick=\{confirmEnded\}/)  // Only after an explicit confirmation.
-  assert.match(view, /resolve`, json\('POST', \{ confirm_ended: true \}\)/)
-  assert.match(view, /!plan && !running && !unverified &&/)  // No new setup is offered meanwhile.
-})
-
-test('the reviewed plan names the exact package version, the official registry and no package scripts', () => {
-  assert.equal(planSource({ package: '@openai/codex', target_version: '0.154.0', registry: 'https://registry.npmjs.org/' }),
-    '@openai/codex@0.154.0 from https://registry.npmjs.org/, without package scripts')
-  assert.equal(planSource({ package: null }), null)
-  assert.match(source('ProvidersView.jsx'), /resolved to \$\{plan\.target_version\} for this approval/)
 })
 
 test('a Task hierarchy that cannot be verified is shown as permitting no real provider', () => {

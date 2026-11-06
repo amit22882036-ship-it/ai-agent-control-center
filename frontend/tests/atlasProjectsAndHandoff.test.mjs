@@ -2,8 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { projectDirectory, projectLabel, projectMenu } from '../src/atlas/model/projects.mjs'
-import { CLASSIC_HANDOFF_KEY, CLASSIC_HANDOFF_MS, clearClassicHandoff, peekClassicHandoff, writeClassicHandoff } from '../src/atlas/uiMode.mjs'
-import { actionTarget, classicHandoffAgent, targetStillCurrent } from '../src/atlas/model/agentTarget.mjs'
+import { actionTarget, targetStillCurrent } from '../src/atlas/model/agentTarget.mjs'
 import { applyPage, emptyStore } from '../src/atlas/model/tasks.mjs'
 
 const contract = JSON.parse(readFileSync(new URL('./fixtures/workspace-tasks.contract.json', import.meta.url), 'utf8'))
@@ -52,33 +51,12 @@ test('a selected project that is not registered stays visible in the menu', () =
   assert.equal(menu[0].checked, false)
 })
 
-test('the Classic hand-off is short-lived, one-shot and only carries a plausible agent id', () => {
-  const storage = memory()
-  writeClassicHandoff('agent-1', storage, 1000)
-  assert.equal(peekClassicHandoff(storage, 1000 + CLASSIC_HANDOFF_MS), 'agent-1')
-  assert.equal(peekClassicHandoff(storage, 1001 + CLASSIC_HANDOFF_MS), null) // expired
-  assert.equal(peekClassicHandoff(storage, 999), null) // from the future
-  clearClassicHandoff(storage)
-  assert.equal(storage.getItem(CLASSIC_HANDOFF_KEY), null)
-  writeClassicHandoff('agent-1', storage, 1000)
-  writeClassicHandoff(null, storage, 1000) // leaving without a selection clears an older record
-  assert.equal(storage.getItem(CLASSIC_HANDOFF_KEY), null)
-  storage.setItem(CLASSIC_HANDOFF_KEY, '{not json')
-  assert.equal(peekClassicHandoff(storage, 1000), null)
-  storage.setItem(CLASSIC_HANDOFF_KEY, JSON.stringify({ agentId: 'x'.repeat(201), at: 1000 }))
-  assert.equal(peekClassicHandoff(storage, 1000), null)
-  assert.equal(peekClassicHandoff({ getItem() { throw new Error('blocked') } }, 1000), null)
-})
-
-test('actions and the hand-off address only a task’s current, non-removed agent', () => {
+test('actions address only a task’s current, non-removed agent', () => {
   assert.deepEqual(actionTarget(store, 'tests'), { kind: 'current', agentId: 'tester', assignmentId: 'as-tests', lastAgentId: null, removal: null })
-  assert.equal(classicHandoffAgent(store, 'tests'), 'tester')
   // Replaced agents and the agent that finished last are history.
   assert.deepEqual(actionTarget(store, 'docs'), { kind: 'none', agentId: null, assignmentId: null, lastAgentId: 'docs-new' })
-  assert.equal(classicHandoffAgent(store, 'docs'), null)
   // The removed owner of a task waiting for a new one.
   assert.equal(actionTarget(store, 'orphaned-work').kind, 'none')
-  assert.equal(classicHandoffAgent(store, 'orphaned-work'), null)
   // No agent at all, and a task that does not exist.
   assert.equal(actionTarget(store, 'flaky').kind, 'none')
   assert.equal(actionTarget(store, 'missing').kind, 'missing')

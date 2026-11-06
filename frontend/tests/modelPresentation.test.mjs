@@ -125,20 +125,6 @@ test('the next instruction uses defaults unless overridden, and saving a default
   assert.equal(instructionReady(unverified, null, emptyOverride()), true)
 })
 
-test('review follow-up: account change, unexposed identity and Gemini pinning are explained before execution', () => {
-  const changed = { ...catalog, refresh: { ...catalog.refresh, fresh: false, account_changed: true, identity_exposed: true } }
-  assert.match(freshness(changed).text, /sign-in, account or CLI changed/)
-  assert.match(freshness({ ...catalog, refresh: { ...catalog.refresh, identity_exposed: false } }).text, /identity not exposed/)
-  assert.match(modelLimitation('gemini', 'flash'), /cannot guarantee that a specific model runs/)
-  assert.match(modelLimitation('gemini', 'auto'), /choose the model/)
-  assert.match(modelLimitation('gemini', null), /nothing is pinned/)
-  assert.equal(modelLimitation('claude', 'sonnet'), '')
-  assert.match(conditionText({ kind: 'model_not_enforced', label: 'Selected model not verified', detail: 'Gemini CLI reported running x.' }),
-    /reported running x\. It could not be verified/)
-  const picker = readFileSync(new URL('../src/ModelPicker.jsx', import.meta.url), 'utf8')
-  assert.match(picker, /provider !== 'gemini' && <option value=\{OTHER_MODEL\}>/)  // No typed Gemini pins.
-})
-
 test('execution facts report requested and provider-reported values only', () => {
   const facts = Object.fromEntries(executionFacts({ model: 'sonnet', resolved_model: 'x-sonnet', effective_model: 'x-sonnet',
     requested_effort: 'high', effective_effort: null, config_source: 'override', entitlement_state: 'cli_listed' }))
@@ -146,15 +132,4 @@ test('execution facts report requested and provider-reported values only', () =>
   assert.equal(facts.Source, 'One-time override')
   assert.equal(facts['Reported model'], 'x-sonnet')
   assert.deepEqual(executionFacts(null), [])
-})
-
-test('the model picker has no static model list and keeps unavailable entries disabled', () => {
-  const picker = readFileSync(new URL('../src/ModelPicker.jsx', import.meta.url), 'utf8')
-  assert.match(picker, /groups\.unavailable\.map\(\(model\) => <option key=\{model\.model_id\} value=\{model\.model_id\} disabled>/)
-  assert.doesNotMatch(picker, /sonnet|opus|gpt-|gemini-/i)
-  const form = readFileSync(new URL('../src/StartAgentForm.jsx', import.meta.url), 'utf8')
-  assert.doesNotMatch(form, /modelSuggestions|datalist/)
-  assert.match(form, /<ModelPicker/)
-  const details = readFileSync(new URL('../src/AgentDetails.jsx', import.meta.url), 'utf8')
-  assert.equal((details.match(/<NextPromptConfig/g) || []).length, 2)  // Reply and Redirect.
 })

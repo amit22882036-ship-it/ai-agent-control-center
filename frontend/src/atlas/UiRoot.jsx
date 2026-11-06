@@ -1,25 +1,8 @@
-import { lazy, Suspense, useSyncExternalStore } from 'react'
-import { UI_EVENT, resolveUi } from './uiMode.mjs'
+import { lazy, Suspense } from 'react'
 
-// Atlas is code-split: its code, styles and fonts load only when someone opens the preview.
+// Lumen is code-split so its styles and fonts load with it.
 const AtlasApp = lazy(() => import('./AtlasApp.jsx'))
 
-function subscribe(callback) {
-  window.addEventListener('hashchange', callback)
-  window.addEventListener('popstate', callback)
-  window.addEventListener(UI_EVENT, callback)
-  return () => {
-    window.removeEventListener('hashchange', callback)
-    window.removeEventListener('popstate', callback)
-    window.removeEventListener(UI_EVENT, callback)
-  }
-}
-
-// Exactly one interface is mounted at a time, so only one live-update connection exists.
-export default function UiRoot({ classic: Classic }) {
-  const ui = useSyncExternalStore(subscribe, () => resolveUi(window.location))
-  if (ui === 'atlas') {
-    return <Suspense fallback={<p className="message" role="status">Loading…</p>}><AtlasApp /></Suspense>
-  }
-  return <Classic />
+export default function UiRoot() {
+  return <Suspense fallback={<p className="message" role="status">Loading…</p>}><AtlasApp /></Suspense>
 }

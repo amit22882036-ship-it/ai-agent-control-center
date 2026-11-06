@@ -35,16 +35,3 @@ test('policy state and payload', () => {
   assert.deepEqual(choices.map((c) => [c.id, c.ready]), [['codex', false], ['claude', true], ['gemini', false]])
   assert.match(AUTO_SUMMARY, /Prioritizes task suitability and quality/)
 })
-
-test('Auto UI stays inline, accessible and token-based', () => {
-  const panel = readFileSync(new URL('../src/AutoAllocationPanel.jsx', import.meta.url), 'utf8')
-  const form = readFileSync(new URL('../src/StartAgentForm.jsx', import.meta.url), 'utf8')
-  for (const source of [panel, form]) assert.doesNotMatch(source, /role="dialog"|aria-modal|<dialog/)
-  const editor = readFileSync(new URL('../src/AutoPolicyEditor.jsx', import.meta.url), 'utf8')
-  assert.match(panel, /<AutoPolicyEditor/)
-  assert.match(editor, /<legend>Allowed providers<\/legend>/)
-  assert.match(form, /<legend>Child agents<\/legend>/)
-  const css = readFileSync(new URL('../src/App.css', import.meta.url), 'utf8')
-  const block = css.slice(css.indexOf('/* Auto allocation'))
-  assert.doesNotMatch(block, /#[0-9a-f]{3,6}\b/i)
-})

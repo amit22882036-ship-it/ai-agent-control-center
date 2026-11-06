@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { connectAgentEvents, createRefreshQueue } from '../src/agentEventStream.mjs'
-import { createAgentNotifications } from '../src/agentNotifications.js'
 
 class Timers {
   now = 0
@@ -176,38 +175,4 @@ test('refresh queue prevents overlap and retains one trailing refresh during a r
   timers.tick(2000)
   assert.equal(calls, 2)
   assert.equal(timers.jobs.size, 0)
-})
-
-test('refreshed REST snapshots feed notification observer and selected details without changing selection', () => {
-  const sent = []
-  class Notification {
-    static permission = 'granted'
-    constructor(title) { sent.push(title) }
-    close() {}
-  }
-  const tracker = createAgentNotifications(() => {}, () => {})
-  const selectedId = 'stable-uuid'
-  let snapshot = [{ agent_id: selectedId, status: 'finished', task: 'Historical' }]
-  let details
-  let detailFetches = 0
-  const f = fixture(() => {
-    tracker.observe(snapshot, true, Notification)
-    details = snapshot.find((agent) => agent.agent_id === selectedId)
-    detailFetches++
-  })
-  f.source.onopen()
-  assert.deepEqual(sent, [])
-  snapshot = [{ agent_id: selectedId, status: 'running', task: 'Review' }]
-  f.source.emit('agent-change'); f.timers.tick(75)
-  snapshot = [{ ...snapshot[0], status: 'waiting', output: ['Question'] }]
-  f.source.emit('agent-change'); f.timers.tick(75)
-  f.source.emit('agent-change'); f.timers.tick(75)
-  f.source.onerror(); f.timers.tick(2000)
-  f.source.onopen()
-  assert.equal(details.agent_id, selectedId)
-  assert.deepEqual(details.output, ['Question'])
-  assert.equal(detailFetches, 7)
-  assert.deepEqual(sent, ['Agent needs your input'])
-  f.disconnect()
-  tracker.close()
 })

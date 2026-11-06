@@ -11,17 +11,6 @@ async function heading(page) {
   return page.locator('.atlas h1').innerText()
 }
 
-test('the classic interface stays the default and works unchanged', async ({ page }) => {
-  const log = await openApp(page)
-  await expect(page.getByRole('heading', { level: 1, name: 'Agent Workspace' })).toBeVisible()
-  await expect(page.getByText('Quoted fields', { exact: false }).first()).toBeVisible()
-  await expect(page.getByRole('button', { name: 'New interface' })).toBeVisible()
-  expect(page.url()).toBe('http://atlas.preview/?ui=classic')
-  expect(await page.locator('.atlas').count()).toBe(0)
-  expect(await activeEventSources(page)).toBe(1)
-  expect(log.external).toEqual([])
-})
-
 test('the new interface opens by default, with the rail and no classic marker', async ({ page }) => {
   const log = await openApp(page, { path: '/' })
   await expect(page.locator('.atlas h1')).toHaveText('Work')
@@ -29,34 +18,6 @@ test('the new interface opens by default, with the rail and no classic marker', 
   // Classic is no longer offered in the everyday interface; Settings keeps it while features move.
   await expect(page.getByRole('button', { name: 'Open the classic interface' })).toHaveCount(0)
   expect(await activeEventSources(page)).toBe(1)
-  expect(log.external).toEqual([])
-})
-
-test('Atlas opens only on request, owns the single event connection and changes nothing', async ({ page }) => {
-  const log = await openApp(page)
-  await expect(page.getByRole('heading', { level: 1, name: 'Agent Workspace' })).toBeVisible()
-  await page.waitForTimeout(300)
-  const classicRequests = log.backend.length
-  await page.getByRole('button', { name: 'New interface' }).click()
-  await expect(page).toHaveURL(/#\/work$/)
-  await expect(page.locator('.atlas h1')).toHaveText('Work')
-  await expect(page.getByRole('treeitem', { name: /^Fix the tests/ })).toBeVisible()
-  await expect(page.locator('.a-needs')).toHaveText('1 question for you')
-  await expect(page.locator('.a-conn')).toContainText('Live')
-  await expect(page).toHaveTitle('Work · AI Agent Control Center')
-  expect(await activeEventSources(page)).toBe(1)
-  for (const name of ['Projects', 'Connections', 'Settings']) {
-    await page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name }).click()
-    await expect(page.locator('.atlas h1')).toHaveText(name)
-  }
-  // While Atlas is on screen it only reads: the workspace summary, the task list, project names,
-  // the tools' cached state (M8, no probe), provider update notices (M9) and process supervision. No state-changing request, no
-  // token request and nothing else.
-  const atlasRequests = log.backend.slice(classicRequests)
-  expect(atlasRequests.length).toBeGreaterThan(0)
-  const reads = /^GET \/(workspace\?limit=1&after=0|workspace\/tasks\?limit=200|projects|providers\/onboarding|providers\/notifications|system\/process-supervision)$/
-  expect(atlasRequests.filter((line) => !reads.test(line)), atlasRequests.join(' | ')).toEqual([])
-  expect(log.backend.filter((line) => UNSAFE.test(line) && !line.startsWith('POST /notifications/')), log.backend.join(' | ')).toEqual([])
   expect(log.external).toEqual([])
 })
 
@@ -78,25 +39,7 @@ test('Back and Forward move between Atlas pages and restore where each page was'
   await expect(page.locator('.atlas h1')).toHaveText('Page not found')
 })
 
-test('leaving Atlas returns to the classic interface, and Back returns to the same Atlas page', async ({ page }) => {
-  await openApp(page)
-  await page.getByRole('button', { name: 'New interface' }).click()
-  await page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: 'Settings' }).click()
-  await expect(page.locator('.atlas h1')).toHaveText('Settings')
-  await page.getByRole('button', { name: 'Open Classic interface' }).click()
-  await expect(page.getByRole('heading', { level: 1, name: 'Agent Workspace' })).toBeVisible()
-  expect(page.url()).toBe('http://atlas.preview/?ui=classic')
-  expect(await activeEventSources(page)).toBe(1)
-  await page.goBack()
-  await expect(page.locator('.atlas h1')).toHaveText('Settings')
-  expect(await activeEventSources(page)).toBe(1)
-  await page.goForward()
-  await expect(page.getByRole('heading', { level: 1, name: 'Agent Workspace' })).toBeVisible()
-  await page.getByRole('button', { name: 'New interface' }).click()
-  await expect(page).toHaveURL(/#\/settings$/)
-})
-
-test('appearance persists, is shared with classic, and Automatic follows the system', async ({ page }) => {
+test('appearance persists and Automatic follows the system', async ({ page }) => {
   await openApp(page, { path: '/#/settings' })
   await page.getByRole('radio', { name: 'Dark' }).click()
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark')
@@ -111,7 +54,6 @@ test('appearance persists, is shared with classic, and Automatic follows the sys
   await page.getByRole('radio', { name: 'Automatic' }).press('ArrowRight')
   await expect(page.getByRole('radio', { name: 'Light' })).toBeFocused()
   await expect(page.getByRole('radio', { name: 'Light' })).toHaveAttribute('aria-checked', 'true')
-  await page.getByRole('button', { name: 'Open Classic interface' }).click()
   expect(await page.evaluate(() => localStorage.getItem('control-center.theme'))).toBe('light')
 })
 

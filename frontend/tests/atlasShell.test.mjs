@@ -1,7 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
-import { atlasEntryHash, classicUrl, DEFAULT_ATLAS_HASH, enterAtlas, exitAtlas, LAST_ROUTE_KEY, rememberAtlasHash, resolveUi, UI_EVENT } from '../src/atlas/uiMode.mjs'
 import { DEFAULT_ROUTE, documentTitle, formatHash, NAV_ROUTES, navSection, parseHash, routeKey } from '../src/atlas/router.mjs'
 import { connectionView, needsYouCount, needsYouLabel, overviewView, OVERVIEW_FIELDS } from '../src/atlas/status.mjs'
 import { initials, rovingTarget, tabPanelProps } from '../src/atlas/a11y.mjs'
@@ -15,58 +14,6 @@ function memoryStorage(initial = {}) {
   return { getItem: (key) => values.has(key) ? values.get(key) : null, setItem: (key, value) => values.set(key, String(value)), values }
 }
 const brokenStorage = { getItem() { throw new Error('denied') }, setItem() { throw new Error('denied') } }
-
-test('the new interface is the default; only the Classic marker opens Classic', () => {
-  for (const hash of ['', '#', '#workspace', '#/', '#/work', '#/settings?section=appearance', '#/unknown']) {
-    assert.equal(resolveUi({ hash, search: '' }), 'atlas', hash)
-  }
-  for (const search of ['?ui=classic', '?debug=1&ui=classic', '?ui=classic&x=1']) {
-    assert.equal(resolveUi({ hash: '#workspace', search }), 'classic', search)
-    assert.equal(resolveUi({ hash: '#/work', search }), 'classic', search)
-  }
-  for (const search of ['?ui=classical', '?xui=classic', '?ui=']) assert.equal(resolveUi({ search }), 'atlas', search)
-  assert.equal(resolveUi(undefined), 'atlas')
-})
-
-test('entering Atlas reopens the last route of this tab, and storage failures fall back safely', () => {
-  assert.equal(atlasEntryHash(memoryStorage()), DEFAULT_ATLAS_HASH)
-  assert.equal(atlasEntryHash(memoryStorage({ [LAST_ROUTE_KEY]: '#/settings' })), '#/settings')
-  assert.equal(atlasEntryHash(memoryStorage({ [LAST_ROUTE_KEY]: '#/gallery?section=type' })), '#/gallery?section=type')
-  for (const unsafe of ['javascript:alert(1)', '#workspace', '#/x y', '//evil.example', '#/a#/b']) {
-    assert.equal(atlasEntryHash(memoryStorage({ [LAST_ROUTE_KEY]: unsafe })), DEFAULT_ATLAS_HASH, unsafe)
-  }
-  assert.equal(atlasEntryHash(brokenStorage), DEFAULT_ATLAS_HASH)
-  const storage = memoryStorage()
-  rememberAtlasHash('#/projects', storage)
-  rememberAtlasHash('#workspace', storage)
-  assert.equal(storage.getItem(LAST_ROUTE_KEY), '#/projects')
-  assert.doesNotThrow(() => rememberAtlasHash('#/work', brokenStorage))
-})
-
-test('leaving for Classic keeps the path and query, adds a history entry and notifies the root', () => {
-  assert.equal(classicUrl({ pathname: '/', search: '', hash: '#/work' }), '/?ui=classic')
-  assert.equal(classicUrl({ pathname: '/app/', search: '?debug=1', hash: '#/settings' }), '/app/?debug=1&ui=classic')
-  assert.equal(classicUrl({ pathname: '/', search: '?ui=classic', hash: '' }), '/?ui=classic')
-  const pushed = []
-  const events = []
-  const win = {
-    location: { pathname: '/', search: '?x=1', hash: '#/settings' },
-    history: { pushState: (state, title, url) => pushed.push(url) },
-    sessionStorage: memoryStorage(),
-    Event: class { constructor(type) { this.type = type } },
-    dispatchEvent: (event) => events.push(event.type),
-  }
-  exitAtlas(win)
-  assert.deepEqual(pushed, ['/?x=1&ui=classic'])
-  assert.deepEqual(events, [UI_EVENT])
-  assert.equal(win.sessionStorage.getItem(LAST_ROUTE_KEY), '#/settings')
-  const entered = []
-  const entering = { location: { pathname: '/', search: '?x=1&ui=classic', hash: '#workspace' }, sessionStorage: win.sessionStorage,
-    history: { pushState: (state, title, url) => entered.push(url) }, Event: win.Event, dispatchEvent: (event) => events.push(event.type) }
-  enterAtlas(entering)
-  assert.deepEqual(entered, ['/?x=1#/settings'])
-  assert.deepEqual(events, [UI_EVENT, UI_EVENT])
-})
 
 test('routes parse, format and round-trip; unknown routes are explicit', () => {
   assert.deepEqual(parseHash('#/work'), { name: 'work', params: {} })
