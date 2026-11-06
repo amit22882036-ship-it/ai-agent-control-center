@@ -1,0 +1,181 @@
+/* Clear signal, last layer: rules that make every screen speak the same plain language. Loaded after
+   every other Lumen stylesheet; selectors stay at the same specificity as the rules they settle. */
+
+/* One voice for labels: a label is a small heading in sentence case, never tracked capitals. */
+.atlas .a-ol-sec, .atlas .a-blk h3, .atlas .a-pjh, .atlas .a-lc-l, .atlas .a-taskpage .a-tblock h3, .atlas .a-taskpage .a-tsub,
+.atlas .a-taskpage .a-quote .a-quote-by, .atlas .a-taskpage .a-rrow .a-rrow-k, .atlas .a-rail-head, .atlas .a-life-head, .atlas .a-field-label,
+.atlas .a-demo-label, .atlas .a-mappane .a-mband, .atlas .a-mappane .a-gn .a-gproj, .atlas .a-ntf-sec h3, .atlas .a-cx-card .a-cx-q h3,
+.atlas .a-cx-guide h3, .atlas .a-keygroup h3, .atlas .a-cx-models thead th {
+  text-transform: none; letter-spacing: -.003em; font-size: 13px; font-weight: 650; color: var(--a-text-2); }
+.atlas .a-rail-head { font-size: 12px; color: var(--a-film-text); }
+
+/* State marks are drawn crisply at every size. */
+.atlas .a-bead { flex: none; overflow: visible; }
+
+/* A family's progress: one rounded bar split by state, the empty track is what has not started. */
+.atlas .a-sheet .a-c-team { gap: 10px; }
+.atlas .a-prog { display: flex; flex: none; gap: 2px; width: 64px; height: 6px; padding: 0; border-radius: 3px; overflow: hidden;
+  background: var(--a-line); }
+.atlas .a-prog i { display: block; min-width: 3px; height: 100%; transition: flex-grow .5s var(--a-spring); }
+.atlas .a-prog .a-prog-done { background: var(--a-ok-fill); }
+.atlas .a-prog .a-prog-canceled { background: color-mix(in srgb, var(--a-idle) 45%, transparent); }
+.atlas .a-prog .a-prog-working { background: var(--a-live); }
+.atlas .a-prog .a-prog-waiting { background: var(--a-water); opacity: .75; }
+.atlas .a-prog .a-prog-needs { background: var(--a-ask-fill); }
+.atlas .a-prog .a-prog-held { background: var(--a-idle); opacity: .7; }
+.atlas .a-prog .a-prog-pending { background: transparent; }
+.atlas .a-sheet .a-row.is-past .a-prog { opacity: .7; }
+.atlas .a-strand-n { margin-left: 0; }
+
+/* Status words take their state's colour; history stays quiet. */
+.atlas .a-c-now .a-l.a-tone-work, .atlas .a-ih .a-ih-state.a-tone-work { color: var(--a-work); }
+.atlas .a-c-now .a-l.a-tone-wait, .atlas .a-ih .a-ih-state.a-tone-wait { color: var(--a-block); }
+
+/* The open work, in proportion: a thin bar under the counts, split the same way as the counts. */
+.atlas .a-now-wrap { display: grid; flex: none; }
+.atlas .a-nowbar { display: flex; gap: 3px; height: 5px; margin: 0 28px 8px; border-radius: 3px; overflow: hidden; }
+.atlas .a-nowbar i { display: block; min-width: 4px; border-radius: 3px; transition: flex-grow .6s var(--a-spring); }
+.atlas .a-nowbar .is-needs { background: var(--a-ask-fill); }
+.atlas .a-nowbar .is-working { background: var(--a-live); }
+.atlas .a-nowbar .is-waiting { background: var(--a-water); opacity: .8; }
+.atlas .a-nowbar .is-held { background: var(--a-idle); opacity: .6; }
+.atlas .a-nowbar .is-pending { background: transparent; box-shadow: inset 0 0 0 1.25px color-mix(in srgb, var(--a-idle) 70%, transparent); }
+
+/* Counts read in their state's colour once there is something to count. */
+.atlas .a-now .a-now-item--waiting:not(.is-zero) .a-now-n { color: var(--a-block); }
+.atlas .a-now .a-now-item--done .a-now-n { color: var(--a-text); }
+
+/* A quiet workspace says so plainly instead of "nothing matches". */
+.atlas .a-ol-quiet { display: flex; align-items: center; gap: 10px; margin: 22px 28px 6px; color: var(--a-text-2); font-size: 14px; }
+.atlas .a-ol-quiet .a-bead { width: 18px; height: 18px; }
+
+/* Selection is graphite: a quiet tint and a fine line. */
+.atlas .a-sheet .a-row.is-selected::after { background: var(--a-sel); box-shadow: inset 0 0 0 1px var(--a-line-2); }
+
+@media (prefers-reduced-motion: reduce) {
+  .atlas .a-prog i, .atlas .a-nowbar i { transition: none; }
+}
+
+/* Primary actions use the system blue. */
+.atlas .a-btn--primary, .atlas .a-btn--primary:hover:not(:disabled) { background: var(--a-primary); border-color: var(--a-primary); color: #fff; }
+.atlas .a-app--lumen .a-topbar .a-btn--primary { box-shadow: 0 6px 16px -8px color-mix(in srgb, var(--a-primary) 70%, transparent); }
+.atlas .a-btn--primary .a-kbd { background: rgba(255, 255, 255, .2); color: #fff; border-color: transparent; }
+
+/* Floating chrome is a translucent material over the content. */
+.atlas .a-app--lumen .a-rail { background: var(--a-film); -webkit-backdrop-filter: var(--a-blur); backdrop-filter: var(--a-blur);
+  box-shadow: 0 0 0 .5px var(--a-line-2), 0 18px 40px -28px rgba(0, 0, 0, .35); }
+
+/* Colour labels: a bold tag at the edge of each labelled row, so a group of tasks reads as a group. */
+.atlas .a-sheet .a-row > .a-tag { position: absolute; left: 3px; top: 9px; bottom: 9px; width: 4px; border-radius: 3px; pointer-events: none; }
+.atlas .a-row[data-tag="violet"] > .a-tag { background: var(--a-tag-violet); }
+.atlas .a-row[data-tag="blue"] > .a-tag { background: var(--a-tag-blue); }
+.atlas .a-row[data-tag="cyan"] > .a-tag { background: var(--a-tag-cyan); }
+.atlas .a-row[data-tag="green"] > .a-tag { background: var(--a-tag-green); }
+.atlas .a-row[data-tag="yellow"] > .a-tag { background: var(--a-tag-yellow); }
+.atlas .a-row[data-tag="orange"] > .a-tag { background: var(--a-tag-orange); }
+.atlas .a-row[data-tag="red"] > .a-tag { background: var(--a-tag-red); }
+.atlas .a-row[data-tag="pink"] > .a-tag { background: var(--a-tag-pink); }
+
+/* ------------------------------------------------------------------ the sidebar
+   A floating translucent sidebar in the manner of a native desktop app: pages, smart lists with live
+   counts, projects and colour labels, in compact rows with a quiet grey selection. */
+:root.a-rail-pinned .atlas .a-app.a-app--lumen { padding-left: 268px; }
+.atlas .a-app--lumen .a-rail { left: 10px; top: 10px; bottom: 10px; padding: 10px 8px; border-radius: 18px; color: var(--a-text-2); }
+.atlas .a-app--lumen .a-rail.is-open { width: 248px; background: var(--a-film); box-shadow: 0 0 0 .5px var(--a-line-2), 0 24px 60px -30px rgba(0, 0, 0, .4); }
+.atlas .a-app--lumen .a-rail.is-open .a-rail-link { grid-template-columns: 30px minmax(0, 1fr) auto; min-height: 32px; border-radius: 8px; color: var(--a-text); }
+.atlas .a-app--lumen .a-rail.is-open .a-rail-nav .a-rail-link small, .atlas .a-app--lumen .a-rail.is-open .a-rail-projects .a-rail-link small { display: none; }
+.atlas .a-app--lumen .a-rail.is-open .a-rail-text b { font-size: 13.5px; font-weight: 520; letter-spacing: -.005em; }
+.atlas .a-app--lumen .a-rail.is-open .a-rail-icon { color: var(--a-accent); }
+.atlas .a-app--lumen .a-rail .a-rail-link:hover { background: var(--a-film-2); }
+.atlas .a-app--lumen .a-rail .a-rail-puck { left: 8px; right: 8px; border-radius: 8px; background: var(--a-film-3); box-shadow: none; }
+.atlas .a-app--lumen .a-rail.is-open .a-rail-link[aria-current="true"] { background: var(--a-film-3); }
+.atlas .a-app--lumen .a-rail-head { height: 26px; padding: 6px 0 0 10px; font-size: 11.5px; font-weight: 650; letter-spacing: 0; text-transform: none; color: var(--a-text-3); }
+.atlas .a-app--lumen .a-rail-sep { margin: 6px 10px; background: transparent; }
+.atlas .a-app--lumen .a-rail.is-open .a-rail-tile { width: 20px; height: 20px; border-radius: 6px; font-size: 10.5px; box-shadow: none;
+  color: #fff; background: hsl(var(--hue) 55% 52%); }
+.atlas .a-app--lumen .a-rail .a-rail-project.is-need .a-rail-tile, .atlas .a-app--lumen .a-rail .a-rail-project.is-live .a-rail-tile { color: #fff; background: hsl(var(--hue) 55% 52%); box-shadow: none; }
+.atlas .a-rail-count { padding-right: 8px; font-size: 12.5px; color: var(--a-text-3); }
+.atlas .a-rail:not(.is-open) .a-rail-count { display: none; }
+.atlas .a-rail .a-rail-list.is-need .a-rail-count { color: var(--a-ask); font-weight: 650; }
+.atlas .a-rail .a-rail-list.is-zero .a-rail-count { opacity: .55; }
+.atlas .a-rail-swatch { display: block; width: 13px; height: 13px; border-radius: 50%; box-shadow: inset 0 0 0 .5px rgba(0, 0, 0, .15); }
+.atlas .a-rail-tag[data-color="red"] .a-rail-swatch { background: var(--a-tag-red); }
+.atlas .a-rail-tag[data-color="orange"] .a-rail-swatch { background: var(--a-tag-orange); }
+.atlas .a-rail-tag[data-color="yellow"] .a-rail-swatch { background: var(--a-tag-yellow); }
+.atlas .a-rail-tag[data-color="green"] .a-rail-swatch { background: var(--a-tag-green); }
+.atlas .a-rail-tag[data-color="cyan"] .a-rail-swatch { background: var(--a-tag-cyan); }
+.atlas .a-rail-tag[data-color="blue"] .a-rail-swatch { background: var(--a-tag-blue); }
+.atlas .a-rail-tag[data-color="violet"] .a-rail-swatch { background: var(--a-tag-violet); }
+.atlas .a-rail-tag[data-color="pink"] .a-rail-swatch { background: var(--a-tag-pink); }
+
+/* The content sheet: one rounded white-on-grey canvas beside the sidebar. */
+.atlas .a-app--lumen .a-wmain { background: var(--a-sheet); }
+
+/* A family's progress keeps its column down to narrow windows; the columns are sized to their content. */
+@container atlas-work (min-width: 981px) {
+  .atlas .a-sheet .a-row { grid-template-columns: minmax(0, 2.1fr) 104px 184px minmax(0, 1.4fr) 74px; }
+}
+.atlas .a-app--lumen .a-rail.is-open .a-rail-link { min-height: 30px; }
+
+/* ------------------------------------------------------------------ the Map, in the same language
+   A clean canvas (no dot grid), cards in the same white material as the List's groups, the same
+   progress bar and the same colour tags, and edges as quiet hairlines. */
+.atlas .a-mappane { background-image: none; background-color: var(--a-sheet); }
+.atlas .a-mappane .a-mzone { background: color-mix(in srgb, var(--a-group) 72%, transparent); border-radius: 18px; box-shadow: 0 0 0 .5px var(--a-line); }
+.atlas .a-mappane .a-gr { border: 0; border-radius: 12px; background: var(--a-group); box-shadow: var(--a-shadow-1); }
+.atlas .a-mappane .a-gr:hover, .atlas .a-mappane .a-gr.is-hl { box-shadow: var(--a-shadow-2); }
+.atlas .a-mappane .a-gr.is-selected { box-shadow: 0 0 0 2px var(--a-accent), var(--a-shadow-2); }
+.atlas .a-mappane .a-gr.a-gr--ask { background: var(--a-group); box-shadow: inset 0 0 0 1.5px var(--a-ask-line), var(--a-shadow-1); }
+.atlas .a-mappane .a-gn { border-radius: 16px; }
+.atlas .a-mappane .a-gn:hover, .atlas .a-mappane .a-gn.is-hl { background: var(--a-group); box-shadow: var(--a-shadow-1); }
+.atlas .a-mappane .a-gn.is-selected { background: var(--a-group); box-shadow: 0 0 0 2px var(--a-accent), var(--a-shadow-2); }
+.atlas .a-mappane .a-gn.is-selected .a-gt { color: var(--a-text); }
+.atlas .a-mappane .a-gav .a-ring.a-ring--sel { border-color: transparent; }
+.atlas .a-mappane .a-gav .a-gbadge { box-shadow: 0 0 0 2.5px var(--a-group); background: var(--a-group); }
+.atlas .a-mappane .a-gr-strand, .atlas .a-mappane .a-gstrand { display: inline-flex; align-items: center; gap: 8px; }
+.atlas .a-mappane .a-gstrand .a-prog { width: 72px; }
+.atlas .a-mappane .a-gr-strand .a-prog { width: 54px; height: 5px; }
+.atlas .a-mappane .a-gn > .a-tag, .atlas .a-mappane .a-gr > .a-tag { position: absolute; pointer-events: none; border-radius: 3px; }
+.atlas .a-mappane .a-gr > .a-tag { left: 3px; top: 8px; bottom: 8px; width: 4px; }
+.atlas .a-mappane .a-gn > .a-tag { top: 2px; left: 50%; width: 34px; height: 4px; transform: translateX(-50%); }
+.atlas .a-mappane [data-tag="violet"] > .a-tag { background: var(--a-tag-violet); }
+.atlas .a-mappane [data-tag="blue"] > .a-tag { background: var(--a-tag-blue); }
+.atlas .a-mappane [data-tag="cyan"] > .a-tag { background: var(--a-tag-cyan); }
+.atlas .a-mappane [data-tag="green"] > .a-tag { background: var(--a-tag-green); }
+.atlas .a-mappane [data-tag="yellow"] > .a-tag { background: var(--a-tag-yellow); }
+.atlas .a-mappane [data-tag="orange"] > .a-tag { background: var(--a-tag-orange); }
+.atlas .a-mappane [data-tag="red"] > .a-tag { background: var(--a-tag-red); }
+.atlas .a-mappane [data-tag="pink"] > .a-tag { background: var(--a-tag-pink); }
+.atlas .a-mappane .a-edges .a-e { stroke: var(--a-line-2); }
+.atlas .a-mappane .a-edges .a-e.a-e--ask { stroke: var(--a-ask-line); }
+
+/* ------------------------------------------------------------------ living light (the signature)
+   Work in progress is light. A gleam travels round the mark of each running agent, a ring of light
+   turns round a working agent's face on the Map, and a sheen crosses the working share of the
+   workspace. Only real, recorded activity is lit; reduced motion keeps every light still. */
+.atlas .a-bead-gleam { stroke: var(--a-lumen-2); transform-origin: 8px 8px; transform-box: view-box; animation: lumen-orbit 2.4s linear infinite; }
+.atlas .a-bead.is-live { filter: drop-shadow(0 0 3px var(--a-lumen-glow)); }
+@keyframes lumen-orbit { to { transform: rotate(360deg); } }
+.atlas .a-mappane .a-gav .a-ring.a-ring--work { inset: -5px; border: 0; opacity: 1; border-radius: 50%;
+  background: conic-gradient(from 0deg, transparent 0 55%, color-mix(in srgb, var(--a-lumen) 30%, transparent) 72%, var(--a-lumen-2) 92%, var(--a-lumen) 100%);
+  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 2.5px), #000 calc(100% - 2px));
+  mask: radial-gradient(farthest-side, transparent calc(100% - 2.5px), #000 calc(100% - 2px));
+  animation: lumen-orbit 2.6s linear infinite; }
+.atlas .a-nowbar .is-working { position: relative; overflow: hidden; }
+.atlas .a-nowbar .is-working::after { content: ''; position: absolute; inset: 0; transform: translateX(-100%);
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, .55) 50%, transparent); animation: lumen-sheen 3.2s var(--a-ease) infinite; }
+@keyframes lumen-sheen { 0% { transform: translateX(-100%); } 60%, 100% { transform: translateX(100%); } }
+.atlas .a-nowbar .is-needs { box-shadow: 0 0 10px -1px color-mix(in srgb, var(--a-ask-fill) 60%, transparent); }
+.atlas .a-nowbar { height: 6px; }
+@media (prefers-reduced-motion: reduce) {
+  .atlas .a-bead-gleam, .atlas .a-mappane .a-gav .a-ring.a-ring--work, .atlas .a-nowbar .is-working::after { animation: none; }
+  .atlas .a-nowbar .is-working::after { display: none; }
+}
+
+/* The sidebar speaks in the signature colour: the current place is a soft ultramarine pill. */
+.atlas .a-app--lumen .a-rail .a-rail-puck { background: var(--a-film-3); }
+.atlas .a-app--lumen .a-rail.is-open .a-rail-link[aria-current="page"], .atlas .a-app--lumen .a-rail.is-open .a-rail-link[aria-current="true"] { color: var(--a-accent); }
+.atlas .a-app--lumen .a-rail.is-open .a-rail-link[aria-current="true"] { background: var(--a-film-3); }
+.atlas .a-app--lumen .a-rail.is-open .a-rail-nav .a-rail-icon { color: var(--a-text-3); }
+.atlas .a-app--lumen .a-rail.is-open .a-rail-nav .a-rail-link[aria-current="page"] .a-rail-icon { color: var(--a-accent); }
+.atlas .a-app--lumen .a-rail-head { color: var(--a-text-4); font-size: 11px; font-weight: 600; letter-spacing: .02em; }

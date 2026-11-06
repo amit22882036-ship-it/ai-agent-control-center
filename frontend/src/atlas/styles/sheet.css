@@ -133,8 +133,8 @@
 .atlas .a-side .a-sheet .a-sheet-reveal { left: 8px; right: 8px; }
 
 /* Narrower windows drop columns from the right edge inwards, never the task or its state. */
-@container atlas-work (max-width: 1180px) {
-  .atlas .a-sheet .a-row { grid-template-columns: minmax(0, 2fr) 196px minmax(0, 1.4fr) 70px; }
+@container atlas-work (max-width: 980px) {
+  .atlas .a-sheet .a-row { grid-template-columns: minmax(0, 2fr) 180px minmax(0, 1.4fr) 70px; }
   .atlas .a-sheet .a-row .a-c-team { display: none; }
 }
 @container atlas-work (max-width: 900px) {
@@ -179,8 +179,6 @@
 
 /* ------------------------------------------------------------------ refinements */
 /* A marked task shows one mark: the grease circle around a hand drawn in the same marker. */
-.atlas .a-sheet .a-row.is-marked .a-row-bead .a-bead circle:first-child { fill: transparent; }
-.atlas .a-sheet .a-row.is-marked .a-row-bead .a-bead path { stroke: var(--a-mark); stroke-width: 1.35; }
 /* The section being read stays named while its heading is out of view: a scroll-edge band the rows
    pass under, with the label where the heading itself sits, so the heading seems to stop there. */
 .atlas .a-sheet-pin { position: sticky; top: 0; height: 0; z-index: 4; pointer-events: none; }
@@ -275,8 +273,6 @@
 /* The light table: the sheet glows faintly from the top, where the work is. */
 .atlas .a-app--lumen .a-wmain { background: radial-gradient(120% 70% at 50% -10%, color-mix(in srgb, var(--a-ground-1) 92%, transparent), transparent 62%), var(--a-sheet); }
 .atlas .a-now .a-now-mark { width: 66px; height: 42px; left: -12px; top: 50%; translate: 0 -50%; }
-.atlas .a-now .a-now-item--needs:not(.is-zero) .a-bead circle:first-child { fill: transparent; }
-.atlas .a-now .a-now-item--needs:not(.is-zero) .a-bead path { stroke: var(--a-mark); stroke-width: 1.35; }
 
 /* ------------------------------------------------------------------ the Map: the chosen family burns brightest */
 .atlas .a-mappane .a-minner.has-anchor .a-mzone:not(.is-current) { opacity: .5; }
@@ -306,9 +302,6 @@
 /* ------------------------------------------------------------------ the loupe (details panel) */
 .atlas .a-ih-state .a-ih-bead { position: relative; display: grid; place-items: center; width: 18px; height: 18px; }
 .atlas .a-ih-state .a-ih-bead .a-bead { position: relative; z-index: 1; }
-.atlas .a-ih-state .a-ih-bead .a-mark { width: 34px; height: 28px; }
-.atlas .a-ih-state.is-marked .a-ih-bead .a-bead circle:first-child { fill: transparent; }
-.atlas .a-ih-state.is-marked .a-ih-bead .a-bead path { stroke: var(--a-mark); stroke-width: 1.35; }
 .atlas .a-app--lumen .a-work > .a-inspector { animation: atlas-loupe-in .2s ease-out both; }
 @keyframes atlas-loupe-in { from { opacity: .4; } to { opacity: 1; } }
 @media (prefers-reduced-motion: reduce) { .atlas .a-app--lumen .a-work > .a-inspector { animation: none; } }

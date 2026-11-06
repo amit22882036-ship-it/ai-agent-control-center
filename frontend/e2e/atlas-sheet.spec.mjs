@@ -26,9 +26,9 @@ test('a busy workspace opens as one line per family, with what needs you marked 
   await expect(page.locator('.a-sheet-sec').first()).toHaveText(/^Needs you/)
   expect(await page.locator('.a-sheet [role="treeitem"]').count()).toBeLessThan(80)
   // Families that need you show only the path to what needs you, and say what is not shown.
-  // What needs you is marked in the List and stands on the Site above it as a building.
+  // What needs you is marked in the List, and the bar under the counts shows open work in proportion.
   await expect(page.locator('.a-sheet .a-row.is-marked').first()).toBeVisible()
-  await expect(page.getByRole('listbox', { name: /^Site/ }).getByRole('option').first()).toBeAttached()
+  await expect(page.locator('.a-nowbar .is-needs')).toHaveCount(1)
   await expect(page.locator('.a-sheet-more').first()).toContainText(/more tasks? in this branch/)
   // History is offered, not listed, until asked for, and then grouped by day.
   await page.locator('.a-sheet').evaluate((sheet) => { sheet.scrollTop = sheet.scrollHeight })
@@ -214,48 +214,9 @@ test('the sheet keeps one Tab stop and moves by page with the keyboard', async (
   expect(await page.evaluate(() => document.querySelector('.a-sheet').scrollTop)).toBeLessThan(80)
 })
 
-test('reduced motion: the site panel folds without a transition', async ({ page }) => {
+test('reduced motion: progress bars change without a transition', async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' })
   await openWork(page, { tasks: showcase() })
-  const panel = page.locator('.a-panorama')
-  expect(await panel.evaluate((element) => getComputedStyle(element).transitionDuration)).toBe('0s')
-})
-
-test('the Site shows every open family as a building; the keyboard walks them and selects one, and the panel folds away and stays folded', async ({ page }) => {
-  await openWork(page, { tasks: busy({ families: 60 }) })
-  const strip = page.getByRole('listbox', { name: /^Site/ })
-  const options = strip.getByRole('option')
-  expect(await options.count()).toBeGreaterThan(5)
-  // Each building is described in words: its task, its project and its floors by state.
-  await expect(options.first()).toHaveText(/\d+ tasks?: /)
-  await strip.focus()
-  await page.keyboard.press('ArrowRight')
-  await page.keyboard.press('Enter')
-  await expect(page).toHaveURL(/task=/)
-  await expect(page.locator('.a-sheet [aria-selected="true"]')).toHaveCount(1)
-  // Fold it away; the choice is remembered.
-  await page.getByRole('button', { name: 'Fold the site' }).click()
-  await expect(strip).toHaveCount(0)
-  await openWork(page, { tasks: busy({ families: 60 }) })
-  await expect(page.getByRole('listbox', { name: /^Site/ })).toHaveCount(0)
-  await page.getByRole('button', { name: 'Site', exact: true }).first().click()
-})
-
-test('the full Site opens with S, lays out every family by project and selects with the keyboard', async ({ page }) => {
-  await openWork(page, { tasks: busy({ families: 80 }) })
-  await page.locator('.a-whead').click({ position: { x: 5, y: 40 } })
-  await page.keyboard.press('s')
-  await expect(page).toHaveURL(/lens=site/)
-  const site = page.getByRole('listbox', { name: 'Site model of all work' })
-  await expect(site).toBeVisible()
-  expect(await site.getByRole('option').count()).toBeGreaterThan(40)
-  await site.focus()
-  await page.keyboard.press('End')
-  await page.keyboard.press('Enter')
-  await expect(page).toHaveURL(/task=/)
-  await expect(page.getByRole('complementary', { name: 'Task details' })).toBeVisible()
-  // L returns to the List.
-  await page.locator('.a-whead').click({ position: { x: 5, y: 40 } })
-  await page.keyboard.press('l')
-  await expect(page).not.toHaveURL(/lens=site/)
+  const segment = page.locator('.a-nowbar i').first()
+  expect(await segment.evaluate((element) => getComputedStyle(element).transitionDuration)).toBe('0s')
 })

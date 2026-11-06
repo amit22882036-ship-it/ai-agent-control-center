@@ -27,8 +27,10 @@ helper's result comes back through conflict-checked integration.
 
 ## Highlights
 
-- **One place to steer every agent.** A Work list and a Work Map of every task family, an attention
-  strip for what needs you, and replies, redirects, stops and resumes from the same window.
+- **One place to steer every agent.** A Work list and a Work Map of every task family, a sidebar of
+  smart lists (Needs you, Working, Waiting, On hold, Done) and colour labels, and replies, redirects,
+  stops and resumes from the same window. Every state reads at a glance: a word, a familiar symbol
+  and one colour.
 - **Isolation by default.** Each task works in its own Git worktree; your folder is never edited
   directly, and results come back only through journaled, conflict-checked integration.
 - **Explicit access levels.** Read only, Workspace or Full Access, mapped to each provider's own

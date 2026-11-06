@@ -139,7 +139,7 @@ test('Work moves between the tasks that need you in the List’s order, in both 
   // The Now strip counts them; the stepping bar appears once you are on one of them.
   await expect(page.getByRole('group', { name: 'What is happening' }).getByRole('button', { name: '2 Need you' })).toBeVisible()
   await expect(bar).toHaveCount(0)
-  await page.getByRole('button', { name: 'Go to the first task that needs you' }).click()
+  await page.getByRole('group', { name: 'What is happening' }).getByRole('button', { name: 'Next task that needs you' }).click()
   await expect(page).toHaveURL(/task=quoted/)
   await expect(bar).toContainText('1 of 2 that need you · Waiting for your reply')
   await bar.getByRole('button', { name: 'Next task that needs you' }).click()

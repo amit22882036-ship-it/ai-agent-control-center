@@ -7,7 +7,6 @@ import WorkSheet from '../components/work/WorkSheet'
 import NowStrip from '../components/work/NowStrip'
 import TaskMap from '../components/work/TaskMap'
 import TaskInspector from '../components/work/TaskInspector'
-import SiteModel from '../components/work/SiteModel'
 import ColorFilter from '../components/work/ColorFilter'
 import Welcome from '../components/work/Welcome'
 import { emptyStore, pathTo } from '../model/tasks.mjs'
@@ -15,9 +14,8 @@ import { reconcile } from '../model/selection.mjs'
 import { COLOR_VALUES, FILTERS, familyCounts, flatRows, inBranch, markedPaths, taskCounts, visibleRows } from '../model/workList.mjs'
 import { changedSince, rememberRecent, sheetRows } from '../model/workSheet.mjs'
 import { mapLayout } from '../model/mapLayout.mjs'
-import { siteLayout, stripLayout } from '../model/siteLayout.mjs'
-import { readFinishedOpen, readInspectorWidth, readMapDirection, readRecent, readSeen, readSitePanel, saveFinishedOpen, saveInspectorWidth, saveMapDirection,
-  saveRecent, saveSeen, saveSitePanel } from '../layout.mjs'
+import { readFinishedOpen, readInspectorWidth, readMapDirection, readRecent, readSeen, saveFinishedOpen, saveInspectorWidth, saveMapDirection,
+  saveRecent, saveSeen } from '../layout.mjs'
 import { projectDirectory, projectHue, projectLabel, projectMenu } from '../model/projects.mjs'
 import { captureAnchors, playLensTransition } from '../lensTransition'
 import { rememberWork, requestReply } from '../workContext'
@@ -27,8 +25,7 @@ import { StatusBead } from '../components/identity'
 
 const EMPTY = emptyStore()
 const FILTER_VALUES = new Set([...FILTERS.map((filter) => filter.value), 'changed'])
-const LENSES = [{ value: 'list', label: 'List', icon: 'list', title: 'List · L' }, { value: 'site', label: 'Site', icon: 'site', title: 'Site · S' },
-  { value: 'map', label: 'Map', icon: 'map', title: 'Map · M' }]
+const LENSES = [{ value: 'list', label: 'List', icon: 'list', title: 'List · L' }, { value: 'map', label: 'Map', icon: 'map', title: 'Map · M' }]
 const clip = (text, limit) => (text && text.length > limit ? text.slice(0, limit - 1).trimEnd() + '…' : text)
 // Up to this many loaded Tasks, every open family is shown expanded; beyond it, families are one
 // line each and a family that needs the person shows only the path to what needs them.
@@ -89,7 +86,7 @@ export default function WorkPage({ live, route, navigate, feed, derived, attenti
   const project = params.project && params.project.length <= 200 ? params.project : null
   const colorParam = typeof params.colors === 'string' ? params.colors : ''
   const colors = useMemo(() => new Set(colorParam.split(',').filter((value) => COLOR_VALUES.includes(value))), [colorParam])
-  const lens = params.lens === 'map' ? 'map' : params.lens === 'site' ? 'site' : 'list'
+  const lens = params.lens === 'map' ? 'map' : 'list'
   const side = lens === 'map' && params.side === '1'
   const focusParam = typeof params.focus === 'string' && params.focus && params.focus.length <= 200 ? params.focus : null
   const focus = focusParam && store.tasks[focusParam] ? focusParam : null
@@ -177,16 +174,6 @@ export default function WorkPage({ live, route, navigate, feed, derived, attenti
     return row.hasChildren || task.planned.unmaterialized > 0 || (!store.complete && (task.childCount ?? 0) > loaded)
       || (row.depth === 0 && row.parentId === null && derived.byTop[id] && derived.byTop[id].placement !== 'root')
   }, direction }) : null), [lens, view, derived, store, direction])
-  // The Site: the same families as a massing model. The full Site lays every district out; the
-  // panorama above the List keeps open work standing and gathers each project's history into one block.
-  const siteProjects = useMemo(() => directory.projects.filter((item) => !item.hidden || item.id === project).map((item) => ({ id: item.id, name: item.name })),
-    [directory, project])
-  const [panel, setPanel] = useState(() => readSitePanel())
-  const togglePanel = useCallback(() => setPanel((open) => { saveSitePanel(!open); return !open }), [])
-  const site = useMemo(() => (lens === 'site' ? siteLayout(derived, view, siteProjects) : null), [lens, derived, view, siteProjects])
-  const strip = useMemo(() => (lens === 'list' && panel ? stripLayout(derived, view, siteProjects) : null), [lens, panel, derived, view, siteProjects])
-  const selectedTop = selectedId && store.tasks[selectedId] ? derived.forest.rootOf[selectedId] ?? selectedId : null
-  const titleOf = useCallback((id) => store.tasks[id]?.title || 'Untitled task', [store])
   const counts = useMemo(() => taskCounts(store, derived, project), [store, derived, project])
   const changedCount = useMemo(() => {
     let n = 0
@@ -270,7 +257,6 @@ export default function WorkPage({ live, route, navigate, feed, derived, attenti
       const key = event.key.toLowerCase()
       if (key === 'l' && lens !== 'list') { event.preventDefault(); switchLens('list') }
       else if (key === 'm' && lens !== 'map') { event.preventDefault(); switchLens('map') }
-      else if (key === 's' && lens !== 'site') { event.preventDefault(); switchLens('site') }
       else if (key === 'f' && selectedId && store.tasks[selectedId]) { event.preventDefault(); focusBranch(selectedId) }
       else if (key === 'o' && selectedId && store.tasks[selectedId]) { event.preventDefault(); openTask(selectedId) }
       else if (key === 'a' && attentionIds.length) { event.preventDefault(); goAttention(event.shiftKey ? -1 : 1) }
@@ -325,7 +311,9 @@ export default function WorkPage({ live, route, navigate, feed, derived, attenti
   const crumbs = focus ? pathTo(derived.forest, focus).reverse() : []
   const hueOf = useCallback((id) => (id ? projectHue(id) : 250), [])
 
-  const empty = <p className="a-ol-empty">{project && !derived.families.some((family) => family.projectId === project)
+  // With nothing filtered and nothing open, the workspace is quiet, not empty: history is below.
+  const unfiltered = filter === 'all' && !project && !query && !colors.size && !focus
+  const empty = unfiltered ? <p className="a-ol-quiet" role="status"><StatusBead state="done" decorative />Nothing is running or waiting for you right now.</p> : <p className="a-ol-empty">{project && !derived.families.some((family) => family.projectId === project)
     ? `No loaded tasks in ${projectName(project)}.${store.complete ? '' : ' Older tasks may belong to it.'}`
     : filter === 'changed' ? 'Nothing changed since you last looked.' : 'Nothing matches.'}{' '}
     <Button size="sm" onClick={() => { setQuery(''); go({ filter: undefined, project: undefined, colors: undefined, focus: undefined }) }}>Clear filters</Button></p>
@@ -343,12 +331,6 @@ export default function WorkPage({ live, route, navigate, feed, derived, attenti
     content = <div className="a-work-state"><Skeleton lines={6} label="Loading your tasks" /></div>
   } else if (!Object.keys(store.tasks).length) {
     content = <div className="a-work-state a-work-state--welcome"><Welcome directory={directory} navigate={navigate} /></div>
-  } else if (lens === 'site') {
-    content = <>
-      <SiteModel mode="site" layout={site} selectedTop={selectedTop} titleOf={titleOf} projectNameOf={projectName}
-        onSelect={select} onOpen={openTask} onArchive={(id) => go({ project: id === '__none' ? undefined : id, filter: 'done' })} />
-      <p className="a-site-hint" aria-hidden="true">Drag to turn · Shift-drag to move · Scroll to zoom · Double-click a building to open it · [ ] turn · 0 fit</p>
-    </>
   } else if (lens === 'map') {
     content = <>
       <TaskMap layout={layout} view={view} store={store} derived={derived} projectName={projectName} now={now} selectedId={selectedId}
@@ -387,13 +369,6 @@ export default function WorkPage({ live, route, navigate, feed, derived, attenti
           ...(selectedId && store.tasks[selectedId] ? [{ separator: true }, { label: 'Open the selected task', icon: 'open', hint: 'O', onSelect: () => openTask(selectedId) },
             { label: 'Focus the selected branch', icon: 'focus', hint: 'F', onSelect: () => focusBranch(selectedId) }] : []),
         ]} />
-      </div>}
-      {ready && !welcoming && lens === 'list' && <div className={`a-panorama${panel ? '' : ' is-closed'}`}>
-        {panel && strip && <SiteModel mode="strip" layout={strip} selectedTop={selectedTop} titleOf={titleOf} projectNameOf={projectName}
-          onSelect={select} onOpen={openTask} onArchive={(id) => go({ project: id === '__none' ? undefined : id, filter: 'done' })}
-          label="Site: open work as buildings, each project's history as one block" />}
-        <button type="button" className="a-panorama-toggle" onClick={togglePanel} aria-expanded={panel}
-          title={panel ? 'Fold the site away' : 'Show the site above the list'}><Icon name="site" size={14} />{panel ? 'Fold the site' : 'Site'}</button>
       </div>}
       {ready && !welcoming && <NowStrip counts={counts} families={familyTotals} filter={filter} onScope={scope} partial={partial}
         changedCount={changedCount} onChanged={scope} onClearChanged={clearChanged} onFirstNeed={attentionIds.length ? () => goAttention(1) : null}

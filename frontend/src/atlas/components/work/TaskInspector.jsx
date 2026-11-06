@@ -16,7 +16,6 @@ import { AgentFooterActions, AgentNowPanels, AgentSettingsPanels, AgentStopResul
 import { useAgentScope } from '../agent/useAgentScope'
 import { OutputHistory } from '../agent/OutputHistory'
 import TaskTitle from '../task/TaskTitle'
-import GreaseMark from './GreaseMark'
 
 const TABS = [{ id: 'now', label: 'Now' }, { id: 'activity', label: 'Activity' }, { id: 'output', label: 'Output' }, { id: 'settings', label: 'Settings' }]
 const AGENT_STATUS = { running: 'Working', waiting: 'Waiting', finished: 'Finished', stopped: 'Stopped' }
@@ -281,7 +280,7 @@ export default function TaskInspector({ store, derived, taskId, selection, proje
         <IconButton icon="focus" size="sm" label="Focus this branch (F)" onClick={() => onFocusBranch(taskId)} />
       </div>
     </div>
-    <div className={`a-ih-state a-tone-${status.tone}${status.attention ? ' is-marked' : ''}`}><span className="a-ih-bead">{status.attention && <GreaseMark id={`loupe-${taskId}`} />}<StatusBead state={status.bead} decorative /></span>{status.label}
+    <div className={`a-ih-state a-tone-${status.tone}${status.attention ? ' is-marked' : ''}`}><span className="a-ih-bead"><StatusBead state={status.bead} decorative /></span>{status.label}
       <span className="a-muted"> · {nowLine.second || time.text}</span></div>
   </div>
   const idBase = `insp-${taskId}`

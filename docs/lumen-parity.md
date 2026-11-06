@@ -26,21 +26,21 @@ its history is in [Atlas migration](atlas-migration.md) and the
 
 ## Visual language
 
-Lumen is drawn as an orienteering map. Every colour has one meaning that never changes:
+Lumen uses one plain signal language (see [DESIGN.md](../DESIGN.md)). Every state is a word, a
+familiar symbol in a circle and one colour, and each colour keeps its meaning on every screen:
 
-| Ink | Means |
+| Colour | Means |
 | --- | --- |
-| Course purple | Only what needs you |
-| Forest green | An agent recorded working |
-| Water blue | Waiting |
-| Olive | On hold or blocked |
-| Contour brown | The hierarchy's lines and finished work |
-| Open-land yellow | Your selection |
+| Orange (filled "!") | Only what needs you |
+| Blue (half-filled ring) | An agent recorded working |
+| Slate (three dots) | Waiting on something else |
+| Green (check) | Finished |
+| Red (filled "×") | Failed |
+| Grey | Resting: paused, blocked, not started, canceled |
 
-What needs you is laid out as a **course**: numbered controls in the List's left gutter, joined by
-one line in the order the A key steps through them; the Map circles the same tasks with the same
-numbers. Light and dark ("night map") appearances, reduced motion, reduced transparency and higher
-contrast are honoured.
+A family's progress is a bar and a "finished/total" count; the Now strip adds one bar that shows
+open work in proportion. Light and dark appearances, reduced motion, reduced transparency and
+higher contrast are honoured.
 
 ## Not done yet
 

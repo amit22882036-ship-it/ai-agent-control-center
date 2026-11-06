@@ -41,15 +41,6 @@ export function saveMapDirection(direction, storage) {
 }
 
 // Whether the Work sheet lists finished families or only offers to ("open", "closed" or unset).
-// Whether the Site panorama is shown above the List (shown unless the person folded it away).
-export const SITE_PANEL_KEY = 'control-center.atlas.site-panel'
-export function readSitePanel(storage) {
-  try { return (storage ?? globalThis.localStorage)?.getItem(SITE_PANEL_KEY) !== 'closed' } catch { return true }
-}
-export function saveSitePanel(open, storage) {
-  try { (storage ?? globalThis.localStorage)?.setItem(SITE_PANEL_KEY, open ? 'open' : 'closed') } catch { /* Optional. */ }
-}
-
 export const FINISHED_KEY = 'control-center.atlas.finished-open'
 export function readFinishedOpen(storage) {
   try { const value = (storage ?? globalThis.localStorage)?.getItem(FINISHED_KEY); return value === 'open' ? true : value === 'closed' ? false : null } catch { return null }

@@ -13,8 +13,7 @@ import './styles/connections.css'
 import './styles/notifications.css'
 import './styles/lumen.css'
 import './styles/sheet.css'
-import './styles/site.css'
-import './styles/massing.css'
+import './styles/signal.css'
 import TopBar from './shell/TopBar'
 import Rail from './shell/Rail'
 import WorkPage from './pages/WorkPage'
@@ -30,7 +29,7 @@ import { readRecent } from './layout.mjs'
 import { useAppearance, useAtlasRoute, useConnections, useLiveResource, useLiveStatus, useNotificationPreference, useProviderNotices, useTaskFeed } from './hooks'
 import { useBrowserNotifications } from './notifications'
 import { emptyStore } from './model/tasks.mjs'
-import { deriveWorkspace, projectStats } from './model/workList.mjs'
+import { deriveWorkspace, familyCounts, projectStats, rowColor, taskCounts } from './model/workList.mjs'
 import { projectDirectory } from './model/projects.mjs'
 import { API_BASE } from '../apiClient.mjs'
 import { attentionInView, attentionItems, attentionSummary, stepAttention } from './model/attention.mjs'
@@ -65,6 +64,13 @@ export default function AtlasApp() {
   const projectsResource = useLiveResource(`${API_BASE}/projects`, live.version)
   const directory = useMemo(() => projectDirectory(projectsResource), [projectsResource])
   const projectFacts = useCallback((id) => projectStats(store, derived, id), [store, derived])
+  // The sidebar's smart lists and colour labels count loaded tasks, as the Work page does.
+  const sideCounts = useMemo(() => ({ ...taskCounts(store, derived), doneFamilies: familyCounts(derived, null).done }), [store, derived])
+  const sideTags = useMemo(() => {
+    const out = {}
+    for (const id of Object.keys(store.tasks)) { const color = rowColor(derived, id); out[color] = (out[color] || 0) + 1 }
+    return out
+  }, [store, derived])
   // Opening a Task from outside Work keeps the Work view the person had (project, filters, view).
   const showTask = useCallback((taskId, { reply = false } = {}) => {
     if (reply) requestReply(taskId)
@@ -168,7 +174,8 @@ export default function AtlasApp() {
       <button type="button" className="a-skip" onClick={() => main.current?.focus()}>Skip to content</button>
       <div className="a-ground" aria-hidden="true" />
       <Rail route={route} markPush={markPush} directory={directory} projectFacts={projectFacts} needs={summary.reported || 0}
-        toolsText={toolsText} toolsName={toolsName} currentProject={route.name === 'work' ? route.params?.project || null : null} />
+        toolsText={toolsText} toolsName={toolsName} currentProject={route.name === 'work' ? route.params?.project || null : null}
+        counts={feed.readAt ? sideCounts : null} tags={feed.readAt ? sideTags : null} />
       <TopBar live={live} appearance={appearance} markPush={markPush} onGoTo={openGoTo}
         attention={{ summary, onNext: nextQuestion, panel: { attention, tools, notices, preference: notifications, delivery,
           onReply: (taskId) => showTask(taskId, { reply: true }), onShow: (taskId) => showTask(taskId),

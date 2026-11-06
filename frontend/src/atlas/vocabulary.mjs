@@ -38,3 +38,9 @@ export function toolMark(tool) {
 export function colorLabel(color) {
   return AGENT_COLORS.includes(color) ? color : 'neutral'
 }
+
+// The colour label of an agent, when it carries one worth showing (removed agents and the neutral
+// label show none).
+export function tagOf(agent, removed = false) {
+  return agent && !removed && agent.color && agent.color !== 'neutral' ? agent.color : null
+}

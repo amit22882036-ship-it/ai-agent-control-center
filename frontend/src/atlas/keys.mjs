@@ -3,8 +3,7 @@
 // contenteditable or a textbox role), an IME composition, a held-down repeat and any Ctrl, Alt or
 // Meta combination (browser and system shortcuts) all leave the key alone.
 const FIELDS = 'input, textarea, select, [contenteditable=""], [contenteditable="true"], [role="textbox"], [role="combobox"], [role="spinbutton"]'
-// The Site is a listbox that is part of the page, not a popup, so it never counts as one open.
-const OVERLAYS = 'dialog[open], [role="dialog"], [role="alertdialog"], [role="menu"], [role="listbox"]:not([data-site])'
+const OVERLAYS = 'dialog[open], [role="dialog"], [role="alertdialog"], [role="menu"], [role="listbox"]'
 
 export function overlayOpen(root = globalThis.document) {
   return Boolean(root?.querySelector(OVERLAYS))

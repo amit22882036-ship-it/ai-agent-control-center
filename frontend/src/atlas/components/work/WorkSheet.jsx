@@ -1,9 +1,8 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import Icon from '../Icon'
-import { Avatar, StatusBead } from '../identity'
+import { Avatar, ProgressBar, StatusBead } from '../identity'
+import { tagOf } from '../../vocabulary.mjs'
 import { Button } from '../primitives'
-import GreaseMark from './GreaseMark'
-import TowerGlyph from './TowerGlyph'
 import { PLACEMENT_NOTES, nowView, taskCategory, timeView, treeKey, whoView } from '../../model/workList.mjs'
 import { ROW, TASK_KINDS, familyStrand, focusable, sheetOffsets, sheetWindow } from '../../model/workSheet.mjs'
 
@@ -49,8 +48,7 @@ const TEAM = [
   ['pending', 'pending', 'not started'], ['done', 'done', 'finished'], ['canceled', 'stopped', 'canceled'],
 ]
 
-// A family's team at a glance: its building from the Site (floors by state) and how many of its
-// Tasks are finished, never a percentage.
+// A family's progress at a glance: its bar and how many of its tasks are finished, never a percentage.
 function Team({ derived, family }) {
   const strand = familyStrand(derived, family)
   const { counts } = strand
@@ -58,7 +56,7 @@ function Team({ derived, family }) {
   const words = parts.map(([key, , label]) => `${counts[key]} ${label}`)
   return <div className="a-c-team" title={`${counts.size} task${counts.size === 1 ? '' : 's'}: ${words.join(' · ')}`}>
     {counts.size > 1 && <span className="a-sr">Team of {counts.size}: {words.join(', ')}.</span>}
-    <TowerGlyph counts={counts} />
+    {counts.size > 1 && <ProgressBar counts={counts} />}
     {counts.size > 1 && <span className="a-strand-n a-num" aria-hidden="true">{strand.finished}/{counts.size}</span>}
   </div>
 }
@@ -79,6 +77,9 @@ const TaskRow = memo(function TaskRow({ entry, top, height, store, derived, proj
   const childCount = task.childCount ?? (derived.forest.children[row.id] || []).length
   const hiddenAttention = row.hasChildren && !row.expanded && derived.attentionBelow.has(row.id)
   const title = task.title || 'Untitled task'
+  // The colour label the person gave this task's agent, as a bold tag at the row's edge so groups
+  // of tasks stand out while scanning. Removed agents and the neutral label show none.
+  const tag = tagOf(who.agent, who.removed)
   const finished = entry.section === 'done'
   const asking = entry.kind === 'ask'
   const past = entry.kind === 'past' || entry.kind === 'pastm'
@@ -87,9 +88,10 @@ const TaskRow = memo(function TaskRow({ entry, top, height, store, derived, proj
     status.key === 'canceled' && 'is-canceled', finished && 'is-finished', entry.first && 'is-first', entry.last && 'is-last'].filter(Boolean).join(' ')
   return <div className={classes} role="treeitem" aria-level={row.depth + 1} aria-setsize={row.setSize} aria-posinset={row.position}
     aria-expanded={row.hasChildren ? row.expanded : undefined} aria-selected={selected} tabIndex={focused ? 0 : -1}
-    data-id={row.id} data-key={entry.key} style={{ transform: `translateY(${top}px)`, height }}
+    data-id={row.id} data-key={entry.key} data-tag={tag || undefined} style={{ transform: `translateY(${top}px)`, height }}
     onFocus={(event) => { if (event.target === event.currentTarget) onFocusRow(row.id) }}
     onClick={() => { onFocusRow(row.id); onSelect(row.id) }}>
+    {tag && <span className="a-tag" aria-hidden="true" />}
     <div className="a-c-main">
       <Guides row={row} />
       {row.hasChildren
@@ -99,14 +101,14 @@ const TaskRow = memo(function TaskRow({ entry, top, height, store, derived, proj
         </button>
         : <span className="a-fold-pad" />}
       <span className="a-row-bead" title={status.label}>
-        {marked && compact && <GreaseMark id={row.id} />}
-        <StatusBead state={status.bead} decorative />
+        <StatusBead state={status.bead} decorative live={status.key === 'running' || status.key === 'reviewing'} />
       </span>
       <span className="a-r-title">
         <span className="a-t a-bidi" dir="auto" title={title}>{title}</span>
-        <span className="a-sr">{status.label}.</span>
+        <span className="a-sr">{status.label}.{tag ? ` Colour label: ${tag}.` : ''}</span>
         {asking && !compact && <span className="a-askline">
-          <b>{current.line}</b>{current.second ? <span>{'\u00A0· '}{current.second}</span> : null}
+          {/* With the Reply button beside it, "waiting for your reply" goes without saying. */}
+          <b>{current.line}</b>{current.second && !(onReply && status.key === 'needs_input') ? <span>{'\u00A0· '}{current.second}</span> : null}
           {onReply && status.key === 'needs_input' && <button type="button" className="a-askreply" tabIndex={-1} aria-hidden="true" title="Reply · R"
             onClick={(event) => { event.stopPropagation(); onReply(row.id) }}><Icon name="reply" size={13} />Reply</button>}
         </span>}
@@ -179,7 +181,7 @@ function Plain({ entry, top, height, onToggleFinished, onShowAll, compact }) {
 // close branches, Enter selects. Live changes keep the row the person is looking at where it is on
 // screen, and rows that move glide to their new place instead of jumping.
 export default function WorkSheet({ rows, viewKey, store, derived, projectName, hueOf, now, selectedId, focusId, setFocusId, onSelect, onToggle,
-  onShowAll, onToggleFinished, onLoadMore, loadingMore, empty, compact = false, onShowInMap, onOpenTask, onReply, changed, label, course = null }) {
+  onShowAll, onToggleFinished, onLoadMore, loadingMore, empty, compact = false, onShowInMap, onOpenTask, onReply, changed, label }) {
   const scroller = useRef(null)
   const keyboard = useRef(false)
   const lastScroll = useRef(0)
@@ -201,17 +203,6 @@ export default function WorkSheet({ rows, viewKey, store, derived, projectName, 
   const items = useMemo(() => rows.filter(focusable).map((entry) => entry.row), [rows])
   const height = (index) => Math.round(ROW[rows[index].kind] * scale)
   const focusTarget = items.some((row) => row.id === focusId) ? focusId : items.some((row) => row.id === selectedId) ? selectedId : items[0]?.id
-  // The course: each listed task that needs the person is a numbered control in the gutter, joined
-  // to the next by one line, in the order A steps through them.
-  const controls = useMemo(() => {
-    if (!course?.size) return []
-    const out = []
-    rows.forEach((row, index) => {
-      const n = TASK_KINDS.has(row.kind) ? course.get(row.id) : undefined
-      if (n) out.push({ n, id: row.id, y: tops[index] + Math.round(ROW[row.kind] * scale) / 2 })
-    })
-    return out
-  }, [course, rows, tops, scale])
 
   useLayoutEffect(() => {
     const element = scroller.current
@@ -400,9 +391,7 @@ export default function WorkSheet({ rows, viewKey, store, derived, projectName, 
         changed={Boolean(changed?.(entry.id))} onSelect={onSelect} onToggle={toggleRow} onFocusRow={setFocusId} compact={compact}
         onShowInMap={onShowInMap} onOpenTask={onOpenTask} onReply={onReply} />)
     } else {
-      // "Needs you" counts what needs the person (the course's controls), as the legend does.
-      const counted = entry.kind === 'section' && entry.section === 'needs' && controls.length ? { ...entry, count: controls.length } : entry
-      shown.push(<Plain key={entry.key} entry={counted} top={tops[i]} height={h} onToggleFinished={toggleHistory} onShowAll={showAllRow} compact={compact} />)
+      shown.push(<Plain key={entry.key} entry={entry} top={tops[i]} height={h} onToggleFinished={toggleHistory} onShowAll={showAllRow} compact={compact} />)
     }
   }
   const loaded = Object.values(store.tasks).filter((task) => task.source === 'page').length
@@ -412,13 +401,7 @@ export default function WorkSheet({ rows, viewKey, store, derived, projectName, 
     {pinned && !compact && <div className="a-sheet-pin" role="none" aria-hidden="true">
       <span className={`a-sheet-pin-label a-sheet-pin--${pinned.section}`}>{pinned.label}<span className="a-num">{pinned.count}</span></span>
     </div>}
-    <div className={`a-sheet-space${controls.length ? ' has-course' : ''}`} role="none" style={{ height: rows.length ? total : 0 }}>
-      {controls.length > 0 && <svg className="a-course" width="44" height={total} aria-hidden="true" focusable="false">
-        {controls.length > 1 && <path className="a-course-leg" d={controls.map((c, i) => `${i ? 'L' : 'M'}22 ${c.y}`).join(' ')} />}
-        {controls.filter((c) => c.y > port.top - 600 && c.y < port.top + port.height + 600).map((c) => <g key={c.id} className={`a-control${c.id === selectedId ? ' is-current' : ''}`}>
-          <circle cx="22" cy={c.y} r="12" /><text x="22" y={c.y} dy=".36em">{c.n}</text></g>)}
-      </svg>}
-      {shown}</div>
+    <div className="a-sheet-space" role="none" style={{ height: rows.length ? total : 0 }}>{shown}</div>
     {!items.length && empty}
     {!store.complete && <div className="a-ol-more" role="none">
       <span className="a-fine">{compact ? `${loaded} of ${store.total ?? 'all'} loaded` : `Showing ${loaded} of ${store.total ?? 'all'} tasks, newest first.`}</span>

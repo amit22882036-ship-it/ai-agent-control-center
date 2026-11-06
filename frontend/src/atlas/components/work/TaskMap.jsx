@@ -1,6 +1,7 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import Icon from '../Icon'
-import { Avatar, StatusBead } from '../identity'
+import { Avatar, ProgressBar, StatusBead } from '../identity'
+import { tagOf } from '../../vocabulary.mjs'
 import { Button, IconButton } from '../primitives'
 import { MenuButton } from '../overlays'
 import { boxOf, branchIds, mapKey } from '../../model/mapLayout.mjs'
@@ -67,8 +68,9 @@ const MapNode = memo(function MapNode({ node, row, info, selected, tabbable, dim
   const bead = info.status.bead
   const ring = selected ? 'sel' : RINGS[bead]
   const root = node.depth === 0
+  const tag = tagOf(info.who.agent, info.who.removed)
   const common = {
-    role: 'treeitem', 'data-id': node.id, tabIndex: tabbable ? 0 : -1, 'aria-selected': selected,
+    role: 'treeitem', 'data-id': node.id, 'data-tag': tag || undefined, tabIndex: tabbable ? 0 : -1, 'aria-selected': selected,
     'aria-level': row.depth + 1, 'aria-setsize': row.setSize, 'aria-posinset': row.position,
     'aria-expanded': row.hasChildren ? row.expanded : undefined,
     onClick: () => onPick(node.id), onDoubleClick: () => onOpen(node.id),
@@ -87,9 +89,9 @@ const MapNode = memo(function MapNode({ node, row, info, selected, tabbable, dim
         <span className={`a-s a-tone-${info.status.tone}`}><span className="a-sr">. </span>{info.status.label}{info.time ? ` · ${info.time}` : ''}
           {node.shelf && info.project ? <span className="a-gr-proj" aria-hidden="true">{' · '}{info.project}</span> : null}</span>
         {node.shelf && info.strand && <span className="a-gr-strand" aria-hidden="true">
-          <span className="a-strand">{info.strand.marks.map((mark, index) => <i key={index} className={`a-sm a-sm--${mark.category}${mark.lead ? ' is-lead' : ''}`} />)}</span>
-          <span className="a-strand-n a-num">{info.strand.finished}/{info.strand.size}</span></span>}</span>
-      <span className="a-sr">. {info.extra}.</span>
+          <ProgressBar counts={info.strand.counts} /><span className="a-strand-n a-num">{info.strand.finished}/{info.strand.size}</span></span>}</span>
+      <span className="a-sr">. {info.extra}{tag ? `. Colour label: ${tag}` : ''}.</span>
+      {tag && <span className="a-tag" aria-hidden="true" />}
       {fold}
     </div>
   }
@@ -99,11 +101,11 @@ const MapNode = memo(function MapNode({ node, row, info, selected, tabbable, dim
       {BADGES.has(bead) && <span className="a-gbadge"><StatusBead state={bead} size={16} decorative /></span>}</span>
     <span className="a-gt a-bidi" dir="auto">{info.title}</span>
     <span className={`a-gs a-tone-${info.status.tone}`}><span className="a-sr">. </span>{info.status.label}{info.time ? ` · ${info.time}` : ''}</span>
-    <span className="a-sr">. {info.extra}.</span>
+    <span className="a-sr">. {info.extra}{tag ? `. Colour label: ${tag}` : ''}.</span>
+    {tag && <span className="a-tag" aria-hidden="true" />}
     {info.project && <span className="a-gproj a-bidi" dir="auto" aria-hidden="true">{info.project}</span>}
     {info.strand && <span className="a-gstrand" aria-hidden="true" title={`${info.strand.size} tasks, ${info.strand.finished} finished`}>
-      <span className="a-strand">{info.strand.marks.map((mark, index) => <i key={index} className={`a-sm a-sm--${mark.category}${mark.lead ? ' is-lead' : ''}`} />)}</span>
-      <span className="a-strand-n a-num">{info.strand.finished}/{info.strand.size}</span></span>}
+      <ProgressBar counts={info.strand.counts} /><span className="a-strand-n a-num">{info.strand.finished}/{info.strand.size}</span></span>}
     {(info.notLoaded > 0 || info.planned > 0 || row.hasChildren || info.placement) && <span className="a-gchips">
       {info.placement && <span className="a-gchip a-gchip--warn" title={info.placement}><Icon name="info" size={11} />{info.placement}</span>}
       {fold}

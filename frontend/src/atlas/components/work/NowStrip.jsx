@@ -14,7 +14,8 @@ const READOUTS = [
 // loaded so far and say so when older pages remain.
 export default function NowStrip({ counts, families, filter, onScope, partial, changedCount = 0, onChanged, onClearChanged, onFirstNeed, stepping, describedBy }) {
   const scoped = filter !== 'all'
-  return <div className="a-now" role="group" aria-label="What is happening" aria-describedby={describedBy}>
+  const open = READOUTS.filter((item) => counts[item.key] > 0)
+  return <div className="a-now-wrap"><div className="a-now" role="group" aria-label="What is happening" aria-describedby={describedBy}>
     <button type="button" className="a-now-item a-now-item--all" aria-pressed={!scoped} onClick={() => onScope('all')}
       title={partial ? 'Every loaded task family. Older pages are not counted.' : 'Every task family'}>
       <span className="a-now-n a-num">{families.all}</span>{' '}
@@ -32,8 +33,8 @@ export default function NowStrip({ counts, families, filter, onScope, partial, c
         <span className="a-now-l">{n === 1 ? item.one : item.label}</span>
       </button>
     }).flatMap((node, index) => (index === 0 && onFirstNeed && !stepping ? [node, <button key="go" type="button" className="a-now-go"
-      onClick={onFirstNeed} aria-label="Go to the first task that needs you" title="Go to the first · A" aria-keyshortcuts="A">
-      Go<Icon name="right" size={13} /></button>] : [node]))}
+      onClick={onFirstNeed} aria-label="Next task that needs you" title="Next task that needs you · A" aria-keyshortcuts="A">
+      Next<Icon name="right" size={13} /></button>] : [node]))}
     <span className="a-sp" />
     {changedCount > 0 && <span className="a-now-changed">
       <button type="button" className="a-now-item a-now-item--changed" aria-pressed={filter === 'changed'} onClick={() => onChanged(filter === 'changed' ? 'all' : 'changed')}
@@ -53,5 +54,10 @@ export default function NowStrip({ counts, families, filter, onScope, partial, c
       <span className="a-now-n a-num"><StatusBead state="stopped" size={13} decorative />{families.canceled}</span>{' '}
       <span className="a-now-l">Canceled</span>
     </button>}
+  </div>
+  {/* Open work in proportion, in the same colours as the counts above it. */}
+  {open.length > 0 && <div className="a-nowbar" aria-hidden="true">
+    {open.map((item) => <i key={item.key} className={`is-${item.key}`} style={{ flexGrow: counts[item.key] }} />)}
+  </div>}
   </div>
 }

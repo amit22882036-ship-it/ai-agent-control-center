@@ -18,13 +18,11 @@
   src: url('../fonts/jetbrains-mono-latin-ext.woff2') format('woff2');
   unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C4, U+2113, U+2C60-2C7F, U+A720-A7FF; }
 
-/* The massing model. The workspace is an architectural study model: every task family is a building,
-   every task a floor, and each state is the material it is built of, the same on the Site, in every
-   state mark and in every list. Wireframe: planned, not started. Glass: waiting. Lit from within:
-   an agent recorded working. Solid white card: built (done). Hatched grey: on hold or blocked. One
-   vermilion piece: what needs the person, and nothing else is vermilion. Graphite ink does the
-   rest (text, primary actions, selection and focus) on a cool studio ground; at night the model is
-   dark and only real work is lit. */
+/* Clear signal. A calm, bright workspace where every state reads at a glance, with no legend to
+   learn: a word, a familiar symbol and one colour. Orange is only what needs the person; blue is an
+   agent working; slate is waiting on something else; green is finished; red is a failure; grey is
+   everything that is resting (paused, blocked, not started, canceled). Graphite ink does the rest
+   (text, primary actions, selection and focus). Motion explains change; it never decorates. */
 .atlas {
   color-scheme: light;
   --a-font: 'Atlas Bricolage Grotesque', 'Atlas Heebo', 'Segoe UI Variable Text', 'Segoe UI', system-ui, sans-serif;
@@ -36,7 +34,7 @@
   --a-spring: linear(0, 0.157 4.6%, 0.48 11.5%, 0.73 19.2%, 0.877 27.5%, 0.953 37%, 0.986 48.5%, 1);
   --a-spring-give: linear(0, 0.21 5%, 0.65 13%, 0.94 21%, 1.04 29%, 1.05 36%, 1.02 46%, 1);
   --a-r: 12px; --a-r-sm: 9px; --a-r-lg: 16px; --a-r-xl: 20px; --a-r-2xl: 24px;
-  --a-bg: #E9EBEE; --a-ground-1: #F3F4F6; --a-ground-2: #E1E4E8;
+  --a-bg: #EEF0F3; --a-ground-1: #F5F6F8; --a-ground-2: #E4E7EB;
   --a-film: #16181C; --a-film-2: #212429; --a-film-3: #2C3036; --a-film-text: #A4AAB3; --a-film-strong: #F4F5F7; --a-edge-print: #FF7A4D;
   --a-rail: var(--a-film); --a-surface: #FFFFFF; --a-surface-2: #F7F8F9;
   --a-sunken: rgba(18, 21, 26, .045);
@@ -49,10 +47,11 @@
   --a-ink: #15171B; --a-on-ink: #FFFFFF;
   --a-accent: #15171B; --a-accent-soft: rgba(21, 23, 27, .07); --a-accent-line: rgba(21, 23, 27, .35);
   --a-thread: #B7BCC4; --a-thread-soft: #DCDFE4;
-  --a-work: #7A4A00; --a-work-soft: rgba(245, 184, 61, .2); --a-live: #F2B23A;
+  --a-work: #1F5BD0; --a-work-soft: rgba(47, 111, 235, .1); --a-live: #2F6FEB;
+  --a-ok: #157A3F; --a-ok-fill: #22A05A; --a-ok-soft: rgba(34, 160, 90, .11); --a-idle: #6B7280;
   --a-ask: #B83A0C; --a-ask-fill: #EE4F1B; --a-ask-soft: rgba(238, 79, 27, .09); --a-ask-line: rgba(238, 79, 27, .4);
   --a-ask-light: rgba(238, 79, 27, .5); --a-mark: #EE4F1B;
-  --a-block: #5B626C; --a-water: #20699A; --a-contour: #6B717A; --a-fail: #B4262E; --a-fail-soft: rgba(180, 38, 46, .1);
+  --a-block: #56637E; --a-water: #5A6A8A; --a-contour: #6B717A; --a-fail: #C42B2B; --a-fail-soft: rgba(180, 38, 46, .1);
   --a-map: transparent; --a-dot: rgba(60, 66, 78, .12);
   --a-shadow-1: 0 0 0 1px rgba(18, 21, 26, .06), 0 1px 2px rgba(18, 21, 26, .05), 0 8px 20px -14px rgba(18, 21, 26, .3);
   --a-shadow-2: 0 0 0 1px rgba(18, 21, 26, .07), 0 2px 6px -2px rgba(18, 21, 26, .1), 0 24px 52px -28px rgba(18, 21, 26, .42);
@@ -63,24 +62,12 @@
   --a-hairline: rgba(18, 21, 26, .08);
   --a-group-shadow: 0 0 0 1px rgba(18, 21, 26, .06), 0 1px 2px rgba(18, 21, 26, .04), 0 14px 30px -22px rgba(18, 21, 26, .3);
   --a-sel: rgba(21, 23, 27, .065);
-  /* Model materials: what each state is built of, on the Site and in every state mark. */
-  --a-mat-board: #F9FAFB; --a-mat-board-side: #D5D9DF; --a-mat-edge: rgba(20, 24, 30, .16); --a-mat-shadow: rgba(24, 28, 36, .09);
-  --a-mat-built-top: #FFFFFF; --a-mat-built-l: #EEF0F3; --a-mat-built-r: #DCDFE4;
-  --a-mat-archive-top: #FBFBFC; --a-mat-archive-l: #ECEEF1; --a-mat-archive-r: #DADDE2;
-  --a-mat-lit-top: #FFE7A8; --a-mat-lit-l: #FFD57D; --a-mat-lit-r: #F2BA4F;
-  --a-mat-glass-top: rgba(196, 226, 246, .62); --a-mat-glass-l: rgba(168, 210, 238, .55); --a-mat-glass-r: rgba(136, 190, 228, .6);
-  --a-mat-glass-edge: rgba(70, 130, 175, .55);
-  --a-mat-held-top: #D6DADF; --a-mat-held-l: #C4C9D0; --a-mat-held-r: #B0B6BE; --a-mat-hatch: rgba(52, 58, 68, .38);
-  --a-mat-wire: rgba(40, 44, 52, .62);
-  --a-mat-needs-top: #FF7D52; --a-mat-needs-l: #EE4F1B; --a-mat-needs-r: #C93F10;
-  --a-mat-lit-glow: rgba(255, 186, 72, .8); --a-mat-needs-glow: rgba(255, 92, 40, .8);
-  --a-mat-select: #15171B; --a-mat-hover: rgba(21, 23, 27, .45); --a-mat-night: 0; --a-mat-label: rgba(255, 255, 255, .92);
   --a-agent-neutral: #B9BEC9; --a-agent-violet: #A994F4; --a-agent-blue: #7FA2F6; --a-agent-cyan: #6FCBD8;
   --a-agent-green: #7FCF98; --a-agent-yellow: #E8C766; --a-agent-orange: #F2A66E; --a-agent-red: #EE8E8E; --a-agent-pink: #EE97C4;
   --canvas: var(--a-bg); --surface: var(--a-surface); --raised: var(--a-hover-2); --text: var(--a-text);
   --muted: var(--a-text-3); --line: var(--a-line); --accent: var(--a-accent); --motion: 150ms;
 }
-/* The model at night: a dark board where only real work is lit. */
+/* Dark: the same signals on a deep graphite ground. */
 :root[data-theme="dark"] .atlas {
     color-scheme: dark;
     --a-bg: #0C0D10; --a-ground-1: #121418; --a-ground-2: #08090B;
@@ -94,10 +81,11 @@
     --a-ink: #EEF0F3; --a-on-ink: #111317;
     --a-accent: #EEF0F3; --a-accent-soft: rgba(238, 240, 243, .1); --a-accent-line: rgba(238, 240, 243, .4);
     --a-thread: #3F444C; --a-thread-soft: #2A2E34;
-    --a-work: #FFCB6B; --a-work-soft: rgba(255, 199, 90, .14); --a-live: #FFC75A;
+    --a-work: #8FB6FF; --a-work-soft: rgba(110, 162, 255, .14); --a-live: #6EA2FF;
+    --a-ok: #7BD8A4; --a-ok-fill: #4FC283; --a-ok-soft: rgba(79, 194, 131, .13); --a-idle: #8E96A3;
     --a-ask: #FF946F; --a-ask-fill: #FF6A3D; --a-ask-soft: rgba(255, 106, 61, .13); --a-ask-line: rgba(255, 106, 61, .45);
     --a-ask-light: rgba(255, 106, 61, .45); --a-mark: #FF6A3D;
-    --a-block: #A9B0BA; --a-water: #86C0EC; --a-contour: #959BA4; --a-fail: #FF7468; --a-fail-soft: rgba(255, 116, 104, .1);
+    --a-block: #A6B1C8; --a-water: #9AA8C7; --a-contour: #959BA4; --a-fail: #FF7468; --a-fail-soft: rgba(255, 116, 104, .1);
     --a-dot: rgba(220, 224, 235, .06);
     --a-shadow-1: 0 0 0 1px rgba(255, 255, 255, .06), 0 8px 20px -12px rgba(0, 0, 0, .8);
     --a-shadow-2: 0 0 0 1px rgba(255, 255, 255, .07), 0 26px 60px -28px rgba(0, 0, 0, .85);
@@ -108,17 +96,6 @@
     --a-hairline: rgba(255, 255, 255, .07);
     --a-group-shadow: 0 0 0 1px rgba(255, 255, 255, .05), 0 12px 30px -20px rgba(0, 0, 0, .9);
     --a-sel: rgba(238, 240, 243, .09);
-    --a-mat-board: #1B1E24; --a-mat-board-side: #0F1114; --a-mat-edge: rgba(255, 255, 255, .07); --a-mat-shadow: rgba(0, 0, 0, .42);
-    --a-mat-built-top: #3A3F47; --a-mat-built-l: #2F333A; --a-mat-built-r: #262A30;
-    --a-mat-archive-top: #2C3037; --a-mat-archive-l: #24282E; --a-mat-archive-r: #1E2126;
-    --a-mat-lit-top: #FFE39A; --a-mat-lit-l: #FFC75A; --a-mat-lit-r: #EEA83A;
-    --a-mat-glass-top: rgba(140, 190, 236, .3); --a-mat-glass-l: rgba(120, 175, 225, .24); --a-mat-glass-r: rgba(100, 160, 215, .3);
-    --a-mat-glass-edge: rgba(170, 210, 245, .55);
-    --a-mat-held-top: #50565F; --a-mat-held-l: #454A52; --a-mat-held-r: #3B4047; --a-mat-hatch: rgba(255, 255, 255, .16);
-    --a-mat-wire: rgba(200, 206, 214, .5);
-    --a-mat-needs-top: #FF8E64; --a-mat-needs-l: #FF6A3D; --a-mat-needs-r: #DE5228;
-    --a-mat-lit-glow: rgba(255, 196, 90, .95); --a-mat-needs-glow: rgba(255, 110, 60, .95);
-    --a-mat-select: #EEF0F3; --a-mat-hover: rgba(238, 240, 243, .5); --a-mat-night: 1; --a-mat-label: rgba(23, 25, 30, .92);
 }
 /* Before the appearance preference is applied. */
 @media (prefers-color-scheme: dark) {
@@ -135,10 +112,11 @@
     --a-ink: #EEF0F3; --a-on-ink: #111317;
     --a-accent: #EEF0F3; --a-accent-soft: rgba(238, 240, 243, .1); --a-accent-line: rgba(238, 240, 243, .4);
     --a-thread: #3F444C; --a-thread-soft: #2A2E34;
-    --a-work: #FFCB6B; --a-work-soft: rgba(255, 199, 90, .14); --a-live: #FFC75A;
+    --a-work: #8FB6FF; --a-work-soft: rgba(110, 162, 255, .14); --a-live: #6EA2FF;
+    --a-ok: #7BD8A4; --a-ok-fill: #4FC283; --a-ok-soft: rgba(79, 194, 131, .13); --a-idle: #8E96A3;
     --a-ask: #FF946F; --a-ask-fill: #FF6A3D; --a-ask-soft: rgba(255, 106, 61, .13); --a-ask-line: rgba(255, 106, 61, .45);
     --a-ask-light: rgba(255, 106, 61, .45); --a-mark: #FF6A3D;
-    --a-block: #A9B0BA; --a-water: #86C0EC; --a-contour: #959BA4; --a-fail: #FF7468; --a-fail-soft: rgba(255, 116, 104, .1);
+    --a-block: #A6B1C8; --a-water: #9AA8C7; --a-contour: #959BA4; --a-fail: #FF7468; --a-fail-soft: rgba(255, 116, 104, .1);
     --a-dot: rgba(220, 224, 235, .06);
     --a-shadow-1: 0 0 0 1px rgba(255, 255, 255, .06), 0 8px 20px -12px rgba(0, 0, 0, .8);
     --a-shadow-2: 0 0 0 1px rgba(255, 255, 255, .07), 0 26px 60px -28px rgba(0, 0, 0, .85);
@@ -149,17 +127,85 @@
     --a-hairline: rgba(255, 255, 255, .07);
     --a-group-shadow: 0 0 0 1px rgba(255, 255, 255, .05), 0 12px 30px -20px rgba(0, 0, 0, .9);
     --a-sel: rgba(238, 240, 243, .09);
-    --a-mat-board: #1B1E24; --a-mat-board-side: #0F1114; --a-mat-edge: rgba(255, 255, 255, .07); --a-mat-shadow: rgba(0, 0, 0, .42);
-    --a-mat-built-top: #3A3F47; --a-mat-built-l: #2F333A; --a-mat-built-r: #262A30;
-    --a-mat-archive-top: #2C3037; --a-mat-archive-l: #24282E; --a-mat-archive-r: #1E2126;
-    --a-mat-lit-top: #FFE39A; --a-mat-lit-l: #FFC75A; --a-mat-lit-r: #EEA83A;
-    --a-mat-glass-top: rgba(140, 190, 236, .3); --a-mat-glass-l: rgba(120, 175, 225, .24); --a-mat-glass-r: rgba(100, 160, 215, .3);
-    --a-mat-glass-edge: rgba(170, 210, 245, .55);
-    --a-mat-held-top: #50565F; --a-mat-held-l: #454A52; --a-mat-held-r: #3B4047; --a-mat-hatch: rgba(255, 255, 255, .16);
-    --a-mat-wire: rgba(200, 206, 214, .5);
-    --a-mat-needs-top: #FF8E64; --a-mat-needs-l: #FF6A3D; --a-mat-needs-r: #DE5228;
-    --a-mat-lit-glow: rgba(255, 196, 90, .95); --a-mat-needs-glow: rgba(255, 110, 60, .95);
-    --a-mat-select: #EEF0F3; --a-mat-hover: rgba(238, 240, 243, .5); --a-mat-night: 1; --a-mat-label: rgba(23, 25, 30, .92);
+  }
+}
+/* Lumen, living light. Our own premium language: a calm porcelain canvas, white surfaces and ink
+   text; one signature colour, Lumen ultramarine, for the brand, selection, focus, primary actions and
+   for agents at work; amber light only for what needs the person; violet for waiting; mint for
+   finished; coral for failure; cool grey for whatever is resting. Work in progress is shown as light:
+   a gleam travels round the mark of a running agent and across the working share of the workspace,
+   and only while an agent is recorded running. Reduced motion keeps the light still. */
+.atlas {
+  --a-font: 'Segoe UI Variable Text', 'SF Pro Text', -apple-system, 'Atlas Heebo', 'Segoe UI', system-ui, sans-serif;
+  --a-display: 'Segoe UI Variable Display', 'SF Pro Display', -apple-system, 'Atlas Heebo', 'Segoe UI', system-ui, sans-serif;
+  --a-bg: #F3F4F7; --a-ground-1: #FAFBFC; --a-ground-2: #ECEEF3; --a-sheet: #F3F4F7; --a-group: #FFFFFF;
+  --a-film: rgba(249, 250, 252, .8); --a-film-2: rgba(16, 24, 40, .05); --a-film-3: rgba(66, 85, 255, .1); --a-film-text: #5B6375; --a-film-strong: #101828;
+  --a-sidebar: var(--a-film); --a-edge-print: #FF7A00;
+  --a-surface: #FFFFFF; --a-surface-2: #F9FAFB; --a-sunken: rgba(16, 24, 40, .035);
+  --a-glass: rgba(255, 255, 255, .8); --a-glass-2: rgba(255, 255, 255, .88); --a-glass-3: #FFFFFF; --a-blur: saturate(170%) blur(24px);
+  --a-hover: rgba(16, 24, 40, .035); --a-hover-2: rgba(16, 24, 40, .06);
+  --a-line: rgba(16, 24, 40, .08); --a-line-2: rgba(16, 24, 40, .14); --a-line-3: rgba(16, 24, 40, .045); --a-hairline: rgba(16, 24, 40, .07);
+  --a-text: #101828; --a-text-2: #344054; --a-text-3: #565F70; --a-text-4: #8A93A5;
+  --a-ink: #101828; --a-on-ink: #FFFFFF;
+  --a-lumen: #4255FF; --a-lumen-2: #8E99FF; --a-lumen-glow: rgba(66, 85, 255, .28);
+  --a-accent: #3346F0; --a-accent-soft: rgba(66, 85, 255, .1); --a-accent-line: rgba(66, 85, 255, .45); --a-primary: #3346F0;
+  --a-sel: rgba(66, 85, 255, .07);
+  --a-ask: #B04A00; --a-ask-fill: #FF7A00; --a-ask-soft: rgba(255, 122, 0, .11); --a-ask-line: rgba(255, 122, 0, .45); --a-ask-light: rgba(255, 122, 0, .5); --a-mark: #FF7A00;
+  --a-work: #3346F0; --a-work-soft: rgba(66, 85, 255, .1); --a-live: #4255FF;
+  --a-block: #7A3FD6; --a-water: #9A5CF5;
+  --a-ok: #067647; --a-ok-fill: #12B76A; --a-ok-soft: rgba(18, 183, 106, .12);
+  --a-fail: #C4320A; --a-fail-soft: rgba(240, 68, 56, .1); --a-idle: #8A93A5;
+  --a-tag-violet: #7A5AF8; --a-tag-blue: #2E90FA; --a-tag-cyan: #06AED4; --a-tag-green: #17B26A;
+  --a-tag-yellow: #FAC515; --a-tag-orange: #F79009; --a-tag-red: #F04438; --a-tag-pink: #EE46BC;
+  --a-shadow-1: 0 0 0 .5px rgba(16, 24, 40, .06), 0 1px 3px rgba(16, 24, 40, .05), 0 8px 18px -12px rgba(16, 24, 40, .18);
+  --a-shadow-2: 0 0 0 .5px rgba(16, 24, 40, .07), 0 4px 12px -4px rgba(16, 24, 40, .1), 0 24px 52px -26px rgba(16, 24, 40, .3);
+  --a-shadow-3: 0 0 0 .5px rgba(16, 24, 40, .08), 0 10px 24px -10px rgba(16, 24, 40, .16), 0 44px 96px -40px rgba(16, 24, 40, .4);
+  --a-group-shadow: 0 0 0 .5px rgba(16, 24, 40, .06), 0 1px 2px rgba(16, 24, 40, .04), 0 12px 30px -22px rgba(16, 24, 40, .24);
+}
+:root[data-theme="dark"] .atlas {
+    --a-bg: #0E1016; --a-ground-1: #141721; --a-ground-2: #0A0C11; --a-sheet: #0E1016; --a-group: #171A24;
+    --a-film: rgba(22, 25, 35, .8); --a-film-2: rgba(255, 255, 255, .06); --a-film-3: rgba(124, 138, 255, .18); --a-film-text: #98A2B3; --a-film-strong: #F5F6FA;
+    --a-sidebar: var(--a-film); --a-edge-print: #FF9A3D;
+    --a-surface: #171A24; --a-surface-2: #1C202B; --a-sunken: rgba(255, 255, 255, .04);
+    --a-glass: rgba(28, 32, 43, .8); --a-glass-2: rgba(32, 36, 48, .88); --a-glass-3: #1C202B; --a-blur: saturate(170%) blur(24px);
+    --a-hover: rgba(255, 255, 255, .05); --a-hover-2: rgba(255, 255, 255, .085);
+    --a-line: rgba(255, 255, 255, .09); --a-line-2: rgba(255, 255, 255, .16); --a-line-3: rgba(255, 255, 255, .05); --a-hairline: rgba(255, 255, 255, .08);
+    --a-text: #F5F6FA; --a-text-2: #CDD2DC; --a-text-3: #9AA3B5; --a-text-4: #667085;
+    --a-ink: #F5F6FA; --a-on-ink: #101828;
+    --a-lumen: #7C8AFF; --a-lumen-2: #B3BBFF; --a-lumen-glow: rgba(124, 138, 255, .35);
+    --a-accent: #8F9BFF; --a-accent-soft: rgba(124, 138, 255, .18); --a-accent-line: rgba(124, 138, 255, .55); --a-primary: #3346F0;
+    --a-sel: rgba(124, 138, 255, .14);
+    --a-ask: #FFB066; --a-ask-fill: #FF8A1F; --a-ask-soft: rgba(255, 138, 31, .14); --a-ask-line: rgba(255, 138, 31, .5); --a-ask-light: rgba(255, 138, 31, .5); --a-mark: #FF8A1F;
+    --a-work: #9AA5FF; --a-work-soft: rgba(124, 138, 255, .16); --a-live: #7C8AFF;
+    --a-block: #C4A3FF; --a-water: #B48CFF;
+    --a-ok: #47CD89; --a-ok-fill: #32C17C; --a-ok-soft: rgba(50, 193, 124, .14);
+    --a-fail: #FF7A6E; --a-fail-soft: rgba(255, 122, 110, .14); --a-idle: #8A93A5;
+    --a-tag-violet: #9B8AFB; --a-tag-blue: #53B1FD; --a-tag-cyan: #22CCEE; --a-tag-green: #47CD89;
+    --a-tag-yellow: #FDE272; --a-tag-orange: #FDB022; --a-tag-red: #F97066; --a-tag-pink: #F670C7;
+    --a-group-shadow: 0 0 0 .5px rgba(255, 255, 255, .07), 0 14px 32px -22px rgba(0, 0, 0, .9);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) .atlas {
+    --a-bg: #0E1016; --a-ground-1: #141721; --a-ground-2: #0A0C11; --a-sheet: #0E1016; --a-group: #171A24;
+    --a-film: rgba(22, 25, 35, .8); --a-film-2: rgba(255, 255, 255, .06); --a-film-3: rgba(124, 138, 255, .18); --a-film-text: #98A2B3; --a-film-strong: #F5F6FA;
+    --a-sidebar: var(--a-film); --a-edge-print: #FF9A3D;
+    --a-surface: #171A24; --a-surface-2: #1C202B; --a-sunken: rgba(255, 255, 255, .04);
+    --a-glass: rgba(28, 32, 43, .8); --a-glass-2: rgba(32, 36, 48, .88); --a-glass-3: #1C202B; --a-blur: saturate(170%) blur(24px);
+    --a-hover: rgba(255, 255, 255, .05); --a-hover-2: rgba(255, 255, 255, .085);
+    --a-line: rgba(255, 255, 255, .09); --a-line-2: rgba(255, 255, 255, .16); --a-line-3: rgba(255, 255, 255, .05); --a-hairline: rgba(255, 255, 255, .08);
+    --a-text: #F5F6FA; --a-text-2: #CDD2DC; --a-text-3: #9AA3B5; --a-text-4: #667085;
+    --a-ink: #F5F6FA; --a-on-ink: #101828;
+    --a-lumen: #7C8AFF; --a-lumen-2: #B3BBFF; --a-lumen-glow: rgba(124, 138, 255, .35);
+    --a-accent: #8F9BFF; --a-accent-soft: rgba(124, 138, 255, .18); --a-accent-line: rgba(124, 138, 255, .55); --a-primary: #3346F0;
+    --a-sel: rgba(124, 138, 255, .14);
+    --a-ask: #FFB066; --a-ask-fill: #FF8A1F; --a-ask-soft: rgba(255, 138, 31, .14); --a-ask-line: rgba(255, 138, 31, .5); --a-ask-light: rgba(255, 138, 31, .5); --a-mark: #FF8A1F;
+    --a-work: #9AA5FF; --a-work-soft: rgba(124, 138, 255, .16); --a-live: #7C8AFF;
+    --a-block: #C4A3FF; --a-water: #B48CFF;
+    --a-ok: #47CD89; --a-ok-fill: #32C17C; --a-ok-soft: rgba(50, 193, 124, .14);
+    --a-fail: #FF7A6E; --a-fail-soft: rgba(255, 122, 110, .14); --a-idle: #8A93A5;
+    --a-tag-violet: #9B8AFB; --a-tag-blue: #53B1FD; --a-tag-cyan: #22CCEE; --a-tag-green: #47CD89;
+    --a-tag-yellow: #FDE272; --a-tag-orange: #FDB022; --a-tag-red: #F97066; --a-tag-pink: #F670C7;
+    --a-group-shadow: 0 0 0 .5px rgba(255, 255, 255, .07), 0 14px 32px -22px rgba(0, 0, 0, .9);
   }
 }
 @media (prefers-contrast: more) {
