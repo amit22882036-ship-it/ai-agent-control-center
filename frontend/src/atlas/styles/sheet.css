@@ -21,7 +21,7 @@
 .atlas .a-app--lumen .a-rail .a-rail-tile { color: oklch(.93 .05 var(--hue, 250)); background: oklch(.36 .07 var(--hue, 250));
   box-shadow: inset 0 0 0 1px oklch(.55 .09 var(--hue, 250) / .55); }
 .atlas .a-app--lumen .a-rail .a-rail-project.is-live .a-rail-tile { box-shadow: inset 0 0 0 1.4px var(--a-live), 0 0 12px -3px var(--a-live); }
-.atlas .a-app--lumen .a-rail .a-rail-project.is-need .a-rail-tile { color: #fff; background: oklch(.36 .07 var(--hue, 250)); box-shadow: inset 0 0 0 1.6px var(--a-mark); }
+.atlas .a-app--lumen .a-rail .a-rail-project.is-need .a-rail-tile { color: #fff; background: oklch(.36 .07 var(--hue, 250)); }
 .atlas .a-app--lumen .a-rail .a-rail-project.is-need small { color: var(--a-edge-print); }
 .atlas .a-app--lumen .a-rail .a-rail-project[aria-current="true"] .a-rail-tile { box-shadow: 0 0 0 2px var(--a-film), 0 0 0 3.5px var(--a-film-strong); }
 .atlas .a-app--lumen .a-rail .a-rail-muted { color: color-mix(in srgb, var(--a-film-text) 80%, transparent); }
@@ -184,11 +184,9 @@
 /* The section being read stays named while its heading is out of view: a scroll-edge band the rows
    pass under, with the label where the heading itself sits, so the heading seems to stop there. */
 .atlas .a-sheet-pin { position: sticky; top: 0; height: 0; z-index: 4; pointer-events: none; }
-.atlas .a-sheet-pin-label { position: absolute; top: 0; left: 0; right: 0; height: 44px; display: flex; align-items: center; gap: 8px;
-  padding: 0 30px 8px; font: 650 13.5px/1 var(--a-font); letter-spacing: -.005em; color: var(--a-text-2);
-  background: linear-gradient(to bottom, var(--a-bg) 0%, color-mix(in srgb, var(--a-bg) 82%, transparent) 58%, transparent 100%);
-  backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
-  mask-image: linear-gradient(to bottom, #000 62%, transparent); -webkit-mask-image: linear-gradient(to bottom, #000 62%, transparent); }
+.atlas .a-sheet-pin-label { position: absolute; top: 0; left: 0; right: 0; height: 36px; display: flex; align-items: center; gap: 8px;
+  padding: 0 30px; font: 650 13.5px/1 var(--a-font); letter-spacing: -.005em; color: var(--a-text-2);
+  background: color-mix(in srgb, var(--a-group) 55%, var(--a-bg)); box-shadow: 0 1px 0 var(--a-hairline); }
 .atlas .a-sheet-pin-label .a-num { color: var(--a-text-4); font-weight: 600; }
 @media (prefers-reduced-transparency: reduce) {
   .atlas .a-sheet-pin-label { backdrop-filter: none; -webkit-backdrop-filter: none; background: var(--a-bg); mask-image: none; -webkit-mask-image: none; height: 36px; padding-bottom: 0; }
@@ -208,6 +206,20 @@
 .atlas .a-sm--canceled { background: repeating-linear-gradient(135deg, color-mix(in srgb, var(--a-text-3) 40%, transparent) 0 2px, transparent 2px 4px); }
 .atlas .a-strand-n { margin-left: 8px; font: 600 11.5px/1 var(--a-mono); color: var(--a-text-3); white-space: nowrap; }
 .atlas .a-sheet .a-row.is-past .a-sm { height: 9px; opacity: .8; }
+/* Agent faces in the List and on the Map are paper discs: the agent's colour label is a thin ring,
+   so colour on these screens is left to state and project instead of a dozen pastel fills. */
+.atlas .a-sheet .a-avatar:not(.a-avatar--removed), .atlas .a-minner .a-avatar:not(.a-avatar--removed) { --ring: var(--a-text-4);
+  background: var(--a-group); color: var(--a-text-2); box-shadow: inset 0 0 0 2px var(--ring); }
+.atlas .a-avatar[data-color="violet"] { --ring: var(--a-agent-violet); }
+.atlas .a-avatar[data-color="blue"] { --ring: var(--a-agent-blue); }
+.atlas .a-avatar[data-color="cyan"] { --ring: var(--a-agent-cyan); }
+.atlas .a-avatar[data-color="green"] { --ring: var(--a-agent-green); }
+.atlas .a-avatar[data-color="yellow"] { --ring: var(--a-agent-yellow); }
+.atlas .a-avatar[data-color="orange"] { --ring: var(--a-agent-orange); }
+.atlas .a-avatar[data-color="red"] { --ring: var(--a-agent-red); }
+.atlas .a-avatar[data-color="pink"] { --ring: var(--a-agent-pink); }
+.atlas .a-sheet .a-avatar-tool { display: none; }
+
 /* Map shelf: closed families as capsules, the project and strand under the title. */
 .atlas .a-gr.a-gr--shelf { border-radius: 16px; }
 .atlas .a-gr--shelf .a-grt .a-t { font-size: 12.5px; }
@@ -246,11 +258,19 @@
 .atlas .a-sheet .a-row.is-past .a-c-now .a-l { font-weight: 500; font-size: 13px; }
 .atlas .a-sheet .a-row.is-past .a-row-bead { transform: scale(.86); }
 .atlas .a-sheet .a-row.is-past.a-row--root:not(.is-first)::before { opacity: .6; }
+/* A ledger line that simply completed says nothing more in the state column: only exceptions speak. */
+.atlas .a-sheet .a-row.is-past.is-plain:not(.is-canceled) .a-c-now { visibility: hidden; }
+/* On the Map, history is ruled ink on the table; open work stays on paper. */
+.atlas .a-gr.a-gr--shelf.is-historic { background: transparent; box-shadow: none; border-radius: 0; border-bottom: 1px solid var(--a-hairline); }
+/* Counts are measurements: mono, not hero numbers; the chosen scope is underlined, not carded. */
+.atlas .a-now .a-now-n { font: 500 20px/1.05 var(--a-mono); letter-spacing: -.02em; }
+.atlas .a-now .a-now-item[aria-pressed="true"] { background: transparent; box-shadow: inset 0 -2px 0 var(--a-accent); border-radius: 0; }
+:root[data-theme="dark"] .atlas .a-app--lumen .a-rail { box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .07), 0 18px 40px -28px #000; }
 .atlas .a-sheet-pin-label.a-sheet-pin--needs { color: var(--a-ask); }
 /* "Go" beside the Need you readout: the first task that needs you, as A does. */
 .atlas .a-now .a-now-go { align-self: center; display: inline-flex; align-items: center; gap: 2px; height: 30px; margin: 0 6px 0 -6px; padding: 0 8px 0 12px;
-  border-radius: 999px; font-size: 13px; font-weight: 650; color: var(--a-ask); background: var(--a-ask-soft); }
-.atlas .a-now .a-now-go:hover { background: color-mix(in srgb, var(--a-mark) 18%, transparent); }
+  border-radius: 999px; font-size: 13px; font-weight: 650; color: var(--a-text-2); background: transparent; box-shadow: inset 0 0 0 1px var(--a-line-2); }
+.atlas .a-now .a-now-go:hover { color: var(--a-text); background: var(--a-hover); }
 .atlas .a-now .a-now-go:focus-visible { outline: 2px solid var(--a-accent); outline-offset: 2px; }
 /* The light table: the sheet glows faintly from the top, where the work is. */
 .atlas .a-app--lumen .a-wmain { background: radial-gradient(120% 70% at 50% -10%, color-mix(in srgb, var(--a-ground-1) 92%, transparent), transparent 62%), var(--a-sheet); }

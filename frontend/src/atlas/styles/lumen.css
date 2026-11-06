@@ -7,10 +7,7 @@
 /* ------------------------------------------------------------------ ground and shell */
 .atlas { background: var(--a-bg); font-optical-sizing: auto; }
 .atlas .a-ground { position: fixed; inset: 0; z-index: 0; pointer-events: none;
-  background:
-    radial-gradient(60% 50% at 82% -6%, color-mix(in srgb, var(--a-accent) 10%, transparent), transparent 70%),
-    radial-gradient(48% 42% at 6% 104%, color-mix(in srgb, var(--a-ask-fill) 9%, transparent), transparent 72%),
-    linear-gradient(168deg, var(--a-ground-1), var(--a-ground-2)); }
+  background: linear-gradient(168deg, var(--a-ground-1), var(--a-ground-2)); }
 .atlas .a-app.a-app--lumen { position: relative; z-index: 1; grid-template-columns: minmax(0, 1fr); padding-left: 84px;
   transition: padding-left .5s var(--a-spring); }
 :root.a-rail-pinned .atlas .a-app.a-app--lumen { padding-left: 276px; }
@@ -65,7 +62,7 @@
   backdrop-filter: var(--a-blur); -webkit-backdrop-filter: var(--a-blur); box-shadow: var(--a-shadow-1); }
 .atlas .a-app--lumen .a-brand { gap: 11px; margin-right: 12px; }
 .atlas .a-app--lumen .a-brand-name { font: 720 16.5px/1 var(--a-display); letter-spacing: -.03em; font-variation-settings: 'opsz' 48; }
-.atlas .a-app--lumen .a-needs { height: 36px; border-radius: 999px; padding: 0 14px 0 11px; background: color-mix(in srgb, var(--a-ask-fill) 13%, var(--a-glass-3)); }
+.atlas .a-app--lumen .a-needs { height: 36px; border-radius: 999px; padding: 0 14px 0 11px; background: transparent; box-shadow: inset 0 0 0 1px var(--a-line-2); }
 .atlas .a-app--lumen .a-topbar .a-btn--primary { height: 38px; border-radius: 999px; padding: 0 16px 0 13px; box-shadow: 0 6px 16px -8px rgba(14, 19, 32, .6); }
 .atlas .a-app--lumen .a-iconbtn { border-radius: 999px; }
 .atlas .a-app--lumen .a-main { padding: 0 12px 0 0; }

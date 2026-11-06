@@ -32,13 +32,13 @@ function Who({ who }) {
   // The tool and model of an agent doing its job are in the tooltip and the details panel; the row
   // spends a second line only on exceptions (an ended, removed or replaced agent), so a long list
   // doesn't repeat "Codex · GPT-5.5" on every line.
-  const notable = who.role !== 'current' || who.removed || who.replaced
+  const notable = who.removed || who.replaced
   return <div className={`a-c-who${who.role === 'last' ? ' a-c-who--last' : ''}${notable ? '' : ' a-c-who--plain'}`} title={notable ? undefined : who.detail}>
     <Avatar name={who.name} color={who.agent.color} tool={who.agent.tool} size={26} removed={who.removed} decorative />
     <span className="a-w">
       <b className="a-bidi" dir="auto"><span className="a-sr">{who.role === 'current' ? 'Agent: ' : 'Last agent: '}</span>{who.name}</b>
       {notable ? <small>{who.detail}{who.replaced && <span className="a-replaced" title={`${who.previousCount} earlier agent${who.previousCount === 1 ? '' : 's'} worked on this task`}>
-        {' · '}replaced</span>}</small> : <span className="a-sr">. {who.detail}</span>}
+        {'\u00A0· '}replaced</span>}</small> : <span className="a-sr">. {who.detail}</span>}
     </span>
   </div>
 }
@@ -85,6 +85,7 @@ const TaskRow = memo(function TaskRow({ entry, top, height, store, derived, proj
   const asking = entry.kind === 'ask'
   const past = entry.kind === 'past' || entry.kind === 'pastm'
   const classes = ['a-row', top0 ? 'a-row--root' : 'a-row--member', selected && 'is-selected', marked && 'is-marked', asking && 'is-ask', past && 'is-past',
+    past && (status.key === 'completed' || status.key === 'canceled') && !current.second && 'is-plain',
     status.key === 'canceled' && 'is-canceled', finished && 'is-finished', entry.first && 'is-first', entry.last && 'is-last'].filter(Boolean).join(' ')
   return <div className={classes} role="treeitem" aria-level={row.depth + 1} aria-setsize={row.setSize} aria-posinset={row.position}
     aria-expanded={row.hasChildren ? row.expanded : undefined} aria-selected={selected} tabIndex={focused ? 0 : -1}
@@ -107,7 +108,7 @@ const TaskRow = memo(function TaskRow({ entry, top, height, store, derived, proj
         <span className="a-t a-bidi" dir="auto" title={title}>{title}</span>
         <span className="a-sr">{status.label}.</span>
         {asking && !compact && <span className="a-askline">
-          <b>{current.line}</b>{current.second ? <span>{' · '}{current.second}</span> : null}
+          <b>{current.line}</b>{current.second ? <span>{'\u00A0· '}{current.second}</span> : null}
           {onReply && status.key === 'needs_input' && <button type="button" className="a-askreply" tabIndex={-1} aria-hidden="true" title="Reply · R"
             onClick={(event) => { event.stopPropagation(); onReply(row.id) }}><Icon name="reply" size={13} />Reply</button>}
         </span>}
@@ -115,8 +116,8 @@ const TaskRow = memo(function TaskRow({ entry, top, height, store, derived, proj
           <span className="a-pdot" style={{ '--hue': entry.hue }} aria-hidden="true" />
           <span className="a-bidi" dir="auto">{projectName(task.projectId)}</span>
           {/* A flex line drops a leading space, so the separator starts with a no-break space. */}
-          {' · '}{childCount ? `${childCount} helper${childCount === 1 ? '' : 's'}` : 'no helpers'}
-          {placement && <span className="a-placement">{' · '}{placement}</span>}
+          {childCount ? `\u00A0· ${childCount} helper${childCount === 1 ? '' : 's'}` : null}
+          {placement && <span className="a-placement">{'\u00A0· '}{placement}</span>}
         </span>}
       </span>
       {hiddenAttention && <span className="a-attn-dot" title="Something in this branch needs you" />}

@@ -8,11 +8,14 @@
 const isProject = (item) => item && typeof item.project_id === 'string' && item.project_id.length > 0
 
 // `resource` is a useLiveResource result for GET /projects.
-// A stable hue for a project's monogram, from its id (renaming keeps the colour).
+// A stable hue for a project's monogram, from its id (renaming keeps the colour). Hues come from a
+// curated ladder that stays clear of the colours that mean something: marker orange and fail red
+// (0–80), lit green for work (135–175) and ultramarine for selection (255–275).
+const HUE_LADDER = [300, 200, 345, 105, 228, 320, 190, 285]
 export function projectHue(id) {
   let hash = 2166136261
   for (const char of String(id || '')) hash = Math.imul(hash ^ char.codePointAt(0), 16777619)
-  return (hash >>> 0) % 360
+  return HUE_LADDER[(hash >>> 0) % HUE_LADDER.length]
 }
 
 export function projectDirectory(resource) {
