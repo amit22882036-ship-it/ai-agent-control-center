@@ -232,7 +232,7 @@ test('Ctrl+Enter starts only from the New Task page, never through an open dialo
   await dialog.getByRole('button', { name: 'Cancel' }).click()
   await expect(dialog).toBeHidden()
   // Focus in the app header: nothing is started.
-  await page.getByRole('button', { name: 'Open the classic interface' }).focus()
+  await page.getByRole('button', { name: /^Go to/ }).focus()
   await page.keyboard.press('Control+Enter')
   await page.waitForTimeout(300)
   expect(posts(log, '/agents/start')).toHaveLength(0)

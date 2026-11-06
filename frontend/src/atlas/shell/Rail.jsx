@@ -16,7 +16,7 @@ const SECTIONS = [
 // live context on pointer intent, on keyboard focus, or when pinned (\). Nothing depends on hover
 // alone: every item is a link with a stable name, and the context is its description. Widening
 // overlays the page, so the content never jumps; a pinned rail takes its own room instead.
-export default function Rail({ route, markPush, directory, projectFacts, needs, toolsText, toolsName, currentProject, onClassic }) {
+export default function Rail({ route, markPush, directory, projectFacts, needs, toolsText, toolsName, currentProject }) {
   const [pinned, setPinned] = useState(readPinned)
   const [open, setOpen] = useState(false)
   const timer = useRef(0)
@@ -109,11 +109,6 @@ export default function Rail({ route, markPush, directory, projectFacts, needs, 
     </nav>
     <span className="a-sp" />
     <div className="a-rail-foot">
-      <button type="button" className="a-rail-link a-rail-muted" onClick={onClassic} aria-label="Open the classic interface"
-        title="The classic interface stays available as a fallback">
-        <span className="a-rail-icon"><Icon name="swap" size={17} /></span>
-        <span className="a-rail-text" aria-hidden="true"><b>Classic interface</b><small>Fallback view</small></span>
-      </button>
       <button type="button" className="a-rail-link a-rail-muted" onClick={togglePin} aria-pressed={pinned}
         aria-label="Keep the sidebar open" title="Keep open · \">
         <span className="a-rail-icon"><Icon name="pin" size={17} /></span>

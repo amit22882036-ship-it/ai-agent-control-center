@@ -298,10 +298,7 @@ export default function TaskInspector({ store, derived, taskId, selection, proje
   return <Inspector label="Task details" width={width} onResize={onResize} onClose={onClose} header={header}
     tabs={<Tabs label="Task details" tabs={TABS} value={tab} onChange={setTab} idBase={idBase} />}
     footer={<><AgentFooterActions agent={agentScope} /><span className="a-sp" />
-      <Button size="sm" variant="ghost" icon="open" onClick={() => onOpenTask(taskId)}>Open task</Button>
-      <Button size="sm" variant="ghost" icon="swap" onClick={() => exitAtlas(undefined, { agentId: handoff })}
-        title={handoff ? 'Classic view opens with this agent selected.' : 'Classic view opens without a selection because this task has no current agent.'}>
-        Open in Classic</Button></>}>
+      <Button size="sm" variant="ghost" icon="open" onClick={() => onOpenTask(taskId)}>Open task</Button></>}>
     <div {...tabPanelProps(idBase, tab)} className="a-insp-panel">
       <AgentStopResult agent={agentScope} />
       {tab === 'now' && <NowTab store={store} derived={derived} id={taskId} projectName={projectName} onSelect={onSelect} task={task} activity={activity.data} now={now}

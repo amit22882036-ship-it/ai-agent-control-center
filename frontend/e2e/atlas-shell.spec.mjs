@@ -26,7 +26,8 @@ test('the new interface opens by default, with the rail and no classic marker', 
   const log = await openApp(page, { path: '/' })
   await expect(page.locator('.atlas h1')).toHaveText('Work')
   await expect(page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: 'Projects' })).toBeVisible()
-  await expect(page.getByRole('button', { name: 'Open the classic interface' })).toBeVisible()
+  // Classic is no longer offered in the everyday interface; Settings keeps it while features move.
+  await expect(page.getByRole('button', { name: 'Open the classic interface' })).toHaveCount(0)
   expect(await activeEventSources(page)).toBe(1)
   expect(log.external).toEqual([])
 })
@@ -82,7 +83,7 @@ test('leaving Atlas returns to the classic interface, and Back returns to the sa
   await page.getByRole('button', { name: 'New interface' }).click()
   await page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: 'Settings' }).click()
   await expect(page.locator('.atlas h1')).toHaveText('Settings')
-  await page.getByRole('button', { name: 'Open the classic interface' }).click()
+  await page.getByRole('button', { name: 'Open Classic interface' }).click()
   await expect(page.getByRole('heading', { level: 1, name: 'Agent Workspace' })).toBeVisible()
   expect(page.url()).toBe('http://atlas.preview/?ui=classic')
   expect(await activeEventSources(page)).toBe(1)
@@ -110,7 +111,7 @@ test('appearance persists, is shared with classic, and Automatic follows the sys
   await page.getByRole('radio', { name: 'Automatic' }).press('ArrowRight')
   await expect(page.getByRole('radio', { name: 'Light' })).toBeFocused()
   await expect(page.getByRole('radio', { name: 'Light' })).toHaveAttribute('aria-checked', 'true')
-  await page.getByRole('button', { name: 'Open the classic interface' }).click()
+  await page.getByRole('button', { name: 'Open Classic interface' }).click()
   expect(await page.evaluate(() => localStorage.getItem('control-center.theme'))).toBe('light')
 })
 

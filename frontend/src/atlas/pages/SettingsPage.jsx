@@ -79,8 +79,8 @@ export default function SettingsPage({ appearance, live, navigate, route, notifi
         </Card>
         <Card className="a-section" id="atlas-settings-interface" titleId="atlas-settings-interface-h" title="Interface">
           <div className="a-rows">
-            <div className="a-row"><div><b>Classic interface</b><small>The earlier interface stays available as a fallback with every function. It
-              opens in this window; its own button brings you back here.</small></div>
+            <div className="a-row"><div><b>Classic interface (temporary)</b><small>The earlier interface stays reachable here only until everything it does
+              is also in Lumen; then it is removed. It opens in this window; its own button brings you back.</small></div>
               <Button icon="swap" onClick={() => exitAtlas()}>Open Classic interface</Button></div>
             <div className="a-row"><div><b>Details panel width</b><small>{width} px{width === INSPECTOR.default ? ' (default)' : ''}. Drag the panel’s edge in Work, or use
               the arrow keys on it. Saved in this browser.</small></div>

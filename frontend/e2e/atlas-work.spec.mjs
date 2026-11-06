@@ -74,7 +74,7 @@ test('selecting a task opens the read-only inspector and keeps the task in the a
   await expect(inspector.getByRole('heading', { level: 2 })).toHaveText('Quoted fields')
   await expect(inspector).toContainText('Should quoted fields keep their line breaks?')
   await expect(inspector.getByRole('button', { name: 'Send reply' })).toBeVisible()
-  await expect(inspector.getByRole('button', { name: 'Open in Classic' })).toBeVisible()
+  await expect(inspector.getByRole('button', { name: 'Open in Classic' })).toHaveCount(0)
   await row(page, 'HTML summary report').click()
   await expect(inspector.getByRole('heading', { level: 2 })).toHaveText('Report builder')
   await inspector.getByRole('tab', { name: 'Activity' }).click()
@@ -351,20 +351,13 @@ test('section counts say when they cover only the loaded tasks', async ({ page }
   await expect(now.getByRole('button', { name: /Need(s)? you$/ })).not.toHaveAttribute('title', /loaded/)
 })
 
-test('opening Classic from a task selects its current agent there, and never an ended or removed one', async ({ page }) => {
+test('the task panel no longer offers Classic; Settings keeps it as a temporary fallback', async ({ page }) => {
   await openWork(page, { tasks: showcase() }, '?task=quoted')
   const inspector = page.getByRole('complementary', { name: 'Task details' })
-  await expect(inspector.getByRole('button', { name: 'Open in Classic' })).toHaveAttribute('title', 'Classic view opens with this agent selected.')
-  await inspector.getByRole('button', { name: 'Open in Classic' }).click()
+  await expect(inspector.getByRole('button', { name: 'Open in Classic' })).toHaveCount(0)
+  await page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: 'Settings' }).click()
+  await page.getByRole('button', { name: 'Open Classic interface' }).click()
   await expect(page.getByRole('heading', { level: 1, name: 'Agent Workspace' })).toBeVisible()
-  await expect(page.locator('#details-heading')).toHaveText('Quoted fields')
-  expect(await page.evaluate(() => sessionStorage.getItem('control-center.atlas.classic-agent'))).toBeNull() // read once
-  await page.unroute('**/*')
-  await openWork(page, { tasks: showcase() }, '?task=migrate') // its only agent was removed
-  await expect(inspector.getByRole('button', { name: 'Open in Classic' })).toHaveAttribute('title', /without a selection because this task has no current agent/)
-  await inspector.getByRole('button', { name: 'Open in Classic' }).click()
-  await expect(page.getByRole('heading', { level: 1, name: 'Agent Workspace' })).toBeVisible()
-  await expect(page.locator('.agent-details')).toHaveCount(0)
 })
 
 test('capture M3 review screenshots', async ({ page }) => {

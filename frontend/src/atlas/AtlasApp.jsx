@@ -37,7 +37,6 @@ import { lastWork, requestReply } from './workContext'
 import { pageShortcut } from './keys.mjs'
 import { documentTitle, routeKey } from './router.mjs'
 import { agentActions } from './api/agentClient.mjs'
-import { exitAtlas } from './uiMode.mjs'
 
 // The Lumen application shell (the code is still named Atlas). It is the default interface, and it
 // owns the single event connection while it is on screen (the classic interface is unmounted).
@@ -167,8 +166,7 @@ export default function AtlasApp() {
       <button type="button" className="a-skip" onClick={() => main.current?.focus()}>Skip to content</button>
       <div className="a-ground" aria-hidden="true" />
       <Rail route={route} markPush={markPush} directory={directory} projectFacts={projectFacts} needs={summary.reported || 0}
-        toolsText={toolsText} toolsName={toolsName} currentProject={route.name === 'work' ? route.params?.project || null : null}
-        onClassic={() => exitAtlas(undefined, { agentId: null })} />
+        toolsText={toolsText} toolsName={toolsName} currentProject={route.name === 'work' ? route.params?.project || null : null} />
       <TopBar live={live} appearance={appearance} markPush={markPush} onGoTo={openGoTo}
         attention={{ summary, onNext: nextQuestion, panel: { attention, tools, notices, preference: notifications, delivery,
           onReply: (taskId) => showTask(taskId, { reply: true }), onShow: (taskId) => showTask(taskId),
