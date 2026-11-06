@@ -37,6 +37,103 @@ function Impact({ view }) {
   </div>
 }
 
+const OUTCOMES = {
+  applied: { tone: 'ok', text: 'Applied. The task’s changes are now in the project folder. Nothing was committed: review and commit them with your usual Git tools.' },
+  noop: { tone: 'ok', text: 'Nothing to apply: the task made no changes to its copy.' },
+}
+
+function PathList({ paths, remaining, label }) {
+  if (!paths?.length) return null
+  return <details className="a-disclosure" open={paths.length <= 12}><summary><Icon name="right" size={13} stroke={2.2} />
+    <span>{label} ({paths.length + (remaining || 0)})</span></summary>
+    <div className="a-disclosure-body"><ul className="a-impact-list a-pathlist">{paths.map((path) => <li key={path} className="a-mono" dir="ltr">{path}</li>)}</ul>
+      {remaining > 0 && <p className="a-fine">and {remaining} more</p>}</div></details>
+}
+
+// Apply a root task's work to its project. The backend's read-only preview lists the files the task
+// changed and the files the project changed meanwhile; it is read again just before applying and
+// the person is asked again if it differs. The backend merges in one step, keeps the person's own
+// edits, staged files and branch, commits nothing, and refuses (in its own words) whenever a live
+// agent, an unknown process, an in-progress Git operation or a conflict makes it unsafe.
+export function ApplyDialog({ taskId, blocked = null, onClose, onFinished }) {
+  const [phase, setPhase] = useState('loading')
+  const [view, setView] = useState(null)
+  const [error, setError] = useState(null)
+  const [changed, setChanged] = useState(false)
+  const sending = useRef(false)
+  const same = (a, b) => JSON.stringify([a?.changed_paths, a?.destination_changed_paths]) === JSON.stringify([b?.changed_paths, b?.destination_changed_paths])
+
+  useEffect(() => {
+    let live = true
+    agentActions.integrationPreview(taskId).then((result) => {
+      if (!live) return
+      if (result.offline) { setError({ tone: 'warn', text: `${OFFLINE_MESSAGE} The changes couldn’t be read, so nothing can be applied yet.` }); setPhase('blocked'); return }
+      if (!result.ok) { setError({ tone: 'error', text: refusalText(result, 'The backend can’t prepare this task’s changes.') }); setPhase('blocked'); return }
+      setView(result.data)
+      setPhase('review')
+    })
+    return () => { live = false }
+  }, [taskId])
+
+  async function confirm() {
+    if (sending.current || phase !== 'review' || blocked) return
+    sending.current = true
+    setPhase('sending')
+    setError(null)
+    try {
+      const fresh = await agentActions.integrationPreview(taskId)
+      if (fresh.offline) { setError({ tone: 'warn', text: `${OFFLINE_MESSAGE} Nothing was applied.` }); setPhase('review'); return }
+      if (!fresh.ok) { setError({ tone: 'error', text: refusalText(fresh, 'The backend can’t prepare this task’s changes.') }); setPhase('blocked'); return }
+      if (!same(view, fresh.data)) { setView(fresh.data); setChanged(true); setPhase('review'); return }
+      const result = await agentActions.applyToProject(taskId)
+      if (result.offline) {
+        onFinished({ tone: 'warn', text: `${OFFLINE_MESSAGE} The changes may or may not have been applied; the task’s Result is read again when the backend answers. Check it before trying again.` })
+        return
+      }
+      const record = result.ok ? result.data : result.data?.detail
+      const status = record?.status
+      if (OUTCOMES[status]) { onFinished(OUTCOMES[status]); return }
+      if (status === 'conflict') {
+        setError({ tone: 'error', text: `Nothing was applied: the task and the project changed the same lines in ${(record.conflict_paths || []).length + (record.conflict_paths_remaining || 0)} file(s). Resolve them in the task’s copy or the project, then try again.` })
+        setView((current) => ({ ...current, conflicts: record.conflict_paths, conflictsRemaining: record.conflict_paths_remaining }))
+        setPhase('blocked')
+        return
+      }
+      setError({ tone: 'error', text: record?.failure_reason ? `${record.failure_reason}. Its history is on this page under Result.` : refusalText(result, 'The backend refused to apply this task.') })
+      setPhase('blocked')
+    } finally {
+      sending.current = false
+      setPhase((current) => (current === 'sending' ? 'review' : current))
+    }
+  }
+
+  const busy = phase === 'sending'
+  const nothing = view && !view.changed_paths?.length
+  return <Dialog open onClose={() => { if (!busy) onClose() }} title="Apply this task to its project"
+    description="The task worked in its own copy of the project. Applying merges what it changed into your project folder. Your own edits, staged files and branch are kept, and nothing is committed."
+    actions={<>
+      <Button onClick={onClose} disabled={busy}>Not now</Button>
+      <Button variant="primary" onClick={confirm} disabled={phase !== 'review' || busy || Boolean(blocked) || nothing} aria-busy={busy || undefined}>
+        {busy ? 'Applying…' : changed ? 'Apply these changes' : 'Apply'}</Button>
+    </>}>
+    {phase === 'loading' && <p className="a-fine" role="status">Reading what the task changed…</p>}
+    {blocked && <div className="a-result a-result--warn" role="status"><Icon name="info" size={15} /><div>{blocked}</div></div>}
+    {changed && <div className="a-result a-result--warn" role="status"><Icon name="info" size={15} />
+      <div>The changes are different from when they were shown. Review them again before applying.</div></div>}
+    {view && <>
+      {nothing ? <p className="a-fine">The task didn’t change any files, so there is nothing to apply.</p>
+        : <PathList paths={view.changed_paths} remaining={view.changed_paths_remaining} label="Files the task changed" />}
+      {view.destination_changed_paths?.length > 0 && <>
+        <p className="a-fine">Your project also changed since the task started. Those changes are kept; where both touched the same lines, nothing is applied and the conflict is listed.</p>
+        <PathList paths={view.destination_changed_paths} remaining={view.destination_changed_paths_remaining} label="Files changed in the project meanwhile" />
+      </>}
+      {view.conflicts?.length > 0 && <PathList paths={view.conflicts} remaining={view.conflictsRemaining} label="Files in conflict" />}
+    </>}
+    {error && <div className={`a-result a-result--${error.tone === 'error' ? 'error' : 'warn'}`} role={error.tone === 'error' ? 'alert' : 'status'}>
+      <Icon name={error.tone === 'error' ? 'warn' : 'info'} size={15} /><div>{error.text}</div></div>}
+  </Dialog>
+}
+
 // Pause, Resume and Cancel for one Task. Pause and Cancel show the backend's own preview of what
 // they affect (POST /tasks/{id}/control-impact), read it again just before sending and ask again
 // if it changed. One request at a time; a lost connection is reported as an unknown outcome and

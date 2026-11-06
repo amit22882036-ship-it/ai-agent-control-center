@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import Icon from '../components/Icon'
 import { Avatar, StatusBead } from '../components/identity'
 import { Button, EmptyState, Notice, Skeleton } from '../components/primitives'
-import { TaskControlDialog } from '../components/task/TaskControls'
+import { ApplyDialog, TaskControlDialog } from '../components/task/TaskControls'
 import { AdvancedCard, AgentCard, PlaceCard, ProgressCard, RequestCard, ResultCard, TeamCard } from '../components/task/TaskSections'
 import { API_BASE } from '../../apiClient.mjs'
 import { useLiveResource, useTaskFeed } from '../hooks'
@@ -155,7 +155,7 @@ export default function TaskPage({ live, route, navigate }) {
       <div className="a-tmain">
         <RequestCard task={task} detail={detail} />
         <ProgressCard progress={progress} activity={activity} taskId={taskId} store={store} onOpenTask={openTask} />
-        <ResultCard result={result} />
+        <ResultCard result={result} onApply={task && !task.parentId ? () => setDialog('apply') : undefined} />
       </div>
       <div className="a-tside">
         <AgentCard derived={derived} taskId={taskId} history={history} assignments={assignments} onOpenWork={() => toWork()} />
@@ -165,7 +165,9 @@ export default function TaskPage({ live, route, navigate }) {
     </div>
     <TeamCard store={store} derived={derived} taskId={taskId} projectName={projectName} now={now} complete={store.complete}
       onOpenTask={openTask} onShowInWork={(id) => toWork(id)} onLoadMore={feed.loadMore} loadingMore={feed.loadingMore} />
-    {dialog && <TaskControlDialog action={dialog} taskId={taskId} store={store} held={held} blocked={unavailable} onClose={() => setDialog(null)}
+    {dialog === 'apply' && <ApplyDialog taskId={taskId} blocked={unavailable} onClose={() => setDialog(null)}
+      onFinished={(result) => { setDialog(null); setOutcome(result); refresh() }} />}
+    {dialog && dialog !== 'apply' && <TaskControlDialog action={dialog} taskId={taskId} store={store} held={held} blocked={unavailable} onClose={() => setDialog(null)}
       onFinished={(result) => { setDialog(null); setOutcome(result); refresh() }} />}
   </div>
 }

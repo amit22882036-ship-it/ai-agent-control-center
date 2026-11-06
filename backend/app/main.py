@@ -1304,6 +1304,12 @@ def integrate_task_route(task_id: str, request: IntegrationRequest | None = None
     return result
 
 
+@app.get('/tasks/{task_id}/integration-preview')
+def integration_preview_route(task_id: str):
+    from .integrations import preview
+    return _task_action(lambda: preview(manager._task_store(), task_id))
+
+
 @app.get('/tasks/{task_id}/integrations')
 def task_integrations_route(task_id: str):
     from .integrations import public

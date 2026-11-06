@@ -119,7 +119,7 @@ function IntegrationRow({ entry, empty }) {
 }
 
 // The result in five separate statements, never merged into one "done".
-export function ResultCard({ result }) {
+export function ResultCard({ result, onApply }) {
   const row = (key, title, children) => <div className="a-rrow" key={key}><span className="a-rrow-k">{title}</span><div className="a-rrow-v">{children}</div></div>
   return <Section id="t-result" title="Result">
     {row('reported', 'Reported by the agent', <>
@@ -133,8 +133,9 @@ export function ResultCard({ result }) {
       ? row('integrated', 'Combined into its lead’s copy', <IntegrationRow entry={result.integrated} empty="Not combined into its lead’s copy yet." />)
       : row('applied', 'Applied to the project', <>
         <IntegrationRow entry={result.applied} empty="Not applied to the project." />
-        <p className="a-fine a-apply-note"><Icon name="info" size={13} />Applying to the project isn’t available in Atlas yet. The backend applies a task’s
-          changes in one step and can’t show them for review beforehand, and a confirmation alone is not a review of what would change in your files.</p>
+        {onApply && result.applied?.status !== 'applied' && <div className="a-apply">
+          <Button size="sm" icon="check" onClick={onApply}>Review and apply…</Button>
+          <span className="a-fine">Shows the files it changed before anything is written to your project.</span></div>}
       </>)}
     {result.history.length > 1 && <Disclosure summary={`Earlier attempts (${result.history.length - 1})`}>
       <ul className="a-tlist">{result.history.slice(0, -1).reverse().map((entry) => <li key={entry.id}>{entry.kind === 'project' ? 'Project' : 'Lead’s copy'}: {entry.text}{entry.createdAt ? ` · ${when(entry.createdAt)}` : ''}</li>)}</ul>

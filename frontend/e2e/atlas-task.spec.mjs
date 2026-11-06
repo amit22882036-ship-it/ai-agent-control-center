@@ -136,8 +136,46 @@ test('results keep reported, recorded, verified, combined and applied apart, and
   const root = page.locator('#t-result').locator('xpath=ancestor::section[1]')
   await expect(root).toContainText('Applied to the project')
   await expect(root).toContainText('A lead’s own account of its work is in its output')
-  await expect(root).toContainText('Applying to the project isn’t available in Atlas yet.')
-  await expect(page.getByRole('button', { name: /Apply/ })).toHaveCount(0)
+  // Already applied: nothing to offer.
+  await expect(page.getByRole('button', { name: /apply/i })).toHaveCount(0)
+})
+
+test('a finished root task is applied to its project only after its files are reviewed, and the backend’s refusals are shown', async ({ page }) => {
+  const tasks = showcase()
+  Object.assign(tasks.tasks.find((item) => item.task_id === 'rename'), { integration: null })
+  let applied = 0
+  let conflict = false
+  const preview = { task_id: 'rename', destination_kind: 'project', destination_id: 'p1', changed_paths: ['src/settings/page.tsx', 'docs/settings.md'],
+    changed_paths_remaining: 0, destination_changed_paths: ['README.md'], destination_changed_paths_remaining: 0 }
+  const api = ({ method, path }) => {
+    if (method === 'GET' && path === '/tasks/rename/integration-preview') return { body: preview }
+    if (method === 'POST' && path === '/tasks/rename/integrate') {
+      applied += 1
+      return conflict ? { status: 409, body: { detail: { status: 'conflict', conflict_paths: ['docs/settings.md'], conflict_paths_remaining: 0 } } }
+        : { body: { status: 'applied', destination_kind: 'project' } }
+    }
+    return undefined
+  }
+  await open(page, 'task?id=rename', { tasks, api })
+  conflict = true
+  await page.getByRole('button', { name: 'Review and apply…' }).click()
+  const dialog = page.getByRole('dialog', { name: 'Apply this task to its project' })
+  await expect(dialog).toContainText('src/settings/page.tsx')
+  await expect(dialog).toContainText('Files changed in the project meanwhile')
+  await expect(dialog).toContainText('README.md')
+  expect(applied).toBe(0)
+  await dialog.getByRole('button', { name: 'Apply', exact: true }).click()
+  await expect(dialog.getByRole('alert')).toContainText('Nothing was applied')
+  await expect(dialog).toContainText('Files in conflict')
+  await expect(dialog.getByRole('button', { name: 'Apply', exact: true })).toBeDisabled()
+  expect(applied).toBe(1)
+  await dialog.getByRole('button', { name: 'Not now' }).click()
+  conflict = false
+  await page.getByRole('button', { name: 'Review and apply…' }).click()
+  await dialog.getByRole('button', { name: 'Apply', exact: true }).click()
+  await expect(dialog).toBeHidden()
+  await expect(page.getByText('Applied. The task’s changes are now in the project folder.')).toBeVisible()
+  expect(applied).toBe(2)
 })
 
 test('lifecycle controls appear only where the backend allows them, with the reason otherwise', async ({ page }) => {

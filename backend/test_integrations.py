@@ -148,6 +148,22 @@ class IntegrationTests(unittest.TestCase):
         self.assertEqual(self.integrate(child)['status'], 'applied')
         self.assertEqual((p / 'new.py').read_text(), 'grandchild')
 
+    def test_preview_lists_the_task_and_project_changes_without_applying_anything(self):
+        self.seed()
+        task, source = self.root()
+        root = manager._project_root
+        self.edit(source, 'b.txt', 'Task result\n')
+        self.edit(source, 'docs/new.md', 'added\n')
+        self.edit(root, 'a.txt', 'user edit\n')
+        git_before, files_before = self.git_state(root), self.source_bytes(root)
+        result = service.preview(manager._store, task['task_id'])
+        self.assertEqual(result['destination_kind'], 'project')
+        self.assertEqual(result['changed_paths'], ['b.txt', 'docs/new.md'])
+        self.assertEqual(result['destination_changed_paths'], ['a.txt'])
+        self.assertEqual(self.git_state(root), git_before)
+        self.assertEqual(self.source_bytes(root), files_before)
+        self.assertEqual(manager._store.list_integrations(task['task_id']), [])
+
     def test_root_dirty_destination_preserves_branch_head_index_and_user_edits(self):
         self.seed()
         task, source = self.root()

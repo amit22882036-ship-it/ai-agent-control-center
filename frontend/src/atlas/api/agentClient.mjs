@@ -60,6 +60,10 @@ export const agentActions = {
   pauseTask: (taskId, options) => send('POST', `${task(taskId)}/pause`, undefined, options),
   resumeTask: (taskId, options) => send('POST', `${task(taskId)}/resume`, undefined, options),
   cancelTask: (taskId, options) => send('POST', `${task(taskId)}/cancel`, undefined, options),
+  // Applying a root task's work to its project: a read-only preview of the files first, then the
+  // backend's single integrate step (which re-checks every safety condition itself).
+  integrationPreview: (taskId, options) => send('GET', `${task(taskId)}/integration-preview`, undefined, options),
+  applyToProject: (taskId, options) => send('POST', `${task(taskId)}/integrate`, undefined, options),
   // Connections (M8): the same endpoints and payloads as Classic's AI Providers view. Setup runs
   // only from a reviewed plan (plan_id + digest, used once); checks and catalog refreshes are
   // non-billable local reads; settings payloads come from model/connections.mjs (billingView).

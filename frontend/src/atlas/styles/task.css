@@ -96,3 +96,8 @@
 .atlas .a-taskpage .a-tjump { display: flex; flex-wrap: wrap; gap: 4px 16px; margin-top: 12px; font-size: 13.5px; }
 .atlas .a-taskpage .a-tjump .a-link { color: var(--a-text-2); }
 .atlas .a-taskpage .a-tjump .a-link:hover { color: var(--a-text); }
+
+/* Apply to project: the action under Result, and the reviewed file list in its dialog. */
+.atlas .a-apply { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin-top: 10px; }
+.atlas .a-pathlist { max-height: 220px; overflow-y: auto; font-size: 12.5px; }
+

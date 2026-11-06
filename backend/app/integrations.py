@@ -54,6 +54,24 @@ def resolve(store, task_id):
     return workspace, source, target, kind, identifier
 
 
+def preview(store, task_id):
+    """What integrating would bring, before anything is applied: the files the Task changed since
+    its workspace was created, and the files its destination changed meanwhile (which integration
+    merges and may report as conflicts). Writes no destination file and no integration record; like
+    freshness evaluation it may store snapshot tree objects in the repository's object database.
+    Paths only, bounded and escaped as elsewhere; never file contents or absolute paths."""
+    with task_lock(store, task_id):
+        workspace, source, destination, kind, identifier = resolve(store, task_id)
+        base = gitops.source_tree(source, workspace['base_snapshot'])
+        local = gitops.snapshot_source_tree(source)
+        upstream = gitops.snapshot_source_tree(destination)
+        paths, remaining = changed_files(source, base, local)
+        moved, moved_remaining = changed_files(source, base, upstream)
+    return {'task_id': task_id, 'destination_kind': kind, 'destination_id': identifier,
+            'changed_paths': paths, 'changed_paths_remaining': remaining,
+            'destination_changed_paths': moved, 'destination_changed_paths_remaining': moved_remaining}
+
+
 def _locks(store, task_id, kind, identifier):
     # Same keys as worker start/resume, plus one key per canonical destination.
     return sorted({task_id, identifier if kind == 'task' else 'project:' + identifier})
