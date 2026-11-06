@@ -157,10 +157,14 @@ export default function SiteModel({ mode = 'site', layout, selectedTop = null, t
     const tyr = tx * sn + ty * c
     const P = (x, y, z) => [w / 2 + (x * c - y * sn - txr) * zoom, h / 2 + ((x * sn + y * c - tyr) * se - z * ce) * zoom]
     const depth = (x, y) => x * sn + y * c
-    const detail = zoom > 13
-    const fine = zoom > 26
+    // Level of detail: edges, hatching, shadows and window rows only where they can be seen, and a
+    // large model drawn lighter while it moves (full detail returns the frame it comes to rest).
+    const coarse = items.length > 400 && Boolean(s.drag?.moved || s.goal)
+    const detail = zoom > 13 && !coarse
+    const fine = zoom > 26 && !coarse
     const now = performance.now()
     const hits = []
+    const visible = (x0, y0, x1, y1) => x1 > -60 && x0 < w + 60 && y1 > -60 && y0 < h + 60
 
     const poly = (points, fill, stroke, width = 1) => {
       ctx.beginPath()
@@ -183,11 +187,13 @@ export default function SiteModel({ mode = 'site', layout, selectedTop = null, t
         faces.push({ points: [P(a[0], a[1], z0), P(b[0], b[1], z0), P(b[0], b[1], z1), P(a[0], a[1], z1)], fill: shade })
       }
       if (keepTop) faces.push({ points: corners.map(([x, y]) => P(x, y, z1)), fill: fills.top })
-      if (glow) { ctx.shadowColor = glow; ctx.shadowBlur = 14 }
+      if (glow && !coarse) { ctx.shadowColor = glow; ctx.shadowBlur = 14 }
       if (dashed) ctx.setLineDash([3, 2.5])
+      // Edges are drawn where the eye can resolve them; a wireframe is all edges, so it keeps them.
+      const line = dashed || detail ? stroke : null
       for (const face of faces) {
-        poly(face.points, face.fill || null, stroke, stroke ? (dashed ? 1.1 : 0.7) : 1)
-        if (pattern && s.hatch && face.fill) { ctx.save(); ctx.globalAlpha = 0.55; ctx.fillStyle = s.hatch; ctx.fill(); ctx.restore() }
+        poly(face.points, face.fill || null, line, line ? (dashed ? 1.1 : 0.7) : 1)
+        if (pattern && detail && s.hatch && face.fill) { ctx.save(); ctx.globalAlpha = 0.55; ctx.fillStyle = s.hatch; ctx.fill(); ctx.restore() }
       }
       if (dashed) ctx.setLineDash([])
       if (glow) { ctx.shadowBlur = 0; ctx.shadowColor = 'transparent' }
@@ -199,7 +205,7 @@ export default function SiteModel({ mode = 'site', layout, selectedTop = null, t
     const windows = (corners, z0, z1, count) => {
       const rows = Math.max(1, count)
       const floorPx = ((z1 - z0) / rows) * ce * zoom
-      if (pal.night) { ctx.shadowColor = pal.litGlow; ctx.shadowBlur = 9 }
+      if (pal.night && !coarse) { ctx.shadowColor = pal.litGlow; ctx.shadowBlur = 9 }
       for (let i = 0; i < corners.length; i += 1) {
         const a = corners[i]
         const b = corners[(i + 1) % corners.length]
@@ -210,7 +216,7 @@ export default function SiteModel({ mode = 'site', layout, selectedTop = null, t
         const at = (t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t]
         const p0 = at(0.14)
         const p1 = at(0.86)
-        const bands = floorPx < 3.2 ? [[z0 + (z1 - z0) * 0.1, z1 - (z1 - z0) * 0.1]]
+        const bands = floorPx < 3.2 || coarse ? [[z0 + (z1 - z0) * 0.1, z1 - (z1 - z0) * 0.1]]
           : Array.from({ length: rows }, (_, k) => [z0 + ((k + 0.26) / rows) * (z1 - z0), z0 + ((k + 0.74) / rows) * (z1 - z0)])
         for (const [za, zb] of bands) poly([P(p0[0], p0[1], za), P(p1[0], p1[1], za), P(p1[0], p1[1], zb), P(p0[0], p0[1], zb)], fill)
       }
@@ -249,6 +255,13 @@ export default function SiteModel({ mode = 'site', layout, selectedTop = null, t
     const lift = s.lift
     const sorted = [...items].sort((a, b) => depth(a.x + (a.w || 1) / 2, a.y + (a.d || 1) / 2) - depth(b.x + (b.w || 1) / 2, b.y + (b.d || 1) / 2))
     for (const item of sorted) {
+      // Off-screen buildings are neither drawn nor hit.
+      if (!item.archive) {
+        const [bx, by] = P(item.x + item.w / 2, item.y + item.d / 2, 0)
+        const topY = by - (item.height + 0.6) * ce * zoom
+        const r = zoom * 1.1
+        if (!visible(bx - r, topY - r, bx + r, by + r)) continue
+      }
       const born = s.appear.get(item.id)
       let rise = 1
       if (born) {
