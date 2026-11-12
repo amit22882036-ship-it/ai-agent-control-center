@@ -1,7 +1,7 @@
 {
   "name": "ai-agent-control-center-desktop",
   "productName": "AI Agent Control Center",
-  "version": "0.13.0",
+  "version": "0.13.1",
   "description": "Supervise coding agents (Claude Code, Codex, Gemini CLI) across your local Git projects.",
   "private": true,
   "main": "main.cjs",
