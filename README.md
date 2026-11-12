@@ -72,7 +72,7 @@ No release is published yet; the installer is built from this repository.
 .\desktop\build.ps1
 ```
 
-Then run `desktop\out\AI-Agent-Control-Center-Setup-0.12.0.exe`. It installs for your Windows user
+Then run `desktop\out\AI-Agent-Control-Center-Setup-0.12.1.exe`. It installs for your Windows user
 (no administrator rights) and opens straight into the app; there is nothing else to start. The
 installer is not code-signed, so SmartScreen asks before the first run. To look around without a
 project or any model usage, start the app with `--demo`.
