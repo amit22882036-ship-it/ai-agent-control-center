@@ -68,3 +68,10 @@ test('sizes are short and readable', () => {
   assert.deepEqual([formatBytes(0), formatBytes(900), formatBytes(1536), formatBytes(52_428_800), formatBytes(3 * 1024 ** 3)],
     ['0 B', '900 B', '1.5 KB', '50 MB', '3.0 GB'])
 })
+
+test('a project removed after its folder was deleted says so in the Trash', async () => {
+  const { trashSummary } = await import('../src/atlas/model/projectLifecycle.mjs')
+  assert.equal(trashSummary({ trash: { state: 'trashed', original_root_path: 'D:/x', folder_missing: false } }), 'Was at D:/x')
+  assert.equal(trashSummary({ trash: { state: 'trashed', original_root_path: 'D:/x', folder_missing: true } }),
+    'Was at D:/x; its folder had already been deleted. Restore it once the folder is back there.')
+})

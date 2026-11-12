@@ -14,6 +14,16 @@ permanent deletion. Implementation: `backend/app/project_lifecycle.py`; tests:
 | Restore | Moved back (or to another place you choose) | Visible again, in its old position | Can run again |
 | Delete permanently | **Deleted**, with its Task worktrees | Deleted (tasks, agents, output, executions, delegations…) | Only from the Trash, after typing the name |
 
+## A folder that was deleted outside the app
+
+When the registered folder no longer exists, the Trash dialog becomes **Remove from Control Center**
+(`POST /projects/{id}/trash` with `{"folder_missing": true}`, accepted only when nothing exists at the path).
+Nothing on disk is created, moved or deleted: only the project's records go to the Trash, with its tasks,
+agents and Task worktrees kept. The original path is released, so the folder can be added again.
+**Restore** works once a folder exists at the original (or a chosen) location, and **Delete permanently**
+removes the records and this application's worktrees only. Without the explicit choice, the move is refused
+as `folder_missing`, which explains both options (remove it, or move a moved folder back).
+
 ## Where the Trash is
 
 The folder moves with a single rename on its own drive, so the move is instant and cannot leave

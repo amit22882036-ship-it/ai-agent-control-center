@@ -46,6 +46,7 @@ export function trashSummary(project) {
   if (!trash) return ''
   if (trash.state === 'deleting') return trash.error || 'Deletion did not finish. Choose Delete permanently again to finish it.'
   if (trash.state === 'moving' || trash.state === 'restoring') return 'A move is in progress.'
+  if (trash.folder_missing) return `Was at ${trash.original_root_path}; its folder had already been deleted. Restore it once the folder is back there.`
   return `Was at ${trash.original_root_path}`
 }
 

@@ -5,6 +5,7 @@ real moves and deletions, never a developer's project. Providers are fakes."""
 import asyncio
 import json
 import os
+import shutil
 from pathlib import Path
 import sqlite3
 import subprocess
@@ -331,6 +332,59 @@ class ProjectLifecycleTests(unittest.TestCase):
         missing = self.call('POST', f"/projects/{project['project_id']}/restore", {}, 409)['detail']
         self.assertEqual(missing['code'], 'trash_folder_missing')
         self.assertTrue(self.call('DELETE', f"/projects/{project['project_id']}", {'confirm_name': 'Shop'})['deleted'])
+
+    def delete_folder(self, root):
+        shutil.rmtree(root, onerror=lambda func, path, _: (os.chmod(path, 0o700), func(path)))
+
+    def test_a_project_whose_folder_was_deleted_by_hand_can_be_removed_and_keeps_its_history(self):
+        project, root = self.project()
+        agent = self.start(project['project_id'])
+        self.stop(project['project_id'])
+        self.delete_folder(root)
+        others = set(Path(self.temp.name, 'projects').iterdir())
+        refused = self.call('POST', f"/projects/{project['project_id']}/trash", {}, 409)['detail']
+        self.assertEqual((refused['code'], refused['can_remove'], refused['path']),
+                         ('folder_missing', True, canonical_path(root)[0]))
+        self.assertIn('remove the project from the Control Center', refused['reasons'][0])
+        self.assertIn('move it back', refused['reasons'][1])
+        removed = self.call('POST', f"/projects/{project['project_id']}/trash", {'folder_missing': True})
+        self.assertTrue(removed['trashed'])
+        self.assertEqual((removed['trash']['folder_missing'], removed['trash']['path'], removed['trash']['original_root_path']),
+                         (True, None, canonical_path(root)[0]))
+        # Nothing on disk was created, moved or deleted; the history stays with the project in the Trash.
+        self.assertFalse(root.exists())
+        self.assertEqual(set(Path(self.temp.name, 'projects').iterdir()), others)
+        self.assertFalse(self.trash.exists() and any(self.trash.rglob('*')))
+        self.assertEqual([p['project_id'] for p in self.call('GET', '/projects/trash')['projects']], [project['project_id']])
+        self.assertTrue(self.task_for(agent))
+        # The original path is free again: the folder can be added as a new project.
+        make_repository(root)
+        added = self.call('POST', '/projects', {'name': 'Shop again', 'root_path': str(root)})
+        self.assertNotEqual(added['project_id'], project['project_id'])
+
+    def test_removing_requires_the_folder_to_be_really_missing(self):
+        project, root = self.project()
+        refused = self.call('POST', f"/projects/{project['project_id']}/trash", {'folder_missing': True}, 409)['detail']
+        self.assertEqual(refused['code'], 'folder_present')
+        self.assertTrue((root / 'notes.txt').is_file())
+        self.assertFalse(self.call('GET', f"/projects/{project['project_id']}")['trashed'])
+        self.call('POST', f"/projects/{project['project_id']}/trash", {'folder_missing': 'yes'}, 422)
+
+    def test_a_removed_project_restores_once_its_folder_is_back_and_can_be_deleted(self):
+        project, root = self.project()
+        self.delete_folder(root)
+        self.call('POST', f"/projects/{project['project_id']}/trash", {'folder_missing': True})
+        waiting = self.call('POST', f"/projects/{project['project_id']}/restore", {}, 409)['detail']
+        self.assertEqual(waiting['code'], 'restore_folder_missing')
+        make_repository(root)
+        restored = self.call('POST', f"/projects/{project['project_id']}/restore", {})
+        self.assertEqual((restored['trashed'], restored['root_path']), (False, canonical_path(root)[0]))
+        self.delete_folder(root)
+        self.call('POST', f"/projects/{project['project_id']}/trash", {'folder_missing': True})
+        deleted = self.call('DELETE', f"/projects/{project['project_id']}", {'confirm_name': 'Shop'})
+        self.assertTrue(deleted['deleted'])
+        self.assertIsNone(deleted['folder'])
+        self.call('GET', f"/projects/{project['project_id']}", expected=404)
 
     # ------------------------------------------------------------ safety and recovery
 

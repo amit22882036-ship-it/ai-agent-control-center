@@ -101,7 +101,9 @@ export const agentActions = {
   hideProject: (projectId, options) => send('POST', `/projects/${encode(projectId)}/hide`, undefined, options),
   unhideProject: (projectId, options) => send('POST', `/projects/${encode(projectId)}/unhide`, undefined, options),
   stopProjectWork: (projectId, options) => send('POST', `/projects/${encode(projectId)}/stop-work`, undefined, options),
-  trashProject: (projectId, options) => send('POST', `/projects/${encode(projectId)}/trash`, undefined, options),
+  // folderMissing: the person chose to remove a project whose folder was already deleted (records only).
+  trashProject: (projectId, options, folderMissing = false) => send('POST', `/projects/${encode(projectId)}/trash`,
+    folderMissing ? { folder_missing: true } : undefined, options),
   restoreProject: (projectId, targetPath, options) => send('POST', `/projects/${encode(projectId)}/restore`,
     targetPath ? { target_path: targetPath } : {}, options),
   deleteProject: (projectId, confirmName, options) => send('DELETE', `/projects/${encode(projectId)}`, { confirm_name: confirmName }, options),

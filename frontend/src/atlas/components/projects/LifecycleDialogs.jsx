@@ -37,7 +37,9 @@ export function TrashDialog({ project, onClose, onDone }) {
   const [refusal, setRefusal] = useState(null)
   const data = preview.data
   const blocked = Boolean(data?.activity?.busy)
-  const protectedFolder = (data?.protections || []).length > 0
+  // The folder was deleted outside the app: nothing to move, so the project itself is removed (to the Trash).
+  const missing = data?.folder?.exists === false || (refusal?.code === 'folder_missing' && refusal?.canRemove)
+  const protectedFolder = !missing && (data?.protections || []).length > 0
 
   async function stopAll() {
     setBusy('stop')
@@ -51,38 +53,44 @@ export function TrashDialog({ project, onClose, onDone }) {
   }
   async function trash() {
     setBusy('trash')
-    const result = await agentActions.trashProject(project.id)
+    const result = await agentActions.trashProject(project.id, undefined, missing)
     setBusy(null)
     if (result.ok) { onDone(result.data); return }
-    setRefusal(lifecycleRefusal(result) || { message: refusalText(result, 'The project could not be moved to the Trash.'), reasons: [] })
+    const next = lifecycleRefusal(result) || { message: refusalText(result, 'The project could not be moved to the Trash.'), reasons: [] }
+    setRefusal({ ...next, canRemove: Boolean(result.data?.detail?.can_remove) })
     setNonce((value) => value + 1)
   }
-  return <Dialog open onClose={onClose} size="lg" title={`Move “${project.name}” to the Trash?`}
-    description="The project folder moves out of its location into the Trash. You can restore it with everything in it, or delete it permanently later."
+  return <Dialog open onClose={onClose} size="lg"
+    title={missing ? `Remove “${project.name}” from the Control Center?` : `Move “${project.name}” to the Trash?`}
+    description={missing
+      ? 'Its folder no longer exists, so nothing on disk is moved or deleted. The project and its history go to the Trash: restore it once the folder is back, or delete it permanently.'
+      : 'The project folder moves out of its location into the Trash. You can restore it with everything in it, or delete it permanently later.'}
     actions={<>
       <Button onClick={onClose}>Keep project</Button>
       {blocked && <Button icon="stop" onClick={stopAll} disabled={Boolean(busy)}>{busy === 'stop' ? 'Stopping…' : 'Stop all work in this project'}</Button>}
       <Button variant="danger" icon="trash" onClick={trash} disabled={!data || blocked || protectedFolder || Boolean(busy)}>
-        {busy === 'trash' ? 'Moving…' : 'Move to Trash'}</Button>
+        {busy === 'trash' ? (missing ? 'Removing…' : 'Moving…') : (missing ? 'Remove from Control Center' : 'Move to Trash')}</Button>
     </>}>
     {!data && !preview.error && <Skeleton lines={4} label="Reading the project" />}
     {preview.error && <Notice tone="error" title="The project could not be read">{preview.error}</Notice>}
     {data && <div className="a-life">
       <div className="a-life-move">
-        <span className="a-life-folder"><Icon name="folder" size={18} /><span className="a-mono">{data.folder.path}</span></span>
+        <span className="a-life-folder"><Icon name="folder" size={18} /><span className="a-mono">{data.folder.path}</span>
+          {missing && <span className="a-fine"> · not found</span>}</span>
         <Icon name="right" size={16} />
         <span className="a-life-folder a-life-folder--trash"><Icon name="trash" size={18} />Trash</span>
       </div>
-      <p className="a-fine">{trashPlace(data)}</p>
+      <p className="a-fine">{missing ? `Nothing was found at ${data.folder.path}. Only the project’s records go to the Trash; no folder is created, moved or deleted.` : trashPlace(data)}</p>
       <ul className="a-life-facts">
         <li><b>{data.activity.tasks}</b> tasks and <b>{data.agents}</b> agents keep their history.</li>
         <li><b>{data.worktrees}</b> private task worktrees stay where they are.</li>
         <li>Nothing runs in the project while it is in the Trash.</li>
       </ul>
       {blocked && <Notice tone="warn" title="Work is still running in this project">{activityLines(data).join(' ')}</Notice>}
+      {missing && <p className="a-fine">If you moved the folder yourself rather than deleting it, move it back to {data.folder.path} first to keep it with the project.</p>}
       {protectedFolder && <Notice tone="error" title="This folder cannot be moved">{data.protections.join(' ')}</Notice>}
     </div>}
-    {refusal && <Notice tone="error" title={refusal.message} role="alert">{refusal.reasons.join(' ')}</Notice>}
+    {refusal && !(missing && refusal.code === 'folder_missing') && <Notice tone="error" title={refusal.message} role="alert">{refusal.reasons.join(' ')}</Notice>}
   </Dialog>
 }
 

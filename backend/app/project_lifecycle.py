@@ -96,7 +96,9 @@ def describe(row):
         'trashed': state is not None,
         'trash': None if state is None else {
             'state': state, 'trashed_at': get('trashed_at'), 'original_root_path': get('original_root_path'),
-            'path': get('trash_path'), 'kind': get('trash_kind'), 'error': get('lifecycle_error')},
+            'path': get('trash_path'), 'kind': get('trash_kind'), 'error': get('lifecycle_error'),
+            # Removed after its folder had already been deleted: only its records are in the Trash.
+            'folder_missing': state is not None and get('trash_path') is None},
     }
 
 
@@ -478,7 +480,10 @@ def preview(store, project_id, agent_statuses, storage_root):
     }
 
 
-def move_to_trash(store, project_id, agent_statuses, storage_root):
+def move_to_trash(store, project_id, agent_statuses, storage_root, folder_missing=False):
+    """Move the Project's folder into the Trash. With `folder_missing` (the person's explicit choice after
+    being told the folder is gone), a Project whose folder no longer exists goes to the Trash as records
+    only: nothing on disk is moved or deleted, and its history and Task worktrees are kept."""
     from .task_workspaces import task_lock
     with task_lock(store, f'project:{project_id}', blocking=False):
         with store._connection() as db:
@@ -494,9 +499,25 @@ def move_to_trash(store, project_id, agent_statuses, storage_root):
             if found['busy']:
                 raise LifecycleRefused('project_busy', 'Stop the work in this project first.', _activity_reasons(found),
                                        activity=found)
-            if not os.path.isdir(root) or _is_reparse(root):
-                raise LifecycleRefused('folder_missing', 'The project folder is not where it was registered.', [
-                    f'Nothing was found at {root}. If you moved it yourself, move it back first.'])
+            missing = not os.path.lexists(root)
+            if missing and folder_missing:
+                # Nothing to move. A placeholder location inside the Trash (never created) releases the
+                # original path, so the folder can be added or restored there again.
+                placeholder, key = canonical_path(trash_root() / 'missing' / str(uuid4()))
+                db.execute(f'''UPDATE projects SET trash_state='trashed', trashed_at={NOW}, original_root_path=?,
+                    trash_path=NULL, trash_container=NULL, trash_kind=NULL, lifecycle_error=NULL,
+                    root_path=?, root_path_key=?, updated_at={NOW} WHERE project_id=?''',
+                           (root, placeholder, key, project_id))
+                return describe(_row(db, project_id))
+            if folder_missing:
+                raise LifecycleRefused('folder_present', 'The project folder exists, so it is moved to the Trash normally.', [
+                    f'{root} was found. Choose Move to Trash.'])
+            if missing or not os.path.isdir(root) or _is_reparse(root):
+                raise LifecycleRefused('folder_missing', 'The project folder no longer exists where it was registered.', [
+                    f'Nothing was found at {root}. If you deleted it, remove the project from the Control Center: '
+                    'its tasks and history stay in the Trash, and nothing on disk is touched.',
+                    'If you moved the folder yourself, move it back first to keep it with the project.'],
+                    path=root, can_remove=missing)
             trash_id = str(uuid4())
             kind, container, destination = trash_destination(root, trash_id)
             # Durable intent first: launches are refused from this commit on, and a restart
@@ -578,6 +599,9 @@ def restore(store, project_id, target=None):
             if row['trash_state'] != 'trashed':
                 raise LifecycleRefused('not_in_trash', 'Only a project in the Trash can be restored.')
             source = row['trash_path']
+            original = row['original_root_path']
+            if source is None:
+                return _restore_without_folder(db, store, project_id, original, target)
             if not os.path.isdir(source) or _is_reparse(source):
                 raise LifecycleRefused('trash_folder_missing', 'The folder is no longer in the Trash.', [
                     f'Nothing was found at {source}. It may have been deleted outside the Control Center. '
@@ -617,6 +641,29 @@ def restore(store, project_id, target=None):
                            (project_id,))
             raise _move_error(exc) from exc
         return _finish_restore(store, project_id, chosen)
+
+
+def _restore_without_folder(db, store, project_id, original, target):
+    """A Project removed after its folder was deleted comes back once that folder exists again."""
+    try:
+        chosen, chosen_key = canonical_path(target or original)
+    except ValueError:
+        raise LifecycleRefused('restore_target_invalid', 'That location is not a valid folder path.') from None
+    if not os.path.isdir(chosen) or _is_reparse(chosen):
+        raise LifecycleRefused('restore_folder_missing', 'The project folder doesn’t exist yet.', [
+            f'This project was removed after its folder was deleted. Put the folder back at {chosen} (or choose '
+            'where it is now), then restore the project.'], original=original)
+    for other in db.execute('SELECT root_path_key FROM projects WHERE project_id<>?', (project_id,)):
+        if contains(other[0], chosen_key) or contains(chosen_key, other[0]):
+            raise LifecycleRefused('restore_target_registered', 'That folder is, or overlaps, another project.',
+                                   original=original)
+    for other in db.execute('SELECT workspace_path_key FROM task_workspaces'):
+        if contains(other[0], chosen_key) or contains(chosen_key, other[0]):
+            raise LifecycleRefused('restore_target_registered', 'That location overlaps Task worktree storage.')
+    db.execute(f"UPDATE projects SET trash_state='restoring', restore_target=?, updated_at={NOW} WHERE project_id=?",
+               (chosen, project_id))
+    db.commit()
+    return _finish_restore(store, project_id, chosen)
 
 
 def _finish_restore(store, project_id, chosen):

@@ -164,7 +164,8 @@ export default function ProjectsPage({ live, navigate }) {
       onRegistered={(project) => { setAdding(false); setMessage({ tone: 'ok', title: `${project?.name || 'The project'} was added`, text: 'It is ready for a new task.' }); refresh() }} />}
     {dialog?.kind === 'trash' && <TrashDialog project={dialog.project} onClose={() => setDialog(null)}
       onDone={(result) => { setDialog(null); setMessage({ tone: 'ok', title: `${dialog.project.name} is in the Trash`,
-        text: `Its folder was moved to ${result?.trash?.path}. Restore it from the Trash below at any time.` }); announce(`${dialog.project.name} moved to the Trash.`); refresh() }} />}
+        text: result?.trash?.folder_missing ? 'Its folder had already been deleted, so nothing on disk changed. Its history is in the Trash below.'
+          : `Its folder was moved to ${result?.trash?.path}. Restore it from the Trash below at any time.` }); announce(`${dialog.project.name} moved to the Trash.`); refresh() }} />}
     {dialog?.kind === 'restore' && <RestoreDialog project={dialog.project} initialRefusal={dialog.refusal} onClose={() => setDialog(null)}
       onDone={(result) => { setDialog(null); setMessage({ tone: 'ok', title: `${dialog.project.name} is back`, text: `Its folder is at ${result.root_path}.` }); refresh() }} />}
     {dialog?.kind === 'delete' && <DeleteDialog project={dialog.project} onClose={() => setDialog(null)}

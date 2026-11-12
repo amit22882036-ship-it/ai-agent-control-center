@@ -472,6 +472,13 @@ class ProjectOrderRequest(BaseModel):
     project_ids: list[Annotated[str, Field(min_length=1, max_length=100)]] = Field(max_length=2000)
 
 
+class TrashProjectRequest(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    # The person's explicit choice after being told the folder no longer exists: the Project goes to
+    # the Trash as records only, and nothing on disk is touched.
+    folder_missing: StrictBool = False
+
+
 class RestoreProjectRequest(BaseModel):
     model_config = ConfigDict(extra='forbid')
     target_path: Annotated[str, Field(min_length=1, max_length=1024)] | None = None
@@ -515,9 +522,11 @@ def stop_project_work_route(project_id: str):
 
 
 @app.post('/projects/{project_id}/trash')
-def trash_project_route(project_id: str):
-    """Moves the Project's folder into the Trash. Refused while work in it is running."""
-    return _lifecycle_action(lambda: manager.trash_project(project_id))
+def trash_project_route(project_id: str, request: TrashProjectRequest | None = None):
+    """Moves the Project's folder into the Trash. Refused while work in it is running. With folder_missing,
+    a Project whose folder was already deleted goes to the Trash as records only."""
+    folder_missing = bool(request and request.folder_missing)
+    return _lifecycle_action(lambda: manager.trash_project(project_id, folder_missing=folder_missing))
 
 
 @app.post('/projects/{project_id}/restore')

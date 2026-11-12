@@ -4735,8 +4735,9 @@ def stop_project_work(project_id):
 
 
 @_synchronized
-def trash_project(project_id):
-    result = project_lifecycle.move_to_trash(_task_store(), project_id, _project_agent_statuses(project_id), storage_root())
+def trash_project(project_id, folder_missing=False):
+    result = project_lifecycle.move_to_trash(_task_store(), project_id, _project_agent_statuses(project_id), storage_root(),
+                                             folder_missing=folder_missing)
     _emit_agent_change(None)
     return result
 
