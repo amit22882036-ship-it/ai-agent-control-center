@@ -15,6 +15,7 @@ from fastapi import HTTPException
 from pydantic import ValidationError
 
 from app import agent_manager as manager
+from app import external_access
 from app.main import app, StartAgentRequest, start_mock_agent, stop_mock_agent
 from api_test_support import request_headers
 from workspace_test_support import worker_output
@@ -229,9 +230,9 @@ class AgentTests(unittest.TestCase):
                     listed = next(item for item in manager.get_agents() if item["agent_id"] == agent_id)
                     self.assertEqual(listed["sandbox"], sandbox)
                     self.assertEqual(json.loads(worker_output(detail["output"])[0]), [
-                        "exec", "-c", "model_provider=openai", "--sandbox", sandbox, "--color", "never",
+                        "exec", "-c", "features.apps=false", "-c", "features.plugins=false", "-c", "model_provider=openai", "--sandbox", sandbox, "--color", "never",
                         "--skip-git-repo-check", "-"])
-                    self.assertEqual(json.loads(worker_output(detail["output"])[1]), manager._codex_prompt(task))
+                    self.assertEqual(json.loads(worker_output(detail["output"])[1]), external_access.INSTRUCTION + manager._codex_prompt(task))
                     self.assertEqual(worker_output(detail["output"])[2:], ["stderr captured"])
 
     @unittest.skipUnless(os.name == "nt", "Windows process tree integration")

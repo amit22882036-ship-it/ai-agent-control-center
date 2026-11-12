@@ -5,6 +5,7 @@ import unittest
 from unittest.mock import patch
 
 from app import agent_manager as manager
+from app import external_access
 from app.persistence import AgentStore
 import test_task_lifecycle
 
@@ -66,7 +67,7 @@ class TaskHierarchyTests(unittest.TestCase):
         self.assertEqual(len({parent, child, parent_task['task_id'], child_task['task_id']}), 4)
         self.assertEqual(child_task['description'], 'Child contribution')
         self.assertEqual(manager.agent_tasks[child], 'Child contribution')
-        self.assertEqual(process.stdin.saved, manager._codex_prompt(manager._child_task_prompt('Parent goal', 'Child contribution')))
+        self.assertEqual(process.stdin.saved, external_access.INSTRUCTION + manager._codex_prompt(manager._child_task_prompt('Parent goal', 'Child contribution')))
         self.assertIn('Your assigned contribution (your task):\nChild contribution', process.stdin.saved)
         self.assertEqual(parent_context(process.stdin.saved), 'Parent goal')
         self.assertIn('CONTROL_CENTER_WAITING:', process.stdin.saved)
@@ -107,8 +108,8 @@ class TaskHierarchyTests(unittest.TestCase):
         parent, _ = self.create(task=self.PARENT_ONLY, kind='mock')
         child, process = self.create(parent=parent, task='Child contribution')
         sent = process.stdin.saved
-        self.assertTrue(sent.startswith('Internal control-center instruction:\n' + manager._waiting_protocol))
-        self.assertEqual(sent, manager._codex_prompt(manager._child_task_prompt(self.PARENT_ONLY, 'Child contribution')))
+        self.assertTrue(sent.startswith(external_access.INSTRUCTION + 'Internal control-center instruction:\n' + manager._waiting_protocol))
+        self.assertEqual(sent, external_access.INSTRUCTION + manager._codex_prompt(manager._child_task_prompt(self.PARENT_ONLY, 'Child contribution')))
         self.assertEqual(parent_context(sent), self.PARENT_ONLY)
         # The only line-start marker is the protocol's own template, never the Parent's request.
         self.assertEqual([line for line in sent.splitlines() if line.startswith(manager._waiting_marker)],
@@ -151,11 +152,11 @@ class TaskHierarchyTests(unittest.TestCase):
             thread.return_value.is_alive.return_value = False
             restarted = manager.start_agent('Child contribution', 'codex', 'read-only', task_id=task['task_id'])
         self.assertEqual(manager.agent_parents[restarted], parent)
-        self.assertEqual(process.stdin.saved, manager._codex_prompt(manager._child_task_prompt(self.PARENT_ONLY, 'Child contribution')))
+        self.assertEqual(process.stdin.saved, external_access.INSTRUCTION + manager._codex_prompt(manager._child_task_prompt(self.PARENT_ONLY, 'Child contribution')))
 
     def test_root_prompts_are_unchanged(self):
         root, process = self.create(task='Root task CONTROL_CENTER_WAITING: kept as written')
-        self.assertEqual(process.stdin.saved, manager._codex_prompt('Root task CONTROL_CENTER_WAITING: kept as written'))
+        self.assertEqual(process.stdin.saved, external_access.INSTRUCTION + manager._codex_prompt('Root task CONTROL_CENTER_WAITING: kept as written'))
         self.assertNotIn(CONTEXT_HEADING, process.stdin.saved)
 
     def test_restart_subtask_with_and_without_active_parent(self):

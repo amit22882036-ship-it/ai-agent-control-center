@@ -99,3 +99,18 @@ test('Full Access needs an explicit confirmation and sends the helpers’ access
   assert.match(accessText('codex', 'workspace-write'), /tests, builds and Git/)
   assert.equal(accessSummary('full-access'), 'has Full Access (not sandboxed)')
 })
+
+test('publishing and outside integrations are off unless chosen, and only a new root task sends the choice', async () => {
+  const { creationPayload } = await import('../src/autonomousCreation.mjs')
+  const context = { policy, statuses, catalog, projects }
+  assert.equal(emptyDraft().external, false)
+  const local = draftView({ ...ready, autonomous: false }, context)
+  assert.equal(local.summary.at(-1), 'It works locally: publishing, deploying and the tool’s outside apps and plugins stay off.')
+  assert.equal('external_integrations' in newTaskPayload({ ...ready, autonomous: false }, local), false)
+  const allowedDraft = { ...ready, autonomous: false, external: true }
+  const allowed = draftView(allowedDraft, context)
+  assert.match(allowed.summary.at(-1), /^It may use its tool’s outside apps, plugins and connectors, publishing included\./)
+  assert.equal(newTaskPayload(allowedDraft, allowed).external_integrations, true)
+  assert.equal(creationPayload('Fix it', 'mock', 'read-only', false, null, 'p1', undefined, { external: true }).external_integrations, undefined)
+  assert.equal(creationPayload('Help', 'codex', 'workspace-write', false, 'parent-agent', undefined, undefined, { external: true }).external_integrations, undefined)
+})

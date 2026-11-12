@@ -8,6 +8,7 @@ from unittest.mock import Mock, patch
 from uuid import uuid4
 
 from app import agent_manager as manager, managed_orchestration as policy
+from app import external_access
 from app.codex_events import CodexEvents
 import test_codex_configuration as configuration
 import test_delegation_protocol as baseline
@@ -113,7 +114,7 @@ class RuntimePolicyTests(unittest.TestCase):
 
     def test_ordinary_codex_prompt_and_mock_are_unchanged(self):
         key, process = self.launch(False)
-        self.assertEqual(process.stdin.getvalue(), manager._codex_prompt(manager.agent_tasks[key]))
+        self.assertEqual(process.stdin.getvalue(), external_access.INSTRUCTION + manager._codex_prompt(manager.agent_tasks[key]))
         self.assertIsNone(manager._structured(process))
         manager.stop_agent(key)
         other = self.store.create_task('Mock task', project_id=self.project['project_id'])

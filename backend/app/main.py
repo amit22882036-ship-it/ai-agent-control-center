@@ -114,6 +114,9 @@ class StartAgentRequest(BaseModel):
     auto_allocation_providers: list[AgentType] | None = None
     # With Full Access only: the access its helpers receive (Workspace unless Full Access is chosen).
     helper_access: Literal['workspace-write', 'full-access'] | None = None
+    # Provider integrations that act outside the workspace (publishing, connectors). Off unless the
+    # person allows them for a new root Task; its helpers inherit the choice.
+    external_integrations: StrictBool = False
 
     @field_validator('model')
     @classmethod
@@ -238,10 +241,13 @@ def _start_agent_response(request: StartAgentRequest, parent_id: str | None = No
                                    **capabilities, **model,
                                    **({'auto_allocation_providers': request.auto_allocation_providers}
                                       if request.auto_allocation_providers is not None else {}),
-                                   **({'helper_access': request.helper_access} if request.helper_access is not None else {}))
+                                   **({'helper_access': request.helper_access} if request.helper_access is not None else {}),
+                                   **({'external_integrations': True} if request.external_integrations else {}))
         else:
             if request.helper_access is not None:
                 raise ValueError('Helper access applies to a new root agent with Full Access.')
+            if request.external_integrations:
+                raise ValueError('External integrations are chosen when creating a new root task; helpers inherit it.')
             agent_id = start_agent(request.task, request.agent_type, request.sandbox, parent_id=parent_id, **model)
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc

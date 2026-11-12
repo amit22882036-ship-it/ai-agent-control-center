@@ -51,7 +51,7 @@ export function ToolCards({ value, onChange, policy, statuses, disabled, tools =
 // Model, effort and file access for one agent, from its provider's catalog. Unavailable models
 // stay visible but cannot be chosen; an unverified one needs an explicit attempt.
 export function LeadSettings({ provider, models, picker, onPicker, sandbox, onSandbox, disabled, fullConfirmed = false, onFullConfirmed = () => {},
-  helpers = false, helperAccess = 'workspace-write', onHelperAccess = () => {} }) {
+  helpers = false, helperAccess = 'workspace-write', onHelperAccess = () => {}, external = false, onExternal = () => {} }) {
   if (provider === 'mock') return null
   const catalog = models.catalog
   const groups = groupModels(catalog)
@@ -90,6 +90,11 @@ export function LeadSettings({ provider, models, picker, onPicker, sandbox, onSa
         {helpers && <Choice label="Its helpers get" value={helperAccess} disabled={disabled} onChange={onHelperAccess}
           options={[{ value: 'workspace-write', label: 'Workspace' }, { value: 'full-access', label: 'Full Access too' }]} />}
       </div>}
+      <Check checked={external} disabled={disabled} onChange={onExternal}>
+        Allow publishing and outside integrations
+        <small>Off by default: the agent works only on this computer, and its tool’s apps, plugins and connectors (such as
+          website publishing) are turned off. Turn on only if this task should publish or use outside services. Helpers follow this choice.</small>
+      </Check>
     </div>
     {(limitation || chosen.needsAttempt) && <div className="a-lc-wide">
       {limitation && <p className="a-fine">{limitation}</p>}

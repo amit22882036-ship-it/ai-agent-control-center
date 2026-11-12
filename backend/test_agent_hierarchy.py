@@ -4,6 +4,7 @@ from uuid import UUID
 
 from fastapi import HTTPException
 from app import agent_manager as manager
+from app import external_access
 from app.main import StartAgentRequest, start_mock_agent, start_child_agent
 import test_similar_decisions
 
@@ -73,7 +74,7 @@ class HierarchyTests(unittest.TestCase):
             self.assertIsNot(child_process, parent_process)
             self.assertIsNot(manager.agent_outputs[child], manager.agent_outputs[root])
             if kind == 'codex':
-                self.assertEqual(child_process.stdin.saved, manager._codex_prompt('Independent child'))
+                self.assertEqual(child_process.stdin.saved, external_access.INSTRUCTION + manager._codex_prompt('Independent child'))
                 self.assertNotIn(root, child_process.stdin.saved)
 
     def test_all_parent_statuses_allow_children_without_status_changes(self):
@@ -133,7 +134,7 @@ class HierarchyTests(unittest.TestCase):
         self.assertEqual(popen.call_args.args, ('fixed command',))
         self.assertEqual(popen.call_args.kwargs['cwd'], self.workspace_path)
         self.assertFalse(popen.call_args.kwargs['shell'])
-        self.assertEqual(process.stdin.saved, manager._codex_prompt('Task & literal text'))
+        self.assertEqual(process.stdin.saved, external_access.INSTRUCTION + manager._codex_prompt('Task & literal text'))
         self.assertNotIn(parent, str(popen.call_args))
 
     def test_child_completion_uses_normal_notifications_only(self):

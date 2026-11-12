@@ -641,7 +641,7 @@ class ClaudeAdapter(Adapter):
                                        'web access stay off, because Claude Code cannot confine them to the worktree on '
                                        'Windows.', 'commands': False, 'edits': True, 'network': False, 'sandboxed': True},
         'full-access': {'summary': 'Every Claude Code tool without approval prompts: PowerShell and Bash commands, web '
-                                   "search and fetch, your MCP servers and this repository's own Claude settings. Not "
+                                   "search and fetch, and this repository's own Claude settings (your MCP servers only when the task allows external integrations). Not "
                                    'sandboxed: it can change anything your Windows account can.',
                         'commands': True, 'edits': True, 'network': True, 'sandboxed': False},
     }

@@ -7,6 +7,7 @@ from contextlib import closing
 from unittest.mock import patch
 
 from app import agent_manager as manager, managed_orchestration as policy, orchestration, planning, presentation, promotion
+from app import external_access
 import test_planning as plans
 import test_promotion as promotions
 from execution_test_support import use_attested_test_doubles
@@ -240,7 +241,7 @@ class DecisionTests(unittest.TestCase):
     def test_non_autonomous_and_unassigned_tasks_are_not_authorized(self):
         self.assertEqual(self.decision()['state'], 'not_authorized')
         key, process = self.launch(False)
-        self.assertEqual(process.stdin.getvalue(), manager._codex_prompt(manager.agent_tasks[key]))
+        self.assertEqual(process.stdin.getvalue(), external_access.INSTRUCTION + manager._codex_prompt(manager.agent_tasks[key]))
         self.assertEqual(self.decision()['state'], 'not_authorized')
 
     def test_status_is_read_only(self):

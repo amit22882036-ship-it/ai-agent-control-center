@@ -22,7 +22,7 @@ export const TEMPLATES = [
 export const INITIAL_HELPERS = false
 
 export function emptyDraft() {
-  return { text: '', projectId: null, provider: 'mock', sandbox: 'read-only', fullConfirmed: false, helperAccess: 'workspace-write',
+  return { text: '', projectId: null, provider: 'mock', sandbox: 'read-only', fullConfirmed: false, helperAccess: 'workspace-write', external: false,
     picker: initialChoice(), autonomous: INITIAL_HELPERS, allocation: 'explicit', autoProviders: [] }
 }
 
@@ -77,6 +77,9 @@ export function draftView(draft, { policy, statuses, catalog, projects = [] }) {
       ? [draft.autoProviders.length ? `The lead’s own choices still win. For a helper it leaves open, the Control Center may pick ${join(draft.autoProviders.map(providerLabel))}, only if allowed, ready and suited; otherwise that helper waits.`
         : 'Check at least one tool for automatic choice.']
       : [`The lead names each helper’s tool and model. A helper with none named uses the provider the plan requests, or ${lead}; an unavailable one is never replaced.`]),
+    draft.external === true
+      ? 'It may use its tool’s outside apps, plugins and connectors, publishing included. It still asks before creating anything costly or public.'
+      : 'It works locally: publishing, deploying and the tool’s outside apps and plugins stay off.',
   ]
   return { real, tool, config, chosen, modelReady, canLead, helpers, auto, revokedAuto, project, problem, summary }
 }
@@ -85,5 +88,6 @@ export function draftView(draft, { policy, statuses, catalog, projects = [] }) {
 export function newTaskPayload(draft, view) {
   return creationPayload(draft.text, draft.provider, draft.sandbox, draft.autonomous, null, view.project.project_id,
     view.config.model || undefined, { effort: view.config.effort, attempt: view.config.attempt,
-      autoProviders: draft.allocation === 'auto' ? draft.autoProviders : null, helperAccess: draft.helperAccess })
+      autoProviders: draft.allocation === 'auto' ? draft.autoProviders : null, helperAccess: draft.helperAccess,
+      external: draft.external === true })
 }

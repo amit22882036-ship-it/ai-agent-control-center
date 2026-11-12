@@ -12,6 +12,7 @@ from fastapi import HTTPException
 from pydantic import ValidationError
 
 from app import agent_manager as manager
+from app import external_access
 from app.main import RedirectAgentRequest, redirect_codex_agent
 import test_agent_manager
 from workspace_test_support import worker_output
@@ -137,9 +138,9 @@ class RedirectTests(unittest.TestCase):
                     self.assertEqual(detail["session_id"], session_id)
                     self.assertEqual(worker_output(detail["output"])[:4], history + ["--- Redirect ---", instruction])
                     resumed = json.loads(worker_output(detail["output"])[5])
-                    self.assertEqual(resumed["args"], ["exec", "-c", "model_provider=openai", "--sandbox", sandbox, "--color", "never",
+                    self.assertEqual(resumed["args"], ["exec", "-c", "features.apps=false", "-c", "features.plugins=false", "-c", "model_provider=openai", "--sandbox", sandbox, "--color", "never",
                                                      "--skip-git-repo-check", "resume", session_id, "-"])
-                    self.assertEqual(resumed["prompt"], manager._codex_prompt(instruction))
+                    self.assertEqual(resumed["prompt"], external_access.INSTRUCTION + manager._codex_prompt(instruction))
                     self.assertEqual(resumed["cwd"], json.loads(history[1])["cwd"])
                     self.assertEqual(Path(resumed["cwd"]), self.workspace_path)
                     self.assertEqual(sum(item["agent_id"] == agent_id for item in manager.get_agents()), 1)

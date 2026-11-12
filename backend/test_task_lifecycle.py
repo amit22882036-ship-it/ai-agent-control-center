@@ -7,6 +7,7 @@ from unittest.mock import patch
 from uuid import UUID
 
 from app import agent_manager as manager
+from app import external_access
 from app.main import app
 from app.persistence import AgentStore
 import test_persistence
@@ -304,7 +305,7 @@ class TaskLifecycleTests(unittest.TestCase):
              patch.object(manager, '_codex_command', return_value='fixed') as command:
             result = self.request(f"/tasks/{task['task_id']}/start-agent", {'agent_type': 'codex', 'sandbox': 'workspace-write'})
         command.assert_called_once_with('workspace-write')
-        self.assertEqual(process.stdin.saved, manager._codex_prompt(task['description']))
+        self.assertEqual(process.stdin.saved, external_access.INSTRUCTION + manager._codex_prompt(task['description']))
         self.assertEqual(manager.agent_sandboxes[result['agent_id']], 'workspace-write')
 
     def test_uncertain_initial_commit_compensates_without_duplicate_assignment(self):

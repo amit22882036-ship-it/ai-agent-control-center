@@ -12,6 +12,7 @@ from .agent_names import default_display_name, validate_display_color
 from .output_history import OUTPUT_PAGE_SIZE, OUTPUT_MAX_LIMIT
 from .project_domain import DEFAULT_ROOT, canonical_path, contains, project_name
 from . import delegation_orchestration, delegation_rounds, delegation_safety
+from . import external_access
 from . import planning, promotion, orchestration, replanning, agent_removal, executions, execution_attestation, responsibility, providers, model_catalog, allocation, provider_policy, provider_onboarding
 from . import project_lifecycle
 
@@ -21,7 +22,7 @@ class ControllerConflict(RuntimeError):
 
 
 # The schema this code writes. A database written by a newer version is refused, never altered.
-SCHEMA_VERSION = 39
+SCHEMA_VERSION = 40
 
 
 class AgentStore:
@@ -394,8 +395,15 @@ class AgentStore:
                     project_lifecycle.migrate_v39(db)
                     delegation_safety.migrate_access(db)
                     db.execute('PRAGMA user_version = 39')
+                    version = 39
+                if version == 39:
+                    if not db.in_transaction:
+                        db.execute('BEGIN IMMEDIATE')
+                    external_access.migrate(db)
+                    db.execute('PRAGMA user_version = 40')
                 project_lifecycle.validate_schema(db)
                 db.execute('SELECT task_id,helper_access FROM task_access LIMIT 0')
+                db.execute('SELECT task_id,allowed FROM task_external_access LIMIT 0')
                 db.execute('SELECT task_id,decision_key,plan_revision,promotion_decision_key,content,receipt FROM orchestration_decisions LIMIT 0')
                 db.execute('SELECT rejection_id,agent_id,task_id,kind,reason FROM control_rejections LIMIT 0')
                 db.execute('SELECT allowed_providers,default_provider,revision FROM provider_global_policy LIMIT 0')

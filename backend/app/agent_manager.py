@@ -32,7 +32,7 @@ from .workspace_freshness import evaluate_workspace_freshness, ensure_workspace_
 from .project_domain import canonical_path
 from .realtime import changes
 from .output_history import OutputCache, RECENT_OUTPUT_LIMIT, OUTPUT_PAGE_SIZE, OUTPUT_MAX_LIMIT
-from . import delegation_safety
+from . import delegation_safety, external_access
 from . import delegation_materialization
 from . import delegation_continuation, delegation_orchestration
 from .delegation_delivery import DeliveryService
@@ -2175,7 +2175,8 @@ def start_agent(task: str, agent_type: AgentType = "mock", sandbox: CodexSandbox
                 child_materialization_enabled: bool = False, hybrid_delegation_enabled: bool = False,
                 recursive_delegation_enabled: bool = False, planning_enabled: bool = False, _materialization=None,
                 model: str | None = None, effort: str | None = None, attempt_unverified: bool = False,
-                auto_allocation_providers: list | None = None, helper_access: str | None = None) -> str:
+                auto_allocation_providers: list | None = None, helper_access: str | None = None,
+                external_integrations: bool = False) -> str:
     """A new Agent with its own default provider, model and effort (never shared with another Agent).
 
     `auto_allocation_providers` is the user's Auto allocation authorization for a new autonomous
@@ -2191,6 +2192,8 @@ def start_agent(task: str, agent_type: AgentType = "mock", sandbox: CodexSandbox
     if helper_access is not None and (parent_id is not None or task_id is not None or sandbox != 'full-access'
                                       or helper_access not in ('workspace-write', 'full-access')):
         raise ValueError('Helper access applies to a new root agent with Full Access.')
+    if external_integrations and (parent_id is not None or task_id is not None):
+        raise ValueError('External integrations are chosen when creating a new root task; helpers inherit it.')
     with _prompt_config({}):
         _launch.execution_config = dict(model=model, effort=effort, source='agent_default',
                                         attempt=bool(attempt_unverified))
@@ -2202,13 +2205,13 @@ def start_agent(task: str, agent_type: AgentType = "mock", sandbox: CodexSandbox
                             recursive_delegation_enabled=recursive_delegation_enabled,
                             planning_enabled=planning_enabled, _materialization=_materialization, model=model,
                             effort=effort, auto_allocation_providers=auto_allocation_providers,
-                            helper_access=helper_access)
+                            helper_access=helper_access, external_integrations=external_integrations)
 
 
 def _start_agent(task, agent_type, sandbox, parent_id, *, task_id, project_id, delegation_protocol_enabled,
                  child_materialization_enabled, hybrid_delegation_enabled, recursive_delegation_enabled,
                  planning_enabled, _materialization, model, effort, auto_allocation_providers=None,
-                 helper_access=None):
+                 helper_access=None, external_integrations=False):
     providers.adapter(agent_type)  # Unknown providers are refused before anything else.
     if project_id is not None and (parent_id is not None or task_id is not None):
         raise ValueError('Project selection is only available for new root Tasks')
@@ -2256,6 +2259,11 @@ def _start_agent(task, agent_type, sandbox, parent_id, *, task_id, project_id, d
         with _store._connection() as db:
             db.execute('BEGIN IMMEDIATE')
             delegation_safety.set_helper_access(db, task_id, helper_access)
+    if external_integrations and _store is not None:
+        # The person's explicit choice for this root and its helpers, stored before anything launches.
+        with _store._connection() as db:
+            db.execute('BEGIN IMMEDIATE')
+            external_access.set_allowed(db, task_id, True)
     guard = task_lock(_store, task_id, blocking=False) if _store is not None else nullcontext()
     with guard, _upstream_guard(task_id):
         if _store is not None:
@@ -2458,7 +2466,20 @@ def _execution_prompt(agent_id, text, process):
             # protocol, with Auto allocation stated once (v3 messages are still accepted).
             with _task_store()._connection() as db:
                 policy += delegation_v3.instruction(db, _agent_task_id(agent_id))
-    return policy + _planning_prompt(agent_id) + _codex_prompt(text)
+    return _external_rule(agent_id) + policy + _planning_prompt(agent_id) + _codex_prompt(text)
+
+
+def _external_rule(agent_id):
+    """Every real agent is told to work locally unless its Task tree allows external integrations."""
+    is_allowed = False
+    if _store is not None:
+        try:
+            task_id = _agent_task_id(agent_id)
+        except LookupError:
+            task_id = None
+        with _store._connection() as db:
+            is_allowed = external_access.allowed(db, task_id)
+    return external_access.instruction(is_allowed)
 
 
 def _planning_prompt(agent_id):
@@ -2503,7 +2524,7 @@ def _admitted_spawn(task_id, agent_id, command, agent_type, cwd, *, materializat
     if _store is None:
         providers.admission_check(None, agent_type, model=model, policy=getattr(command, 'policy', None),
                                   override=_usage_override())
-        return _spawn_process(command, agent_type, cwd=cwd, sandbox=sandbox)
+        return _spawn_process(external_access.restrict(command, agent_type), agent_type, cwd=cwd, sandbox=sandbox)
     # Phase 0: a durable reservation, committed before any process exists. If
     # it cannot be committed, or conflicts, nothing is created.
     resolved = getattr(command, 'resolved', None)
@@ -2590,6 +2611,10 @@ def _admitted_spawn(task_id, agent_id, command, agent_type, cwd, *, materializat
             _require_unguarded(agent_id, task_id)
             # Authorization above was revalidated here; the reservation is still ours alone.
             executions.require_reserved(db, reservation[0], _controller_identity()['instance_id'], agent_id, task_id)
+            # Provider integrations that act outside the workspace (publishing, connectors) stay off
+            # unless the person allowed them for this Task tree; read in the launch transaction.
+            if not external_access.allowed(db, task_id):
+                command = external_access.restrict(command, agent_type)
             with _journal(db, task_id, agent_id, agent_type, reservation) as journal:
                 process = _spawn_process(command, agent_type, cwd=cwd, sandbox=sandbox)
                 if not journal.consumed:

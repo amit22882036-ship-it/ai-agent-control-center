@@ -164,7 +164,8 @@ export default function NewTaskPage({ live, navigate, route }) {
           <LeadSettings provider={draft.provider} models={models} picker={draft.picker} onPicker={(picker) => update({ picker })}
             sandbox={draft.sandbox} onSandbox={(sandbox) => update({ sandbox, fullConfirmed: false })} disabled={starting}
             fullConfirmed={draft.fullConfirmed} onFullConfirmed={(fullConfirmed) => update({ fullConfirmed })}
-            helpers={view.helpers} helperAccess={draft.helperAccess} onHelperAccess={(helperAccess) => update({ helperAccess })} />
+            helpers={view.helpers} helperAccess={draft.helperAccess} onHelperAccess={(helperAccess) => update({ helperAccess })}
+            external={draft.external === true} onExternal={(external) => update({ external })} />
         </section>
         <HelpersSection draft={draft} view={view} update={update} policy={context.policy} statuses={context.statuses} disabled={starting} />
       </div>

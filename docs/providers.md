@@ -42,6 +42,16 @@ Each adapter (`backend/app/providers.py`) declares the following:
 
 These options are always used: Claude Code runs with `--setting-sources user --strict-mcp-config`, so the hooks, allow rules and MCP servers of the repository being worked on are not loaded. No adapter passes `--dangerously-skip-permissions`, `bypassPermissions`, `yolo`, `danger-full-access` or `--skip-trust`. Windows Job Objects contain processes. They are **not** a sandbox, and the CLIs enforce these policies themselves.
 
+### Local work and outside integrations (schema v40)
+
+Provider CLIs can bring their own integrations that act outside the Task workspace, whatever the sandbox: Codex apps (connectors such as the one behind its Sites skill, which creates and publishes websites to OpenAI hosting) and plugins, and Claude Code MCP servers. By default every Task works locally:
+
+- Every real agent's prompt starts with a Control Center rule: work only in the Task workspace, do not publish, deploy, host, upload or create external resources (sites, repositories, cloud or hosting projects, accounts, messages), and do not use skills, plugins, apps or connectors that do; if the request seems to need something external, ask the person one question and act only after explicit approval.
+- Codex runs with `-c features.apps=false -c features.plugins=false`, per invocation, beside the existing `features.multi_agent=false`. Claude Code with Full Access adds `--strict-mcp-config`; its other levels already load no MCP servers and deny shell and web tools. Gemini CLI gets the rule only: no switch for its extensions is used.
+- The switches are applied at the launch boundary (`_admitted_spawn`), so starts, helpers, replies, redirects and resumes are all covered. The user's provider configuration files are never changed.
+
+**Allow publishing and outside integrations** on the New task page (`external_integrations: true` on `POST /agents/start`, new root Tasks only) keeps those integrations on and tells the agent it may use them, still asking before anything costly or public. The choice is stored for the root Task (`task_external_access`) and applies to its whole tree. The rule is an instruction and the switches cover only the integrations named here: with Full Access an agent can still run commands that reach the network.
+
 ## Readiness and enablement
 
 Each property is evaluated separately: supported by the application, installed, a supported version (every flag the adapter uses must appear in the installed help), signed in, enabled by the user, billing route permitted, and not limited. The resulting states are `ready`, `disabled`, `not_installed`, `invalid_installation`, `unsupported_version`, `not_authenticated`, `incompatible`, `usage_limited`, `temporarily_unavailable`, `billing_blocked` and, before the first check, `unchecked`.

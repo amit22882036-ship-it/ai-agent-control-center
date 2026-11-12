@@ -12,6 +12,7 @@ from unittest.mock import Mock, patch
 from uuid import uuid4
 
 from app import agent_manager as manager
+from app import external_access
 from app.main import app
 from app.persistence import AgentStore
 import test_similar_decisions
@@ -92,9 +93,9 @@ class PersistenceTests(unittest.TestCase):
     def test_schema_override_and_safe_round_trip(self):
         self.assertTrue(self.path.is_file())
         with closing(sqlite3.connect(self.path)) as db, db:
-            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 39)
+            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 40)
             self.assertEqual({row[0] for row in db.execute("SELECT name FROM sqlite_master WHERE type='table'")},
-                             {'agents', 'output', 'agent_name_history', 'sqlite_sequence', 'tasks', 'task_assignments', 'projects', 'task_workspaces', 'agent_source_context', 'integrations', 'task_dependencies', 'task_blockers', 'task_replan_reasons', 'task_control_operations', 'task_control_members', 'resource_claims', 'resource_waits', 'resource_deadlocks', 'resource_deadlock_members', 'resource_ownership', 'work_intents', 'delegations', 'delegation_materializations', 'delegation_continuations', 'delegation_results', 'delegation_deliveries', 'delegation_rounds', 'delegation_round_requests', 'planning_revisions', 'promotion_decisions', 'promotion_items', 'orchestration_decisions', 'control_rejections', 'replan_decisions', 'replan_transitions', 'replan_signals', 'agent_removals', 'agent_removal_members', 'controller_instances', 'executions', 'execution_diagnostics', 'execution_attestations', 'responsibility_transfers',
+                             {'agents', 'output', 'agent_name_history', 'sqlite_sequence', 'tasks', 'task_assignments', 'projects', 'task_workspaces', 'agent_source_context', 'integrations', 'task_dependencies', 'task_blockers', 'task_replan_reasons', 'task_control_operations', 'task_control_members', 'resource_claims', 'resource_waits', 'resource_deadlocks', 'resource_deadlock_members', 'resource_ownership', 'work_intents', 'delegations', 'delegation_materializations', 'delegation_continuations', 'delegation_results', 'delegation_deliveries', 'delegation_rounds', 'delegation_round_requests', 'planning_revisions', 'promotion_decisions', 'promotion_items', 'orchestration_decisions', 'control_rejections', 'replan_decisions', 'replan_transitions', 'replan_signals', 'agent_removals', 'agent_removal_members', 'controller_instances', 'executions', 'execution_diagnostics', 'execution_attestations', 'responsibility_transfers', 'task_external_access',
                               'provider_settings', 'provider_usage_blocks', 'agent_provider_changes', 'task_access',
                               'provider_usage_windows', 'agent_resume_requests',
                               'model_catalog', 'model_catalog_refreshes', 'model_denials',
@@ -396,9 +397,9 @@ class PersistenceTests(unittest.TestCase):
             self.wait_until_waiting(child)
             after = manager.get_agent(child)
             payload = [json.loads(line) for line in after['output'] if line.startswith('{')][-1]
-            self.assertEqual(payload['args'], ['exec', '-c', 'model_provider=openai', '--sandbox', 'workspace-write', '--color', 'never',
+            self.assertEqual(payload['args'], ['exec', '-c', 'features.apps=false', '-c', 'features.plugins=false', '-c', 'model_provider=openai', '--sandbox', 'workspace-write', '--color', 'never',
                                               '--skip-git-repo-check', 'resume', session, '-'])
-            self.assertEqual(payload['prompt'], manager._codex_prompt(answer))
+            self.assertEqual(payload['prompt'], external_access.INSTRUCTION + manager._codex_prompt(answer))
             self.assertEqual(Path(payload['cwd']), manager._resume_cwd(child))
             self.assertEqual(after['session_id'], session)
             self.assertEqual(after['parent_id'], root)

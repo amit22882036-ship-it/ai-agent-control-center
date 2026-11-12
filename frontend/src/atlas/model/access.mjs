@@ -12,7 +12,7 @@ const TEXT = {
   claude: {
     'read-only': 'Reads and searches files. No file changes, no commands and no web access.',
     'workspace-write': 'Edits files in the task’s private copy without asking. Commands (PowerShell, Bash) and web access stay off: Claude Code cannot confine them to the copy on Windows.',
-    'full-access': 'Every Claude Code tool without approval prompts: PowerShell and Bash commands, web search and fetch, your MCP servers and the repository’s own Claude settings.',
+    'full-access': 'Every Claude Code tool without approval prompts: PowerShell and Bash commands, web search and fetch, and the repository’s own Claude settings (your MCP servers only when the task allows external integrations).',
   },
   codex: {
     'read-only': 'Reads files and runs commands that cannot change anything, inside the Codex sandbox.',
