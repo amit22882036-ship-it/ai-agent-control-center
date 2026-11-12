@@ -10,7 +10,8 @@ from fastapi.openapi.utils import get_openapi
 from starlette.responses import JSONResponse, StreamingResponse
 from . import security
 from . import process_supervision
-from . import agent_removal, recovery_actions, responsibility, providers, provider_onboarding, project_lifecycle
+from . import agent_removal, recovery_actions, responsibility, providers, provider_onboarding, project_lifecycle, project_folder
+from .workspace_git import RepositoryRefused
 from .realtime import changes
 from pydantic import BaseModel, ConfigDict, Field, StrictBool, field_validator, model_validator
 from .system_notifications import notifications
@@ -375,6 +376,9 @@ class CreateProjectRequest(BaseModel):
 def _project_action(action):
     try:
         return action()
+    except (RepositoryRefused, project_folder.SetupRefused) as exc:
+        # A specific, structured reason (code, message, and details such as the repository's top folder).
+        raise HTTPException(status_code=409, detail=exc.payload()) from exc
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ValueError as exc:
@@ -392,6 +396,29 @@ def create_project_route(request: CreateProjectRequest):
         manager._emit_agent_change(None)
         return manager.get_project(created['project_id'])
     return _project_action(register)
+
+
+class ProjectFolderRequest(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    root_path: str
+
+
+class ProjectFolderSetupRequest(ProjectFolderRequest):
+    expected_state: Literal['not_git_repo', 'no_commits', 'not_repo_root']
+    write_gitignore: StrictBool = False
+
+
+@app.post('/projects/folder-check')
+def check_project_folder_route(request: ProjectFolderRequest):
+    """Why a folder can or cannot be a Project, and what the opt-in setup would write. Never writes."""
+    return _project_action(lambda: project_folder.check(request.root_path))
+
+
+@app.post('/projects/folder-setup')
+def setup_project_folder_route(request: ProjectFolderSetupRequest):
+    """Initialize Git and/or make the first commit, only on the person's explicit confirmation."""
+    return _project_action(lambda: project_folder.setup(request.root_path, request.expected_state,
+                                                        request.write_gitignore))
 
 
 @app.get('/projects')

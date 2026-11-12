@@ -57,6 +57,8 @@ UNSAFE_ROUTES = {
     ('POST', '/projects/{project_id}/unhide'), ('POST', '/projects/{project_id}/stop-work'),
     ('POST', '/projects/{project_id}/trash'), ('POST', '/projects/{project_id}/restore'),
     ('DELETE', '/projects/{project_id}'), ('PATCH', '/tasks/{task_id}'),
+    # Adding a project: the folder check runs local Git reads; setup writes only on explicit confirmation.
+    ('POST', '/projects/folder-check'), ('POST', '/projects/folder-setup'),
 }
 GET_ROUTES = {
     '/providers',  # Stage 2F: reports the last check; never probes.
@@ -75,6 +77,7 @@ GET_ROUTES = {
     '/agents/{agent_id}/removals', '/agent-removals/{removal_id}',
     '/executions/unresolved', '/executions/{execution_id}', '/tasks/{task_id}/responsibility',
     '/projects/trash', '/projects/{project_id}/lifecycle',  # Schema v39: reads only; the preview runs local Git reads.
+    '/tasks/{task_id}/integration-preview',  # Changed paths only; no destination file or integration record.
 }
 
 

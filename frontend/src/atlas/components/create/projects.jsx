@@ -4,6 +4,7 @@ import { Button } from '../primitives'
 import { TextField } from '../controls'
 import { Dialog } from '../overlays'
 import { agentActions, refusalText, send } from '../../api/agentClient.mjs'
+import { folderRefusal, folderRemedy, setupWarnings, setupWrites } from '../../model/projectFolder.mjs'
 
 // Registering a project by its full path (POST /projects). The backend validates the folder: an
 // existing Git repository with a commit, not inside another project. Atlas does not browse folders
@@ -12,9 +13,53 @@ import { agentActions, refusalText, send } from '../../api/agentClient.mjs'
 // When the request fails in transit the backend may or may not have registered the folder. The
 // typed values are kept, nothing is sent again by itself, and the person can check the projects
 // list (a fresh GET /projects) before deciding to add it again.
+//
+// When the folder isn't usable yet, the backend says why (folderRefusal). For a folder without Git
+// or without commits, the person can review exactly what would be written (a read-only folder
+// check) and confirm; only then is Git set up, and the project is added again. Nothing is written
+// to the folder without that confirmation, and Git settings are never changed here.
 const samePath = (a, b) => {
   const norm = (value) => String(value || '').trim().replace(/\//g, '\\').replace(/\\+$/, '').toLowerCase()
   return norm(a) !== '' && norm(a) === norm(b)
+}
+
+function CopyCommand({ command }) {
+  const [copied, setCopied] = useState(false)
+  const canCopy = typeof navigator !== 'undefined' && Boolean(navigator.clipboard)
+  const copy = async () => {
+    try { await navigator.clipboard.writeText(command); setCopied(true) } catch { setCopied(false) }
+  }
+  return <div className="a-folder-cmd">
+    <code className="a-mono a-cx-code">{command}</code>
+    {canCopy && <Button size="sm" icon={copied ? 'check' : undefined} onClick={copy}>{copied ? 'Copied' : 'Copy'}</Button>}
+  </div>
+}
+
+// The confirmation step: what Git setup will write into the folder, from the backend's own check.
+function FolderSetup({ check, busy, error, writeGitignore, onWriteGitignore, onConfirm, onBack }) {
+  const plan = check.setup
+  const writes = setupWrites(plan, writeGitignore)
+  const warnings = setupWarnings(plan, writeGitignore)
+  const suggestion = plan.suggested_gitignore
+  const isCommit = plan.action === 'commit'
+  return <div className="a-folder-setup" role="group" aria-labelledby="folder-setup-title">
+    <h3 id="folder-setup-title">{isCommit ? 'Create the first commit' : 'Initialize Git and create the first commit'}</h3>
+    <p className="a-fine">This writes into <b className="a-mono a-folder-path">{check.root_path}</b>. Nothing is uploaded or pushed, your Git settings aren’t changed, and nothing else is added.</p>
+    <ul className="a-folder-writes">{writes.map((line) => <li key={line}>{line}</li>)}</ul>
+    {warnings.map((text) => <div key={text} className="a-result a-result--warn" role="status"><Icon name="warn" size={15} /><div>{text}</div></div>)}
+    {suggestion && <label className="a-check">
+      <input type="checkbox" checked={writeGitignore} disabled={busy} onChange={(event) => onWriteGitignore(event.target.checked)} />
+      <span>Also add a .gitignore that leaves out {plan.bulky_directories.map((name) => `${name}/`).join(', ')}
+        <small>The first commit then has {suggestion.file_count} {suggestion.file_count === 1 ? 'file' : 'files'} instead of {plan.file_count}. You can edit the file later.</small></span>
+    </label>}
+    {plan.blocked && <div className="a-result a-result--error" role="alert"><Icon name="warn" size={15} /><div>{plan.blocked.message}</div></div>}
+    {error && <div className="a-result a-result--error" role="alert"><Icon name="warn" size={15} /><div>{error}</div></div>}
+    <div className="a-act-row">
+      <Button variant="primary" disabled={busy || Boolean(plan.blocked)} aria-busy={busy || undefined} onClick={onConfirm}>
+        {busy ? 'Setting up…' : isCommit ? 'Create the first commit' : 'Initialize Git and commit'}</Button>
+      <Button disabled={busy} onClick={onBack}>Back</Button>
+    </div>
+  </div>
 }
 
 export function RegisterProjectDialog({ open, onClose, onRegistered, onRefresh = () => {} }) {
@@ -22,27 +67,67 @@ export function RegisterProjectDialog({ open, onClose, onRegistered, onRefresh =
   const [path, setPath] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  // Why the folder can't be added yet (folderRefusal), and the setup step:
+  // null | { phase: 'checking' | 'review' | 'sending', check, writeGitignore, error }
+  const [refusal, setRefusal] = useState(null)
+  const [setup, setSetup] = useState(null)
   // null, or what is known after a request whose outcome is unknown:
   // 'unknown' | 'checking' | 'absent' | 'check-failed' | { found: project }
   const [unknown, setUnknown] = useState(null)
   const blocked = unknown === 'unknown' || unknown === 'checking' || unknown === 'check-failed' || Boolean(unknown?.found)
+  const working = busy || setup?.phase === 'checking' || setup?.phase === 'sending'
 
-  async function register(event, anyway = false) {
+  async function register(event, anyway = false, rootPath = path) {
     event?.preventDefault()
-    if (busy || !name.trim() || !path.trim() || (blocked && !anyway)) return
+    if (busy || !name.trim() || !rootPath.trim() || (blocked && !anyway)) return
     setBusy(true)
     setError('')
+    setRefusal(null)
+    setSetup(null)
     setUnknown(null)
-    const result = await agentActions.registerProject(name.trim(), path.trim())
+    const result = await agentActions.registerProject(name.trim(), rootPath.trim())
     setBusy(false)
     if (result.offline) { setUnknown('unknown'); return }
     if (!result.ok) {
+      const reason = folderRefusal(result)
+      if (reason) { setRefusal(reason); return }
       setError(refusalText(result, 'Unable to register Project. Check the repository path and retry.'))
       return
     }
     setName('')
     setPath('')
     onRegistered(result.data)
+  }
+
+  // Read-only: what is wrong with the folder and what setup would write into it.
+  async function reviewSetup() {
+    setSetup({ phase: 'checking', check: null, writeGitignore: false, error: '' })
+    const result = await agentActions.checkProjectFolder(path.trim())
+    if (result.ok && result.data?.state === 'ready') { setSetup(null); register(null); return }
+    if (result.ok && result.data?.setup) { setSetup({ phase: 'review', check: result.data, writeGitignore: false, error: '' }); return }
+    setSetup(null)
+    if (result.ok) { setRefusal(folderRefusal({ data: { detail: result.data } })); return }
+    setRefusal(null)
+    setError(refusalText(result, 'The folder couldn’t be checked. Try again.'))
+  }
+
+  async function confirmSetup() {
+    if (!setup?.check || setup.phase !== 'review') return
+    const current = setup
+    setSetup({ ...current, phase: 'sending', error: '' })
+    const result = await agentActions.setupProjectFolder(current.check.root_path, current.check.state, current.writeGitignore)
+    if (result.offline) {
+      setSetup({ ...current, phase: 'review', error: 'The backend could not be reached, so it is unknown whether Git was set up. Close this and check the folder before trying again.' })
+      return
+    }
+    if (!result.ok) {
+      if (result.data?.detail?.code === 'state_changed') { reviewSetup(); return }
+      setSetup({ ...current, phase: 'review', error: refusalText(result, 'Git setup didn’t finish. Check the folder with “git status” in a terminal.') })
+      return
+    }
+    setSetup(null)
+    setRefusal(null)
+    register(null)
   }
 
   async function check() {
@@ -55,7 +140,12 @@ export function RegisterProjectDialog({ open, onClose, onRegistered, onRefresh =
     setUnknown(match ? { found: match } : 'absent')
   }
 
-  const edit = (setter) => (event) => { setter(event.target.value); if (unknown && unknown !== 'checking') setUnknown(null) }
+  const edit = (setter) => (event) => {
+    setter(event.target.value)
+    setRefusal(null)
+    setSetup(null)
+    if (unknown && unknown !== 'checking') setUnknown(null)
+  }
   let note = null
   if (unknown === 'unknown' || unknown === 'check-failed' || unknown === 'checking') {
     note = <div className="a-result a-result--warn" role="status"><Icon name="info" size={15} /><div>
@@ -74,28 +164,47 @@ export function RegisterProjectDialog({ open, onClose, onRegistered, onRefresh =
       <button type="button" className="a-link" onClick={() => { setName(''); setPath(''); onRegistered(unknown.found) }}>Use this project</button></div></div>
   }
 
+  const remedy = folderRemedy(refusal)
+  const useTop = () => { setPath(refusal.topLevel); register(null, false, refusal.topLevel) }
+  const reason = refusal && !setup?.check && <div className="a-result a-result--warn" role="alert"><Icon name="info" size={15} />
+    <div className="a-folder-fix">
+      <div>{refusal.message}</div>
+      {remedy?.kind === 'command' && <CopyCommand command={refusal.command} />}
+      {remedy?.kind === 'setup' && <div className="a-act-row">
+        <Button size="sm" icon="folder" disabled={working} onClick={reviewSetup}>{setup?.phase === 'checking' ? 'Checking the folder…' : remedy.label}</Button></div>}
+      {remedy?.kind === 'use-top' && <div className="a-act-row">
+        <Button size="sm" icon="folder" disabled={working} onClick={useTop}>{remedy.label}</Button>
+        <span className="a-fine a-mono a-folder-path">{refusal.topLevel}</span></div>}
+    </div></div>
+
   // In the desktop app the window offers the system's folder picker; in a browser, the path is typed.
   const picker = typeof window !== 'undefined' ? window.controlCenterDesktop?.chooseFolder : undefined
   const browse = async () => {
     const chosen = await picker().catch(() => null)
     if (!chosen) return
     setPath(chosen)
+    setRefusal(null)
+    setSetup(null)
     if (!name.trim()) setName(chosen.split(/[\\/]/).filter(Boolean).pop() || '')
   }
 
-  return <Dialog open={open} onClose={() => { if (!busy) onClose() }} title="Add a project"
+  return <Dialog open={open} onClose={() => { if (!working) onClose() }} title="Add a project"
     description="A project is the top folder of a Git repository with at least one commit. Agents work in private copies of it; nothing here writes their changes into your folder.">
     <form className="a-register" onSubmit={register}>
-      <TextField label="Project name" value={name} maxLength={100} disabled={busy} onChange={edit(setName)} />
-      <TextField label="Folder path" mono value={path} disabled={busy} placeholder="C:\path\to\repository"
+      <TextField label="Project name" value={name} maxLength={100} disabled={working} onChange={edit(setName)} />
+      <TextField label="Folder path" mono value={path} disabled={working} placeholder="C:\path\to\repository"
         hint={picker ? 'Choose the folder, or type or paste its full path.' : 'Type or paste the full path.'} onChange={edit(setPath)} />
-      {picker && <div className="a-act-row"><Button size="sm" icon="folder" disabled={busy} onClick={browse}>Choose folder…</Button></div>}
+      {picker && <div className="a-act-row"><Button size="sm" icon="folder" disabled={working} onClick={browse}>Choose folder…</Button></div>}
       {error && <div className="a-result a-result--error" role="alert"><Icon name="warn" size={15} /><div>{error}</div></div>}
+      {reason}
+      {setup?.check && <FolderSetup check={setup.check} busy={setup.phase === 'sending'} error={setup.error}
+        writeGitignore={setup.writeGitignore} onWriteGitignore={(value) => setSetup((current) => ({ ...current, writeGitignore: value }))}
+        onConfirm={confirmSetup} onBack={() => setSetup(null)} />}
       {note}
-      <div className="a-act-row">
-        <Button type="submit" variant="primary" disabled={busy || blocked || !name.trim() || !path.trim()}>{busy ? 'Checking and adding…' : 'Add project'}</Button>
-        <Button disabled={busy} onClick={onClose}>Cancel</Button>
-      </div>
+      {!setup?.check && <div className="a-act-row">
+        <Button type="submit" variant="primary" disabled={working || blocked || !name.trim() || !path.trim()}>{busy ? 'Checking and adding…' : 'Add project'}</Button>
+        <Button disabled={working} onClick={onClose}>Cancel</Button>
+      </div>}
     </form>
   </Dialog>
 }

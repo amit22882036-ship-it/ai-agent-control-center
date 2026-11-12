@@ -55,6 +55,10 @@ export const agentActions = {
   startChild: (parentId, payload, options) => send('POST', `${agent(parentId)}/children/start`, payload, options),
   startTaskAgent: (taskId, payload, options) => send('POST', `${task(taskId)}/start-agent`, payload, options),
   registerProject: (name, rootPath, options) => send('POST', '/projects', { name, root_path: rootPath }, options),
+  // A folder that can't be a project yet: a read-only check, then (only on confirmation) Git setup.
+  checkProjectFolder: (rootPath, options) => send('POST', '/projects/folder-check', { root_path: rootPath }, options),
+  setupProjectFolder: (rootPath, expectedState, writeGitignore, options) => send('POST', '/projects/folder-setup',
+    { root_path: rootPath, expected_state: expectedState, write_gitignore: Boolean(writeGitignore) }, options),
   // Task lifecycle (M7). Pause and Cancel are previewed first with the read-only control-impact.
   controlImpact: (taskId, action, options) => send('POST', `${task(taskId)}/control-impact`, { action }, options),
   pauseTask: (taskId, options) => send('POST', `${task(taskId)}/pause`, undefined, options),

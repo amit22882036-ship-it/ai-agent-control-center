@@ -121,6 +121,16 @@
 .atlas .a-pstats b.a-tone-ask { color: var(--a-ask); }
 .atlas .a-pcard.a-pcard--add { border-style: dashed; box-shadow: none; }
 .atlas .a-register { display: grid; gap: 12px; }
+.atlas .a-register .a-result { margin-top: 0; }
+.atlas .a-folder-fix { display: grid; gap: 8px; }
+.atlas .a-folder-fix .a-act-row { margin-top: 2px; }
+.atlas .a-folder-cmd { display: flex; align-items: flex-start; gap: 8px; }
+.atlas .a-folder-cmd .a-cx-code { flex: 1; min-width: 0; }
+.atlas .a-folder-setup { display: grid; gap: 10px; padding: 14px; border-radius: 12px; border: 1px solid var(--a-line-2); background: var(--a-surface-2); }
+.atlas .a-folder-setup h3 { font-size: 14.5px; font-weight: 700; }
+.atlas .a-folder-setup .a-result { margin-top: 0; }
+.atlas .a-folder-writes { margin: 0; padding-left: 18px; display: grid; gap: 4px; font-size: 13.5px; line-height: 1.45; }
+.atlas .a-folder-path { overflow-wrap: anywhere; }
 
 @media (max-width: 1180px) {
   .atlas .a-nt2 { grid-template-columns: minmax(0, 1fr) 300px; gap: 20px; }

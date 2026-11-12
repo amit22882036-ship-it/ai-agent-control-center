@@ -90,7 +90,7 @@ Run `codex login status` in a normal PowerShell window. If the error mentions th
 
 ### Project registration fails
 
-The path must be the root of an existing Git working tree with at least one commit. It must not overlap another registered Project or the workspace root.
+The path must be the root of an existing Git working tree with at least one commit. If it is not, the Add a project dialog explains why; for a folder without Git or without commits it can, after you confirm what will be written, initialize Git and make the first commit. It must not overlap another registered Project or the workspace root.
 
 ### "Task Workspace Git operation failed"
 

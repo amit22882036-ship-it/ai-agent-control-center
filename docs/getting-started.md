@@ -115,6 +115,8 @@ git commit -m "Initial commit"
 
 In **New task**, choose **Add a project…** in the project list, enter a name and the repository's absolute path, for example `C:\Users\<you>\control-center-sandbox`, and register it.
 
+If the folder isn't a Git repository yet, or has no commits, the dialog says so and offers **Initialize Git and create first commit…** (or **Create the first commit…**). It first shows exactly what it will write: the file count, any dependency folders or large files, and the Git identity that will make the commit. Nothing is written until you confirm.
+
 Agents never edit this folder directly. Each Task works in its own snapshot under `%LOCALAPPDATA%\AI Agent Control Center\task-workspaces`, and changes come back only through integration.
 
 ## 11. Start a Mock agent

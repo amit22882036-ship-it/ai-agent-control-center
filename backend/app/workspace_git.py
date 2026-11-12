@@ -1,6 +1,7 @@
 """Git plumbing for source snapshots; never touches the user's index or refs."""
 import os
 from pathlib import Path
+import re
 import stat
 from subprocess import Popen, PIPE
 import tempfile
@@ -8,10 +9,15 @@ import tempfile
 from .project_domain import canonical_path
 
 
-def git(root, *args, data=None, extra_env=None, accepted=(0,), with_status=False):
+def _environment(extra_env=None):
     env = {key: value for key, value in os.environ.items() if not key.startswith('GIT_')}
     env.update({'GIT_TERMINAL_PROMPT': '0', 'GIT_OPTIONAL_LOCKS': '0'})
     env.update(extra_env or {})
+    return env
+
+
+def git(root, *args, data=None, extra_env=None, accepted=(0,), with_status=False):
+    env = _environment(extra_env)
     try:
         with Popen(['git', '-c', 'core.hooksPath=' + os.devnull, '-C', str(root), *args],
                    stdin=PIPE, stdout=PIPE, stderr=PIPE, env=env, shell=False) as process:
@@ -23,15 +29,101 @@ def git(root, *args, data=None, extra_env=None, accepted=(0,), with_status=False
         raise ValueError('Task Workspaces require an available Git installation') from None
 
 
-def repository(root):
-    root, key = canonical_path(root, require_directory=True)
+class RepositoryRefused(ValueError):
+    """A folder that cannot hold isolated Tasks, with a reason code the interface can act on.
+
+    str(exc) stays the plain-language message, so every existing caller keeps working.
+    """
+
+    def __init__(self, code, message, **details):
+        super().__init__(message)
+        self.code, self.message, self.details = code, message, details
+
+    def payload(self):
+        return {'code': self.code, 'message': self.message, **self.details}
+
+
+GIT_MISSING = ('Git isn’t installed, or Control Center can’t find it. Install Git for Windows from '
+               'git-scm.com, restart Control Center, and add the folder again.')
+
+
+def probe(root, *args):
+    """A Git call that keeps Git's own error text (in English) for diagnosis."""
+    env = _environment({'LC_ALL': 'C', 'LANGUAGE': 'C'})
     try:
-        top = git(root, 'rev-parse', '--show-toplevel').decode().strip()
-        git(root, 'rev-parse', '--verify', 'HEAD^{commit}')
-    except ValueError:
-        raise ValueError('Task isolation requires a Git working tree with a usable HEAD') from None
-    if canonical_path(top)[1] != key:
-        raise ValueError('Project root must be the Git working-tree root')
+        with Popen(['git', '-c', 'core.hooksPath=' + os.devnull, '-C', str(root), *args],
+                   stdin=PIPE, stdout=PIPE, stderr=PIPE, env=env, shell=False) as process:
+            output, error = process.communicate()
+            return process.returncode, output, error.decode('utf-8', errors='replace')
+    except OSError:
+        raise RepositoryRefused('git_missing', GIT_MISSING) from None
+
+
+def safe_directory_command(root):
+    return 'git config --global --add safe.directory "' + Path(root).as_posix() + '"'
+
+
+def broad_folder(path):
+    """A whole drive or the person's user folder: never a sensible single repository or Project."""
+    path = Path(canonical_path(path)[0])
+    home = os.path.normcase(canonical_path(os.path.expanduser('~'))[0])
+    return path.parent == path or os.path.normcase(str(path)) == home
+
+
+def diagnose(root):
+    """Why a folder cannot be a Project root (a RepositoryRefused); returns (root, key) when it can."""
+    root, key = canonical_path(root, require_directory=True)
+    status, output, error = probe(root, 'rev-parse', '--show-toplevel')
+    if status != 0:
+        text = error.lower()
+        if 'dubious ownership' in text:
+            # Git names the repository it distrusts, which may be a parent of the chosen folder.
+            quoted = re.search(r"repository at '([^']+)'", error)
+            repository_path = canonical_path(quoted.group(1))[0] if quoted else root
+            command = safe_directory_command(repository_path)
+            raise RepositoryRefused(
+                'dubious_ownership',
+                'Git refuses to work here because the repository at ' + repository_path + ' belongs to a different '
+                'Windows user than the one running Control Center (Git’s “dubious ownership” '
+                'protection). If you trust it, run this command in a terminal, then add the folder again: '
+                + command + ' — Control Center does not change Git settings for you.',
+                command=command, repository_path=repository_path)
+        if 'not a git repository' in text:
+            raise RepositoryRefused(
+                'not_git_repo',
+                'This folder isn’t a Git repository yet. A project must be a Git repository with at least one '
+                'commit, so agents can work in private copies of it. To fix it, initialize Git in the folder and '
+                'make a first commit.')
+        detail = next((line.strip() for line in error.splitlines() if line.strip()), '')
+        raise RepositoryRefused(
+            'git_unusable',
+            'Git couldn’t use this folder as a repository' + (' (' + detail + ').' if detail else '.')
+            + ' Check the folder in a terminal with “git status”.')
+    top = canonical_path(output.decode('utf-8', errors='replace').strip())[0]
+    if os.path.normcase(top) != key:
+        if broad_folder(top):
+            raise RepositoryRefused(
+                'not_repo_root',
+                'Git treats this folder as part of a repository at ' + top + ', which covers a whole drive or your '
+                'user folder — usually created by accident. Don’t add that folder as a project. To fix '
+                'it, give this folder its own Git repository with a first commit.',
+                top_level=top, accidental_parent=True)
+        raise RepositoryRefused(
+            'not_repo_root',
+            'This folder is inside a Git repository whose top folder is ' + top + '. A project must be the top '
+            'folder of its repository, so add that folder instead.',
+            top_level=top, accidental_parent=False)
+    status, _, _ = probe(root, 'rev-parse', '--verify', '--quiet', 'HEAD^{commit}')
+    if status != 0:
+        raise RepositoryRefused(
+            'no_commits',
+            'This folder is a Git repository, but it has no commits yet. Agents start from the latest commit, so '
+            'the repository needs at least one. To fix it, make a first commit.')
+    return root, key
+
+
+def repository(root):
+    root, key = diagnose(root)
     common = git(root, 'rev-parse', '--path-format=absolute', '--git-common-dir').decode().strip()
     return canonical_path(common)[1]
 
