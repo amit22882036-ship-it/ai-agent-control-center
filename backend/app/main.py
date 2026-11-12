@@ -20,7 +20,7 @@ from .agent_manager import get_agent_output
 from .output_history import OUTPUT_PAGE_SIZE, OUTPUT_MAX_LIMIT
 from . import agent_manager as manager
 from .task_domain import TASK_DESCRIPTION_LIMIT, normalize_task_title, normalize_task_description
-from .project_domain import project_name
+from .project_domain import ProjectConflict, project_name
 
 from .agent_manager import rename_agent, set_agent_color, get_name_history
 from .agent_names import DisplayColor
@@ -382,7 +382,7 @@ class CreateProjectRequest(BaseModel):
 def _project_action(action):
     try:
         return action()
-    except (RepositoryRefused, project_folder.SetupRefused) as exc:
+    except (RepositoryRefused, project_folder.SetupRefused, ProjectConflict) as exc:
         # A specific, structured reason (code, message, and details such as the repository's top folder).
         raise HTTPException(status_code=409, detail=exc.payload()) from exc
     except LookupError as exc:

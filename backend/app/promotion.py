@@ -523,6 +523,7 @@ def history(db, task_id):
 
 
 def instruction(task_id):
+    resources_accepted = resources.ACCEPTED
     return f'''\nOptional explicit promotion ({PROTOCOL}) for Task {task_id}.
 Planning alone never executes work. Only when useful and authorized for this execution, select accepted
 proposal IDs by emitting, as the separate FINAL assistant message of this turn, a standalone JSON object
@@ -537,6 +538,7 @@ below when it applies) may an item carry allocation instead of provider/model.
 scope is null (blocked as ambiguous) or {{"namespace":"component","key":"logical/scope","from_intent_id":null}}.
 Only reference known containing ancestor intents; never invent IDs. Declare resources using existing
 resource_type, resource_key, scope, mode, recursive fields (max 8); use [] when none are needed.
+{resources_accepted}.
 depends_on_task_ids is [] or known same-Project prerequisite UUIDs (max 16); reuse_task_id is null or
 a known Task requiring review instead of duplicate execution. No resource identity may contain secrets.
 continuation is null to wait, or the existing Hybrid {{"instruction":"...","intent_ids":["known UUID"]}}.

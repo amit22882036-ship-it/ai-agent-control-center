@@ -10,7 +10,7 @@ from . import work_control, dependencies, resources, resource_coordination, exte
 from .task_domain import normalize_task_title, task_title, validate_task_status, validate_end_reason
 from .agent_names import default_display_name, validate_display_color
 from .output_history import OUTPUT_PAGE_SIZE, OUTPUT_MAX_LIMIT
-from .project_domain import DEFAULT_ROOT, canonical_path, contains, project_name
+from .project_domain import DEFAULT_ROOT, ProjectConflict, canonical_path, contains, project_name
 from . import delegation_orchestration, delegation_rounds, delegation_safety
 from . import external_access
 from . import planning, promotion, orchestration, replanning, agent_removal, executions, execution_attestation, responsibility, providers, model_catalog, allocation, provider_policy, provider_onboarding
@@ -680,10 +680,23 @@ class AgentStore:
             existing = cls._project_for_key(db, key)
             if existing is not None:
                 return cls._public_project(existing)
-        for existing in db.execute('SELECT root_path_key FROM projects'):
+        # A Project in the Trash holds its Trash location, so its original folder can be added again.
+        for existing in db.execute('SELECT project_id,name,root_path,root_path_key FROM projects'):
             other = existing['root_path_key']
+            if other == key:
+                tasks = db.execute('SELECT COUNT(*) FROM tasks WHERE project_id=?', (existing['project_id'],)).fetchone()[0]
+                history = (' Its earlier tasks keep their records. If you replaced the folder, their private copies came '
+                           'from the old Git history, so applying their changes may not work cleanly; new tasks start '
+                           'from the folder as it is now.') if tasks else ''
+                raise ProjectConflict('already_registered',
+                    f'This folder is already the project “{existing["name"]}”, so there is nothing to add. '
+                    'Use that project.' + history,
+                    project_id=existing['project_id'], name=existing['name'], task_count=tasks)
             if contains(other, key) or contains(key, other):
-                raise ValueError('Project root duplicates or overlaps a registered Project')
+                raise ProjectConflict('overlaps_project',
+                    f'This folder overlaps the project “{existing["name"]}” at {existing["root_path"]}. A project '
+                    'can’t be inside another project or contain one. Choose a separate folder, or use that project.',
+                    project_id=existing['project_id'], name=existing['name'], root_path=existing['root_path'])
         for existing in db.execute('SELECT workspace_path_key FROM task_workspaces'):
             other = existing['workspace_path_key']
             if contains(other, key) or contains(key, other):

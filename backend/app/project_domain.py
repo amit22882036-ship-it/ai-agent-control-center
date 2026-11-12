@@ -35,3 +35,14 @@ def contains(root_key, path_key):
         return os.path.commonpath((root_key, path_key)) == root_key
     except ValueError:
         return False
+
+
+class ProjectConflict(ValueError):
+    """A folder that is, or overlaps, a registered Project, with what the interface can offer instead."""
+
+    def __init__(self, code, message, **details):
+        super().__init__(message)
+        self.code, self.message, self.details = code, message, details
+
+    def payload(self):
+        return {'code': self.code, 'message': self.message, **self.details}

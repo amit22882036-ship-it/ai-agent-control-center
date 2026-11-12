@@ -1,5 +1,6 @@
 """Folder checks and the opt-in Git setup for new Projects. Temporary folders only."""
 import os
+import shutil
 from pathlib import Path
 import subprocess
 import tempfile
@@ -293,6 +294,34 @@ class FolderApiTests(unittest.TestCase):
         self.assertEqual(again['detail']['code'], 'not_applicable')
         project = self.request('/projects', {'name': 'New', 'root_path': str(root)})
         self.assertEqual(project['root_path'], canonical_path(root)[0])
+
+    def test_a_deleted_and_recreated_folder_points_back_to_its_existing_project(self):
+        isolated_git_home(self)
+        stop_git_discovery_at(self, canonical_path(self.temp.name)[0])
+        root = make_repository(Path(self.temp.name) / 'FrameSeek')
+        project = self.request('/projects', {'name': 'FrameSeek', 'root_path': str(root)})
+        self.request('/tasks', {'title': 'Earlier work', 'description': 'Earlier work', 'project_id': project['project_id']})
+        shutil.rmtree(root, onerror=lambda func, path, _: (os.chmod(path, 0o700), func(path)))
+        root.mkdir()  # The person recreated an empty folder at the same path.
+        refused = self.request('/projects', {'name': 'FrameSeek', 'root_path': str(root)}, 409)
+        self.assertEqual(refused['detail']['code'], 'not_git_repo')
+        self.request('/projects/folder-setup', {'root_path': str(root), 'expected_state': 'not_git_repo'})
+        again = self.request('/projects', {'name': 'FrameSeek again', 'root_path': str(root)}, 409)['detail']
+        self.assertEqual((again['code'], again['project_id'], again['name'], again['task_count']),
+                         ('already_registered', project['project_id'], 'FrameSeek', 1))
+        self.assertIn('old Git history', again['message'])
+        # Nothing was removed or duplicated: the one project record remains and is usable as it is.
+        listed = self.request('/projects')['projects']
+        self.assertEqual([p['project_id'] for p in listed], [project['project_id']])
+        self.assertEqual(self.request('/projects/' + project['project_id'])['root_path'], canonical_path(root)[0])
+
+    def test_an_overlapping_folder_names_the_project_it_overlaps(self):
+        root = make_repository(Path(self.temp.name) / 'outer')
+        project = self.request('/projects', {'name': 'Outer', 'root_path': str(root)})
+        inner = make_repository(root / 'inner')
+        detail = self.request('/projects', {'name': 'Inner', 'root_path': str(inner)}, 409)['detail']
+        self.assertEqual((detail['code'], detail['project_id'], detail['name']), ('overlaps_project', project['project_id'], 'Outer'))
+        self.assertIn(canonical_path(root)[0], detail['message'])
 
     def test_subfolder_refusal_carries_the_top_folder(self):
         root = make_repository(Path(self.temp.name) / 'repo')

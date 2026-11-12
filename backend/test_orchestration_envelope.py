@@ -149,6 +149,51 @@ class EnvelopeRuntimeTests(unittest.TestCase):
         self.assertEqual(self.rows()[0]['revision'], 2)
         self.assertEqual(manager.agent_statuses[key], 'stopped')
 
+    def test_folder_and_file_resource_words_from_a_real_lead_are_accepted_as_file_paths(self):
+        # A real Codex lead's early plan and decision (FrameSeek): folder and file claims written in its
+        # own words, with a path as the scope and "write" access. Previously the whole decision was refused.
+        plan = json.dumps(dict(protocol='control-center.planning.v1', decision_key='frameseek-initial-split',
+            base_revision=0, decision='propose', rationale='Three separable deliverables with a shared contract.',
+            items=[dict(proposal_id='search-core', deliverable='Local search service', responsibility='Backend files only',
+                        depends_on=[], parallel=True),
+                   dict(proposal_id='evaluation-docs', deliverable='Evaluation and docs', responsibility='Docs only',
+                        depends_on=['search-core'], parallel=True)], references=[]))
+        final = decision([
+            entry('search-core', scope=dict(namespace='component', key='frameseek/search-core'), parallel=True,
+                  resources=[{'resource_type': 'directory', 'resource_key': 'backend', 'scope': 'backend',
+                              'mode': 'write', 'recursive': True}]),
+            entry('evaluation-docs', scope=dict(namespace='component', key='frameseek/evaluation-docs'),
+                  depends_on=['search-core'], parallel=True,
+                  resources=[{'resource_type': 'directory', 'resource_key': 'evaluation', 'scope': 'evaluation',
+                              'mode': 'write', 'recursive': True},
+                             {'resource_type': 'file', 'resource_key': 'README.md', 'scope': 'README.md',
+                              'mode': 'write', 'recursive': False}])], key='frameseek-initial-split')
+        key, _ = self.run_final(plan, final)
+        self.assertNotIn(STOPPED, self.output(key))
+        self.assertEqual(manager.orchestration_status(self.task['task_id'])['decision']['state'], 'promoted')
+        self.assertEqual(sorted(r['proposal_id'] for r in self.rows()), ['evaluation-docs', 'search-core'])
+        record, = self.store.orchestration_history(self.task['task_id'])
+        claims = {item['proposal_id']: item['resources'] for item in record['content']['delegate']}
+        self.assertEqual(claims['search-core'], [dict(resource_type='file_path', resource_key='backend', scope='project',
+                                                      mode='exclusive', recursive=True)])
+        self.assertEqual(claims['evaluation-docs'][1], dict(resource_type='file_path', resource_key='README.md',
+                                                            scope='project', mode='exclusive', recursive=False))
+
+    def test_an_unknown_resource_type_is_refused_with_the_accepted_values(self):
+        key, _ = self.run_final(decision([entry('a', resources=[{'resource_type': 'service', 'resource_key': 'api',
+            'scope': 'project', 'mode': 'exclusive', 'recursive': False}])]))
+        self.assertIn(STOPPED, self.output(key))
+        rejection = manager.orchestration_status(self.task['task_id'])['decision']['last_rejection']
+        self.assertIn("Invalid resource type 'service'", rejection['reason'])
+        self.assertIn('file_path (files and folders', rejection['reason'])
+
+    def test_the_prompt_states_the_accepted_resource_values(self):
+        with self.store._connection() as db:
+            text = orchestration.instruction(db, self.task['task_id'])
+        self.assertIn('"resource_type":"file_path","resource_key":"backend","scope":"project"', text)
+        self.assertIn('port, database, docker_resource or generic', text)
+        self.assertIn('mode is advisory, shared or exclusive', text)
+
     def test_model_supplied_identity_or_revision_fields_are_rejected(self):
         for changes in (dict(task_id=self.task['task_id']), dict(revision=1), dict(base_revision=0),
                         dict(generation='g')):

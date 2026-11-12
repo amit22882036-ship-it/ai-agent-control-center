@@ -166,12 +166,26 @@ export function RegisterProjectDialog({ open, onClose, onRegistered, onRefresh =
 
   const remedy = folderRemedy(refusal)
   const useTop = () => { setPath(refusal.topLevel); register(null, false, refusal.topLevel) }
+  // The folder already is (or sits in) a registered project: open that one, nothing is added or changed.
+  async function useExisting() {
+    setBusy(true)
+    const result = await send('GET', `/projects/${encodeURIComponent(refusal.projectId)}`)
+    setBusy(false)
+    if (!result.ok) { setRefusal(null); setError(refusalText(result, 'That project couldn’t be read. Refresh the projects list.')); return }
+    onRefresh()
+    setName('')
+    setPath('')
+    setRefusal(null)
+    onRegistered(result.data)
+  }
   const reason = refusal && !setup?.check && <div className="a-result a-result--warn" role="alert"><Icon name="info" size={15} />
     <div className="a-folder-fix">
       <div>{refusal.message}</div>
       {remedy?.kind === 'command' && <CopyCommand command={refusal.command} />}
       {remedy?.kind === 'setup' && <div className="a-act-row">
         <Button size="sm" icon="folder" disabled={working} onClick={reviewSetup}>{setup?.phase === 'checking' ? 'Checking the folder…' : remedy.label}</Button></div>}
+      {remedy?.kind === 'use-existing' && <div className="a-act-row">
+        <Button size="sm" icon="folder" disabled={working} onClick={useExisting}>{remedy.label}</Button></div>}
       {remedy?.kind === 'use-top' && <div className="a-act-row">
         <Button size="sm" icon="folder" disabled={working} onClick={useTop}>{remedy.label}</Button>
         <span className="a-fine a-mono a-folder-path">{refusal.topLevel}</span></div>}

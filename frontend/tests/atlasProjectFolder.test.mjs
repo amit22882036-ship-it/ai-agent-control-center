@@ -9,7 +9,7 @@ test('only structured folder reasons are recognized; plain refusals stay plain',
   assert.equal(folderRefusal(refused({ code: 'something_else', message: 'x' })), null)
   assert.equal(folderRefusal({ offline: true }), null)
   assert.deepEqual(folderRefusal(refused({ code: 'not_repo_root', message: 'Inside a repo', top_level: 'D:\\repo', accidental_parent: false })),
-    { code: 'not_repo_root', message: 'Inside a repo', topLevel: 'D:\\repo', accidentalParent: false, command: null })
+    { code: 'not_repo_root', message: 'Inside a repo', topLevel: 'D:\\repo', accidentalParent: false, command: null, projectId: null, projectName: null })
 })
 
 test('each reason offers its own next step, and never a silent one', () => {
@@ -20,6 +20,10 @@ test('each reason offers its own next step, and never a silent one', () => {
   assert.equal(remedy({ code: 'not_repo_root', message: '', top_level: 'C:\\Users\\me', accidental_parent: true }).kind, 'setup')
   assert.deepEqual(remedy({ code: 'dubious_ownership', message: '', command: 'git config --global --add safe.directory "D:/x"' }), { kind: 'command' })
   assert.equal(remedy({ code: 'git_missing', message: 'Install Git' }), null)
+  assert.deepEqual(remedy({ code: 'already_registered', message: '', project_id: 'p1', name: 'FrameSeek', task_count: 2 }),
+    { kind: 'use-existing', label: 'Use “FrameSeek”' })
+  assert.deepEqual(remedy({ code: 'overlaps_project', message: '', project_id: 'p2', name: 'Outer', root_path: 'D:\outer' }),
+    { kind: 'use-existing', label: 'Use “Outer”' })
   assert.equal(folderRemedy(null), null)
 })
 

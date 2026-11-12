@@ -59,15 +59,53 @@ def migrate(db):
             db.execute(index)
 
 
+ACCEPTED = ('resource_type is file_path (files and folders; Project scope; recursive for a folder), port, database, '
+            'docker_resource or generic; scope is project or global; mode is advisory, shared or exclusive')
+# Words agents naturally use for a file or folder claim, and for its access, mapped to the one
+# file_path contract. Claims only coordinate concurrent work; a write maps to the stricter exclusive.
+FILE_ALIASES = {'file', 'files', 'directory', 'dir', 'folder', 'path', 'filepath'}
+FOLDER_ALIASES = {'directory', 'dir', 'folder'}
+MODE_ALIASES = {'write': 'exclusive', 'read-write': 'exclusive', 'readwrite': 'exclusive', 'rw': 'exclusive',
+                'read': 'shared', 'read-only': 'shared', 'readonly': 'shared', 'ro': 'shared'}
+
+
+def agent_declaration(claim):
+    """An agent's resource declaration in the canonical five-field form.
+
+    Folder and file words become file_path (a folder recursive unless it says otherwise), read and
+    write become shared and exclusive, and a file path's scope is always the Project. Anything
+    else is kept as written, so the usual validation still refuses it with the accepted values."""
+    if not isinstance(claim, dict):
+        return claim
+    value = dict(claim)
+    kind = value.get('resource_type')
+    if isinstance(kind, str) and kind.strip().lower().replace('_', '') in FILE_ALIASES:
+        folder = kind.strip().lower() in FOLDER_ALIASES
+        value['resource_type'] = 'file_path'
+        value['scope'] = 'project'
+        if 'recursive' not in value:
+            value['recursive'] = folder
+    mode = value.get('mode')
+    if isinstance(mode, str) and mode.strip().lower() in MODE_ALIASES:
+        value['mode'] = MODE_ALIASES[mode.strip().lower()]
+    if value.get('resource_type') == 'file_path':
+        value.setdefault('scope', 'project')
+        value.setdefault('mode', 'exclusive')
+        value.setdefault('recursive', False)
+    return value
+
+
 def normalize(db, task, resource_type, resource_key, mode=None, lifetime='task', scope=None, recursive=False):
-    if resource_type not in TYPES or lifetime not in ('task', 'worker'):
-        raise ValueError('Invalid resource type or claim lifetime')
+    if resource_type not in TYPES:
+        raise ValueError(f'Invalid resource type {resource_type!r}: {ACCEPTED}')
+    if lifetime not in ('task', 'worker'):
+        raise ValueError('Invalid resource claim lifetime')
     mode = mode or ('advisory' if resource_type == 'file_path' else 'exclusive')
     if mode not in MODES:
-        raise ValueError('Invalid resource claim mode')
+        raise ValueError(f'Invalid resource claim mode {mode!r}: {ACCEPTED}')
     scope = scope or {'file_path': 'project', 'port': 'global', 'docker_resource': 'global'}.get(resource_type)
     if scope not in ('project', 'global'):
-        raise ValueError('An explicit project or global resource scope is required')
+        raise ValueError(f'Invalid resource scope {scope!r}: {ACCEPTED}')
     if resource_type == 'file_path' and scope != 'project':
         raise ValueError('File paths require Project scope')
     if resource_type in ('port', 'docker_resource') and scope != 'global':

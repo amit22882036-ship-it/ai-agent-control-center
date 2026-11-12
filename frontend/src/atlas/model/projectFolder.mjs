@@ -2,7 +2,8 @@
 // for the opt-in Git setup (POST /projects/folder-check, then /projects/folder-setup). Nothing here
 // writes anything; the dialog sends setup only after the person confirms this exact plan.
 
-const CODES = new Set(['not_git_repo', 'no_commits', 'not_repo_root', 'dubious_ownership', 'git_missing', 'git_unusable'])
+const CODES = new Set(['not_git_repo', 'no_commits', 'not_repo_root', 'dubious_ownership', 'git_missing', 'git_unusable',
+  'already_registered', 'overlaps_project'])
 
 // The structured reason from a refused POST /projects, or null for any other refusal.
 export function folderRefusal(result) {
@@ -14,6 +15,9 @@ export function folderRefusal(result) {
     topLevel: typeof detail.top_level === 'string' ? detail.top_level : null,
     accidentalParent: Boolean(detail.accidental_parent),
     command: typeof detail.command === 'string' ? detail.command : null,
+    // The registered project this folder already is, or overlaps.
+    projectId: typeof detail.project_id === 'string' ? detail.project_id : null,
+    projectName: typeof detail.name === 'string' ? detail.name : null,
   }
 }
 
@@ -27,6 +31,9 @@ export function folderRemedy(refusal) {
   if (refusal.code === 'no_commits') return { kind: 'setup', label: 'Create the first commit…' }
   if (refusal.code === 'not_repo_root' && refusal.topLevel) return { kind: 'use-top', label: 'Use the repository’s top folder' }
   if (refusal.code === 'dubious_ownership' && refusal.command) return { kind: 'command' }
+  if ((refusal.code === 'already_registered' || refusal.code === 'overlaps_project') && refusal.projectId) {
+    return { kind: 'use-existing', label: refusal.projectName ? `Use “${refusal.projectName}”` : 'Use that project' }
+  }
   return null
 }
 

@@ -46,10 +46,13 @@ def _parts(item):
                     responsibility=item['responsibility'], depends_on=depends_on,
                     parallel=item.get('parallel', not depends_on))
     scope = item['scope']
+    from .resources import agent_declaration
     selection = dict(proposal_id=item['proposal_id'],
                      scope=dict(namespace=scope.get('namespace'), key=scope.get('key'),
                                 from_intent_id=scope.get('from_intent_id')),
-                     resources=item.get('resources', []), depends_on_task_ids=item.get('depends_on_task_ids', []),
+                     resources=[agent_declaration(claim) for claim in item.get('resources', [])]
+                     if isinstance(item.get('resources', []), list) else item.get('resources'),
+                     depends_on_task_ids=item.get('depends_on_task_ids', []),
                      reuse_task_id=item.get('reuse_task_id'))
     selection.update({k: item[k] for k in ('provider', 'model', 'allocation') if k in item})
     return proposal, selection
@@ -229,6 +232,11 @@ def latest_rejection(db, task_id, assignment_id=None):
     return dict(row) if row else None
 
 
+def _resources_accepted():
+    from .resources import ACCEPTED
+    return ACCEPTED
+
+
 def example():
     """One minimal decision that validates against the real schema (shape only)."""
     return json.dumps(dict(protocol=PROTOCOL, decision_key='split-cli',
@@ -252,7 +260,9 @@ def instruction(db, task_id):
             '{"instruction":"...","intent_ids":["known UUID"]} for approved independent work meanwhile).\n'
             'Each responsibility: proposal_id (stable key), deliverable, responsibility (<=2000 characters each), '
             'scope {"namespace":"component","key":"logical/scope"}; optionally depends_on (other proposal_ids), '
-            'parallel (true/false), resources (resource_type, resource_key, scope, mode, recursive; max 8), '
+            'parallel (true/false), resources (optional, max 8; each exactly resource_type, resource_key, scope, mode, '
+            'recursive, for example {"resource_type":"file_path","resource_key":"backend","scope":"project",'
+            '"mode":"exclusive","recursive":true} for a folder; ' + _resources_accepted() + '), '
             'depends_on_task_ids and reuse_task_id (known same-Project Task UUIDs only), and either provider/model or, '
             'only when an Auto allocation section follows, allocation.\n'
             'Keys are 1-64 ASCII letters, digits, ".", "_" or "-", starting with a letter or digit. Never invent IDs.\n'
