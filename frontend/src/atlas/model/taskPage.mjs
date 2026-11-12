@@ -39,10 +39,17 @@ const CONTINUATION_TEXT = {
 
 const DECISION_TEXT = {
   not_authorized: 'This task’s agent works without planning helpers.',
-  not_recorded: 'No plan has been recorded for the current agent.',
+  not_recorded: 'No plan has been recorded for the current agent yet. With helpers on, the lead records one before it implements.',
   independent: 'The lead decided to do the work itself.',
   proposed: 'The lead proposed a plan; no helper task was started from it.',
   promoted: 'The lead turned its plan into helper tasks.',
+}
+
+// The lead's early planning decision in one sentence (task page and the side panel).
+export function planText(decision) {
+  if (!decision) return null
+  if (decision.state === 'not_recorded' && decision.plan_missing) return 'The lead ended its turn without recording a plan decision.'
+  return DECISION_TEXT[decision.state] || 'The plan state is not reported.'
 }
 
 const DISPOSITION_TEXT = {
@@ -77,7 +84,8 @@ export function progressView({ task, status, detail, orchestration }) {
   const decision = orchestration?.decision || null
   const plan = decision ? {
     state: decision.state,
-    text: DECISION_TEXT[decision.state] || 'The plan state is not reported.',
+    text: planText(decision),
+    missing: Boolean(decision.plan_missing),
     revision: decision.revision,
     // Written by the agent; shown as its words, never as a checked fact.
     rationale: decision.rationale || null,

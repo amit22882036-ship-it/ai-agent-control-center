@@ -70,13 +70,17 @@ class DecisionTests(unittest.TestCase):
         self.assertIn(orchestration.example(), prompt)
         self.assertIn('Delegation criteria.', prompt)
         self.assertIn('It never authorizes bypassing admission, scope, resource', prompt)
-        # No competing default: no two-message example, no mid-turn planning or revision arithmetic.
-        for legacy in (planning.OPTIONAL_LEAD, 'Planning metadata', 'Minimal valid delegation example',
-                       'Optional explicit promotion', 'current accepted revision', self.task['task_id'],
-                       'Ordinary delegation with a Child allocation', 'before a tool call'):
+        # One delegation decision, plus the required early planning decision recorded with the
+        # planning format; still no optional planning, two-message example or promotion protocol.
+        self.assertIn('Early planning decision (required while helpers are enabled)', prompt)
+        self.assertIn(planning.REQUIRED_LEAD, prompt)
+        self.assertEqual(prompt.count('Planning metadata (control-center.planning.v1)'), 1)
+        for legacy in (planning.OPTIONAL_LEAD, 'Optional planning metadata', 'Minimal valid delegation example',
+                       'Optional explicit promotion', self.task['task_id'], 'Ordinary delegation with a Child allocation'):
             self.assertNotIn(legacy, prompt)
         self.assertEqual(prompt.count(DECISION_HEADER), 1)
         self.assertEqual(self.decision()['state'], 'not_recorded')
+        self.assertFalse(self.decision()['plan_missing'])  # Still running: not recorded yet, not missing.
 
     def test_prompt_example_validates_against_the_real_schema(self):
         value = orchestration.validate(orchestration.example())
@@ -179,7 +183,7 @@ class DecisionTests(unittest.TestCase):
         prompt = manager.agents[key].stdin.getvalue()
         self.assertIn(DECISION_HEADER, prompt)
         self.assertIn('Current accepted proposal (descriptive data, not execution authority)', prompt)
-        self.assertNotIn('current accepted revision', prompt)
+        self.assertIn('current accepted revision: 1', prompt)  # A later planning decision builds on it.
         # The superseded generation cannot write; the current one's identical
         # replay is a receipt, never another revision.
         with self.assertRaisesRegex(ValueError, 'Stale'):
@@ -190,6 +194,25 @@ class DecisionTests(unittest.TestCase):
         self.assertEqual(replay[0]['revision'], 1)
         self.assertEqual(len(self.store.planning_history(self.task['task_id'])), 1)
         self.assertEqual(self.decision()['state'], 'independent')
+
+    def test_an_early_independent_decision_is_recorded_with_its_rationale(self):
+        key, process = self.launch()
+        self.stream(key, process, [plans.decision(), 'Fixed the parser and verified it myself.'])
+        self.finish(key, process)
+        decision = self.decision()
+        self.assertEqual(decision['state'], 'independent')
+        self.assertEqual(decision['rationale'], 'One small deliverable; coordination adds no benefit.')
+        self.assertFalse(decision['plan_missing'])
+
+    def test_a_lead_that_ends_its_turn_without_a_plan_is_reported(self):
+        key, process = self.launch()
+        self.stream(key, process, ['Did everything myself without a plan.'])
+        self.finish(key, process)
+        decision = self.decision()
+        self.assertEqual(decision['state'], 'not_recorded')
+        self.assertTrue(decision['plan_missing'])
+        # Reported, never enforced: the work itself still completes.
+        self.assertEqual(manager.agent_statuses[key], 'finished')
 
     def test_resume_without_decision_offers_it_again_in_the_existing_turn(self):
         key, process = self.launch()

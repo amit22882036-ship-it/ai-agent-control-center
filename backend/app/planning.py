@@ -180,6 +180,8 @@ def _insert(db, origin, task, value, encoded, *, session_id, message_id):
     return current(db, task['task_id'])
 
 
+REQUIRED_LEAD = '''Record your early planning decision (independent or propose) as'''
+
 OPTIONAL_LEAD = '''Planning is optional; continue ordinary work. Consider independent deliverables, dependencies,
 parallel benefit and coordination cost. Do not delegate merely because a task is long.
 If useful, emit'''

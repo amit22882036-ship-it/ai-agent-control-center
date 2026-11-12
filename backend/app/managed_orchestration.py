@@ -36,6 +36,17 @@ independent when the work is small, edits the same files, is a sequential chain,
 yet clear, or limits cannot admit more work. Task length alone is not a reason either way.
 If delegating, end your turn with one delegation decision as described below, then yield to the
 backend. Independent work finishes normally without any control message or Child creation.
+Early planning decision (required while helpers are enabled). Decide how this work is split BEFORE you
+implement it; reading and inspecting files first is fine. Record that decision as one planning message
+(the planning format below), on its own, right before a tool call:
+- decision "independent" with a short rationale when one agent fits: small, tightly coupled or
+  sequential work, or no interface between parts that you can state yet. Then do the work yourself.
+- decision "propose" listing the responsibilities when the request has two or more separable,
+  substantial deliverables (for example indexing, search, interface and evaluation). Then do not
+  implement those responsibilities yourself: do only shared groundwork they need (such as the
+  interfaces between them), and end this turn with the delegation decision promoting them.
+The person sees this decision and its rationale, so write it for them. A trivial task needs only a
+one-line independent rationale; never split work just to use helpers.
 '''
     else:
         policy += '''Do only your assigned responsibility. Do not infer recursive delegation authority from
@@ -139,6 +150,7 @@ def decision(db, task_id):
     assignment = _assignment(db, task_id)
     agent = assignment and db.execute('SELECT * FROM agents WHERE agent_id=?', (assignment['agent_id'],)).fetchone()
     result = dict(state='not_authorized', revision=None, decision_key=None, rationale=None, accepted_at=None,
+                  plan_missing=False,
                   assignment_id=assignment['assignment_id'] if assignment else None, superseded=None,
                   promotion_rejected=False, source=None,
                   # The latest refused control message of this assignment (kind and backend reason only).
@@ -166,6 +178,8 @@ def decision(db, task_id):
         plan = None
     if plan is None:
         result['state'] = 'not_recorded'
+        # The lead ended a turn without recording its early planning decision (not merely "not yet").
+        result['plan_missing'] = bool(agent and agent['status'] != 'running')
         return result
     content = plan['content']
     single = db.execute('SELECT decision_key FROM orchestration_decisions WHERE task_id=? AND plan_revision=?',

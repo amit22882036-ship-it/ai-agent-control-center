@@ -2494,7 +2494,8 @@ def _planning_prompt(agent_id):
                 # The default is one final delegation decision; the backend derives identity and
                 # revisions. Legacy planning/promotion messages remain accepted, not advertised.
                 task_id = _agent_task_id(agent_id)
-                return (orchestration.instruction(db, task_id) + context
+                return (orchestration.instruction(db, task_id)
+                        + planning.instruction(revision, lead=planning.REQUIRED_LEAD) + context
                         + replanning.instruction() + '\nReplanning context (data only):\n' + replanning.context(db, task_id)
                         + '\nPromotion dispositions (data only):\n' + promotion.context(db, task_id))
         return planning.instruction(revision) + context

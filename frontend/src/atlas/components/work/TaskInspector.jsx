@@ -11,6 +11,7 @@ import { TOOLS, tagOf } from '../../vocabulary.mjs'
 import { helpersView, plannedView, resultView } from '../../model/taskStatus.mjs'
 import { agentLabel, nowView, timeView, whoView } from '../../model/workList.mjs'
 import { pathTo } from '../../model/tasks.mjs'
+import { planText } from '../../model/taskPage.mjs'
 import { onReplyRequest } from '../../workContext'
 import { AgentFooterActions, AgentNowPanels, AgentSettingsPanels, AgentStopResult } from '../agent/AgentPanels'
 import { useAgentScope } from '../agent/useAgentScope'
@@ -210,7 +211,7 @@ function ActivityTab({ store, derived, id, activity, assignments }) {
   </>
 }
 
-function DetailsTab({ store, derived, id, projectName }) {
+function DetailsTab({ store, derived, id, projectName, decision = null }) {
   const task = store.tasks[id]
   const who = whoView(derived, id)
   const agent = who.agent
@@ -223,6 +224,9 @@ function DetailsTab({ store, derived, id, projectName }) {
         <dt>Effort</dt><dd>{agent.effort || 'Not reported'}</dd>
         <dt>Agent status</dt><dd>{AGENT_STATUS[agent.status] || 'Not reported'}{agent.removed ? ' · removed' : ''}</dd>
         <dt>Helpers</dt><dd>{agent.autonomous ? 'May bring in helpers' : 'Works without helpers'}</dd>
+        {agent.autonomous && decision && <><dt>Plan</dt><dd>{planText(decision)}
+          {decision.rationale && <span className="a-fine a-bidi" dir="auto"> “{decision.rationale}”</span>}
+          {decision.promotions?.length > 0 && <span className="a-fine"> {decision.promotions.length} helper {decision.promotions.length === 1 ? 'task' : 'tasks'} proposed.</span>}</dd></>}
       </>}
       <dt>Project</dt><dd className="a-bidi" dir="auto">{projectName(task.projectId)}</dd>
       <dt>Task status</dt><dd>{derived.status[id].label}{derived.status[id].certainty === 'unknown' ? ' (not fully reported)' : ''}</dd>
@@ -247,6 +251,8 @@ export default function TaskInspector({ store, derived, taskId, selection, proje
   const agent = who?.agent && !who.agent.unknown ? who.agent : null
   const task = useLiveResource(present ? `${API_BASE}/tasks/${encode(taskId)}` : null, version)
   const assignments = useLiveResource(present && tab === 'activity' ? `${API_BASE}/tasks/${encode(taskId)}/assignments` : null, version)
+  // The lead's planning decision, only where it is shown (Settings) and only for a lead with helpers.
+  const orchestration = useLiveResource(present && tab === 'settings' && agent?.autonomous ? `${API_BASE}/tasks/${encode(taskId)}/orchestration` : null, version)
   const activity = useLiveResource(present && agent && (tab === 'activity' || derived.status[taskId].key === 'needs_input')
     ? `${API_BASE}/agents/${encode(agent.id)}/activity` : null, version)
 
@@ -293,7 +299,7 @@ export default function TaskInspector({ store, derived, taskId, selection, proje
       {tab === 'activity' && <ActivityTab store={store} derived={derived} id={taskId} activity={activity} assignments={assignments} />}
       {tab === 'output' && (agentScope.agentId ? <OutputHistory key={agentScope.agentId} agentId={agentScope.agentId} version={version}
         historical={agentScope.target.kind !== 'current'} /> : <EmptyState icon="layers" title="No output yet">No agent has worked on this task.</EmptyState>)}
-      {tab === 'settings' && <><DetailsTab store={store} derived={derived} id={taskId} projectName={projectName} />
+      {tab === 'settings' && <><DetailsTab store={store} derived={derived} id={taskId} projectName={projectName} decision={orchestration.data?.decision || null} />
         <AgentSettingsPanels agent={agentScope} taskId={taskId} /></>}
     </div>
   </Inspector>

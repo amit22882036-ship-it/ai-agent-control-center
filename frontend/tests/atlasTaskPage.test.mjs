@@ -100,3 +100,15 @@ test('an impact preview reads as consequences, and a changed impact is noticed',
   const cancel = impactView(read('release', 'impact:cancel'), store)
   assert.match(cancel.lines[0], /will be canceled/)
 })
+
+test('the lead’s early planning decision reads the same on the task page and in the side panel', async () => {
+  const { planText } = await import('../src/atlas/model/taskPage.mjs')
+  assert.equal(planText(null), null)
+  assert.equal(planText({ state: 'independent' }), 'The lead decided to do the work itself.')
+  assert.match(planText({ state: 'not_recorded', plan_missing: false }), /^No plan has been recorded for the current agent yet\. With helpers on/)
+  assert.equal(planText({ state: 'not_recorded', plan_missing: true }), 'The lead ended its turn without recording a plan decision.')
+  const progress = progressView({ task: null, status: null, detail: null,
+    orchestration: { decision: { state: 'not_recorded', plan_missing: true, promotions: [] } } })
+  assert.equal(progress.plan.missing, true)
+  assert.equal(progress.plan.text, 'The lead ended its turn without recording a plan decision.')
+})

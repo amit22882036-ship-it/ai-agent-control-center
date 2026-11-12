@@ -99,9 +99,11 @@ class RuntimePolicyTests(unittest.TestCase):
         key, process = self.launch()
         prompt = process.stdin.getvalue()
         self.assertIn(policy.instruction(True), prompt)
-        # One default delegation contract; the legacy two-message protocols are not advertised.
+        # One default delegation contract and the required early planning decision; the legacy
+        # promotion protocol is not advertised.
         self.assertIn('control-center.orchestration.v1', prompt)
-        self.assertNotIn('control-center.planning.v1', prompt)
+        self.assertIn('control-center.planning.v1', prompt)
+        self.assertIn('Early planning decision (required while helpers are enabled)', prompt)
         self.assertNotIn('control-center.promotion.v1', prompt)
         self.assertIn('Fix the CSV parser and verify its behavior.', prompt)
         self.assertTrue(manager._structured(process).events.native_collaboration_prohibited)
