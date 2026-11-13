@@ -19,7 +19,8 @@ RESUME_MARKERS = ('--- User Reply ---', '--- Redirect ---', '--- Delegated Decis
                   '--- Similar Decisions Enabled ---', '--- Always Decide Enabled ---',
                   '--- Automatic Similar Decision ---', '--- Automatic Always Decision ---',
                   '--- Automatic Provider Retry ---', '--- Continued after provider wait ---',
-                  '--- Plan recorded; executing it ---', '--- Asking once for a corrected plan ---')
+                  '--- Plan recorded; executing it ---', '--- Asking once for a corrected plan ---',
+                  '--- Asking once for a corrected delegation decision ---')
 CONTINUATION_PREFIX = '--- Parent continuation: '
 SCAN_TIMEOUT_SECONDS = 30
 _EXEC = re.compile(r'(?<![\w-])exec(?![\w-])', re.IGNORECASE)

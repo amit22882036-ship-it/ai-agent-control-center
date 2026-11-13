@@ -22,6 +22,18 @@ OPTIONAL_ITEM_FIELDS = {'depends_on', 'parallel', 'resources', 'depends_on_task_
                         'provider', 'model', 'allocation'}
 REJECTION_REASON_LIMIT = 500
 _PLACEHOLDER_TASK = '00000000-0000-4000-8000-000000000000'  # Structural validation only, never stored.
+# Company and product names agents naturally write for a Child's provider, mapped to Control Center's ids.
+PROVIDER_ALIASES = {'openai': 'codex', 'openai-codex': 'codex', 'codex-cli': 'codex', 'gpt': 'codex',
+                    'anthropic': 'claude', 'claude-code': 'claude', 'claude_code': 'claude',
+                    'google': 'gemini', 'gemini-cli': 'gemini', 'gemini_cli': 'gemini'}
+
+
+def provider_id(value):
+    """A Child provider as Control Center names it (case-insensitive, common aliases); unknown stays as written."""
+    if not isinstance(value, str):
+        return value
+    key = value.strip().lower()
+    return PROVIDER_ALIASES.get(key, key)
 
 
 def encoded(value):
@@ -55,6 +67,8 @@ def _parts(item):
                      depends_on_task_ids=item.get('depends_on_task_ids', []),
                      reuse_task_id=item.get('reuse_task_id'))
     selection.update({k: item[k] for k in ('provider', 'model', 'allocation') if k in item})
+    if 'provider' in selection:
+        selection['provider'] = provider_id(selection['provider'])
     return proposal, selection
 
 
@@ -147,6 +161,7 @@ def accept(db, origin, message, *, session_id, message_id):
     from . import agent_removal, work_control
     with rejected_as('format'):
         value = validate(message)
+    warnings = _reconcile_models(db, value)
     planning.text(message_id, 128)
     with rejected_as('authority'):
         # Task, Project, Agent, assignment, generation, session and all four capabilities come
@@ -211,7 +226,28 @@ def accept(db, origin, message, *, session_id, message_id):
         agent_id,assignment_id,generation,session_id,message_id,content,receipt) VALUES (?,?,?,?,?,?,?,?,?,?,?)''',
         (task['task_id'], value['decision_key'], accepted['revision'], promotion_key, origin.agent_id,
          origin.assignment_id, origin.generation, session_id, message_id, content, encoded(receipt)))
-    return receipt
+    return dict(receipt, warnings=warnings) if warnings else receipt
+
+
+def _reconcile_models(db, value):
+    """A requested Child model that the provider's current catalog does not list is dropped, so the Child
+    uses its provider's default (the lead's provider: its configured model) instead of refusing the whole
+    decision. Without a current catalog nothing is changed and admission decides as before."""
+    from . import model_catalog
+    warnings = []
+    for item in value['delegate']:
+        model, provider = item.get('model'), item.get('provider')
+        if not model or not provider:
+            continue
+        try:
+            scope = model_catalog.current_scope(db, provider)
+        except Exception:  # A catalog read never decides acceptance.
+            continue
+        if scope is not None and model_catalog.lookup(db, provider, model, scope) is None:
+            item.pop('model')
+            warnings.append(f"{item['proposal_id']}: model {model!r} is not listed for {provider}; the helper uses "
+                            "its provider's default model instead")
+    return warnings
 
 
 def history(db, task_id):
@@ -235,6 +271,13 @@ def latest_rejection(db, task_id, assignment_id=None):
 def _resources_accepted():
     from .resources import ACCEPTED
     return ACCEPTED
+
+
+def retry_prompt(reason):
+    return (f'Control Center: your delegation decision was not accepted: {reason}\n'
+            'Fix exactly that and send the corrected decision as your final message: one '
+            f'{PROTOCOL} JSON object with a NEW decision_key and nothing else (no prose, no Markdown fences). '
+            'Do not redo work that is already done.')
 
 
 def example():
@@ -263,7 +306,9 @@ def instruction(db, task_id):
             'parallel (true/false), resources (optional, max 8; each exactly resource_type, resource_key, scope, mode, '
             'recursive, for example {"resource_type":"file_path","resource_key":"backend","scope":"project",'
             '"mode":"exclusive","recursive":true} for a folder; ' + _resources_accepted() + '), '
-            'depends_on_task_ids and reuse_task_id (known same-Project Task UUIDs only), and either provider/model or, '
+            'depends_on_task_ids and reuse_task_id (known same-Project Task UUIDs only), and either provider (one of '
+            'codex, claude or gemini; omit it to use your own) with an optional model (a model id of that provider; '
+            'omit it for its default) or, '
             'only when an Auto allocation section follows, allocation.\n'
             'Keys are 1-64 ASCII letters, digits, ".", "_" or "-", starting with a letter or digit. Never invent IDs.\n'
             'Example (shape only; use your own content):\n' + example() + '\n'

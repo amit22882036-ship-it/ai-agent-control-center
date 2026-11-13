@@ -140,6 +140,23 @@ class PlanPhaseTests(unittest.TestCase):
         self.assertEqual(self.decision()['state'], 'promoted')
         self.assertEqual(self.phase()['phase'], 'executing')
 
+    def test_a_refused_decision_after_the_plan_gets_one_correction_with_the_reason(self):
+        key, process = self.start()
+        self.stream(key, process, [plan_message()])
+        self.finish(key, process)
+        executing = manager.agents[key]
+        refused = json.dumps(dict(protocol='control-center.orchestration.v1', decision_key='frameseek-components',
+            rationale='Contract written.', delegate=[dict(proposal_id='search-core', deliverable='Search',
+                responsibility='Only backend/app/search.', scope=dict(namespace='component', key='frameseek/search-core'),
+                provider='skynet')]))
+        self.stream(key, executing, [refused])
+        self.finish(key, executing)
+        self.assertEqual(len(self.commands), 3)
+        prompt = self.prompt(key)
+        self.assertIn('Control Center: your delegation decision was not accepted: Unknown Child provider', prompt)
+        self.assertIn('with a NEW decision_key', prompt)
+        self.assertEqual(self.access()[-1], 'workspace-write')
+
     def test_a_split_policy_needs_a_root_lead_with_helpers(self):
         with self.assertRaisesRegex(ValueError, 'Split policy must be'):
             self.launch(split_policy='sometimes')

@@ -185,6 +185,11 @@ def _nodes(db, rows, parents):
         '''SELECT task_id,phase,to_agent_id FROM (
                SELECT *,ROW_NUMBER() OVER (PARTITION BY task_id ORDER BY created_at DESC,rowid DESC) AS n
                FROM responsibility_transfers WHERE task_id IN ({})) WHERE n=1'''.format(_marks(ids)), ids)} if ids else {}
+    # The latest refused control message per Task and assignment (a structured stop's reason).
+    rejections = {(row['task_id'], row['assignment_id']): row for row in db.execute(
+        '''SELECT task_id,assignment_id,kind,reason,created_at FROM (
+               SELECT *,ROW_NUMBER() OVER (PARTITION BY task_id ORDER BY rejection_id DESC) AS n
+               FROM control_rejections WHERE task_id IN ({})) WHERE n=1'''.format(_marks(ids)), ids)} if ids else {}
 
     result = []
     for row in rows:
@@ -257,6 +262,13 @@ def _nodes(db, rows, parents):
                 'removal': None if not removal else {k: removal[k] for k in ('state', 'mode', 'failure', 'removed_at')},
             },
             'waiting_context': context,
+            # Nobody works on it because its last agent's control message was refused: the reason, so the
+            # Task never reads as simply "not started".
+            'control_rejection': None if current or not last_ended or (task_id, last_ended['assignment_id']) not in rejections
+            or row['status'] in ('completed', 'canceled') else {
+                'kind': rejections[(task_id, last_ended['assignment_id'])]['kind'],
+                'reason': _clip(rejections[(task_id, last_ended['assignment_id'])]['reason'], 500),
+                'at': rejections[(task_id, last_ended['assignment_id'])]['created_at']},
             # The last owner was removed and nobody owns the Task yet (Stage 2D.2).
             'responsibility_awaiting': bool(not current and last_ended and last_ended['ended_reason'] == 'removed'
                                             and row['status'] not in ('completed', 'canceled')),

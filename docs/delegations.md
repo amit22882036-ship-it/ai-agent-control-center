@@ -264,6 +264,14 @@ lost to one invalid field. The plan phase separates deciding from doing.
   the plan; the person approves, describes changes (the lead revises, then executes) or rejects (the lead works
   alone).
 - Everything after the plan uses the existing delegation, integration and acknowledgement flow unchanged.
+- **A refused delegation decision** (format or admission) of a lead with helpers also gets one correction in the
+  same session with the exact reason, once per assignment, instead of stopping the run; a second refusal stops
+  as before. The lead's prompt lists the accepted provider ids (codex, claude, gemini); the names agents tend to
+  write (openai, anthropic, google, case-insensitive) are accepted as those ids. A requested helper model that
+  the provider's current model catalog does not list is dropped with a note in the output, so the helper uses
+  its provider's default model; without a current catalog admission decides as before.
+- A task whose last agent stopped because its control message was refused shows **Stopped: needs attention**
+  with the reason (task projection `control_rejection`), not "Not started".
 
 **Verification.** Covered by deterministic tests with synthetic provider events (mock CLI). Whether real models
 follow the plan phase has not been measured.

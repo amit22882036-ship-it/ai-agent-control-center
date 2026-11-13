@@ -196,6 +196,9 @@ export function normalizeNode(raw, source, issues) {
     blockers,
     blockersMore: count(raw.blockers_more) ?? 0,
     waitingContext: waitingContext(raw.waiting_context, issues, taskId),
+    // Why its last agent stopped: a refused control message (kind and the backend's reason).
+    rejection: isObject(raw.control_rejection) ? { kind: text(raw.control_rejection.kind, 20), reason: text(raw.control_rejection.reason, 500),
+      at: text(raw.control_rejection.at, 40) } : null,
     responsibilityAwaiting: raw.responsibility_awaiting === true,
     transfer: isObject(raw.transfer) ? { phase: text(raw.transfer.phase, 20), toAgentId: id(raw.transfer.to_agent_id) } : null,
     continuation,

@@ -24,6 +24,7 @@ export const STATUS = {
   running: { label: 'Working', bead: 'work', tone: 'work', attention: false },
   pending: { label: 'Not started', bead: 'pending', tone: 'neutral', attention: false },
   stopped: { label: 'Stopped', bead: 'stopped', tone: 'neutral', attention: false },
+  refused: { label: 'Stopped: needs attention', bead: 'ask', tone: 'alert', attention: true },
   waiting: { label: 'Waiting', bead: 'pending', tone: 'wait', attention: false },
   unknown: { label: 'Status unavailable', bead: 'pending', tone: 'neutral', attention: false },
 }
@@ -91,6 +92,10 @@ export function taskStatus(task, agents = { current: null, last: null }) {
     return make('unknown', { certainty: 'unknown' })
   }
   // Nobody holds the Task now.
+  if (task.rejection && (task.lifecycle === 'pending' || task.lifecycle === 'in_progress')) {
+    // Its last agent's control message was refused, so the work stopped: never "not started".
+    return make('refused', { detail: task.rejection.reason || 'Its last control message was refused.' })
+  }
   switch (task.lifecycle) {
     case 'blocked': return make('blocked', { certainty: task.blockers.length ? 'reported' : 'unknown' })
     // Not started, or returned to "not started" after its agent stopped (the backend's own state). A

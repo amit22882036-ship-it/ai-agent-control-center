@@ -18,7 +18,7 @@ function node(taskId, parent = null, extra = {}) {
     task_id: taskId, parent_task_id: parent, project_id: 'p1', title: `Task ${taskId}`, status: 'pending', control_intent: 'active',
     stop_required: false, created_at: '2026-01-01T00:00:00.000Z', updated_at: '2026-01-01T00:00:00.000Z',
     root_task_id: null, depth: null, ancestry: 'complete', child_count: 0, blockers: [], blockers_more: 0,
-    assignment: { current: null, last_ended: null, count: 0, previous_agent_ids: [] }, agent: null, waiting_context: null,
+    assignment: { current: null, last_ended: null, count: 0, previous_agent_ids: [] }, agent: null, waiting_context: null, control_rejection: null,
     responsibility_awaiting: false, transfer: null, continuation: null, delegation: null,
     delegations: { requested: 0, materialized: 0, result_ready: 0, acknowledged: 0, canceled: 0 },
     planned: { unmaterialized: 0, by_disposition: {} }, plan_revision: null, rounds: 0, integration: null, ...extra,
@@ -437,4 +437,16 @@ test('selection is a Task id that survives refreshes and Agent replacement', () 
   assert.equal(result.status, 'missing')
   assert.deepEqual(result.selection.expanded, [])
   assert.equal(result.selection.taskId, 'flaky') // kept, so the UI can say what happened
+})
+
+test('a task stopped by a refused control message needs attention instead of reading as not started', async () => {
+  const { taskStatus } = await import('../src/atlas/model/taskStatus.mjs')
+  const base = { lifecycle: 'pending', controlIntent: 'active', blockers: [], continuation: null, waitingContext: null }
+  const refused = taskStatus({ ...base, rejection: { kind: 'format', reason: 'Unknown Child provider; use one of mock, codex, claude, gemini' } },
+    { current: null, last: { status: 'stopped' } })
+  assert.equal(refused.key, 'refused')
+  assert.equal(refused.attention, true)
+  assert.equal(refused.label, 'Stopped: needs attention')
+  assert.match(refused.detail, /Unknown Child provider/)
+  assert.equal(taskStatus({ ...base, rejection: null }, { current: null, last: null }).key, 'pending')
 })

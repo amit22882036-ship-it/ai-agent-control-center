@@ -25,6 +25,7 @@
     },
     "agent": null,
     "waiting_context": null,
+    "control_rejection": null,
     "responsibility_awaiting": false,
     "transfer": null,
     "continuation": null,
@@ -68,6 +69,7 @@
     },
     "agent": null,
     "waiting_context": null,
+    "control_rejection": null,
     "responsibility_awaiting": false,
     "transfer": null,
     "continuation": null,
@@ -111,6 +113,7 @@
     },
     "agent": null,
     "waiting_context": null,
+    "control_rejection": null,
     "responsibility_awaiting": false,
     "transfer": null,
     "continuation": null,
@@ -177,6 +180,7 @@
      "kind": "coordination",
      "label": "Coordination blocked"
     },
+    "control_rejection": null,
     "responsibility_awaiting": false,
     "transfer": null,
     "continuation": null,
@@ -242,6 +246,7 @@
      "removal": null
     },
     "waiting_context": null,
+    "control_rejection": null,
     "responsibility_awaiting": false,
     "transfer": null,
     "continuation": null,
@@ -325,6 +330,7 @@
      "label": "Waiting for provider usage",
      "condition": "usage_limited"
     },
+    "control_rejection": null,
     "responsibility_awaiting": false,
     "transfer": null,
     "continuation": null,
@@ -395,6 +401,7 @@
      }
     },
     "waiting_context": null,
+    "control_rejection": null,
     "responsibility_awaiting": true,
     "transfer": null,
     "continuation": null,
@@ -460,6 +467,7 @@
      "removal": null
     },
     "waiting_context": null,
+    "control_rejection": null,
     "responsibility_awaiting": false,
     "transfer": null,
     "continuation": null,
@@ -510,6 +518,7 @@
     },
     "agent": null,
     "waiting_context": null,
+    "control_rejection": null,
     "responsibility_awaiting": false,
     "transfer": null,
     "continuation": null,
@@ -574,6 +583,7 @@
      "kind": "user",
      "label": "Waiting for you"
     },
+    "control_rejection": null,
     "responsibility_awaiting": false,
     "transfer": null,
     "continuation": null,
@@ -645,6 +655,7 @@
      "removal": null
     },
     "waiting_context": null,
+    "control_rejection": null,
     "responsibility_awaiting": false,
     "transfer": null,
     "continuation": null,
@@ -726,6 +737,7 @@
      "removal": null
     },
     "waiting_context": null,
+    "control_rejection": null,
     "responsibility_awaiting": false,
     "transfer": null,
     "continuation": {
@@ -786,6 +798,7 @@
      },
      "agent": null,
      "waiting_context": null,
+     "control_rejection": null,
      "responsibility_awaiting": false,
      "transfer": null,
      "continuation": null,
@@ -829,6 +842,7 @@
      },
      "agent": null,
      "waiting_context": null,
+     "control_rejection": null,
      "responsibility_awaiting": false,
      "transfer": null,
      "continuation": null,
@@ -872,6 +886,7 @@
      },
      "agent": null,
      "waiting_context": null,
+     "control_rejection": null,
      "responsibility_awaiting": false,
      "transfer": null,
      "continuation": null,
@@ -947,6 +962,7 @@
       "kind": "coordination",
       "label": "Coordination blocked"
      },
+     "control_rejection": null,
      "responsibility_awaiting": false,
      "transfer": null,
      "continuation": null,
@@ -1012,6 +1028,7 @@
       "removal": null
      },
      "waiting_context": null,
+     "control_rejection": null,
      "responsibility_awaiting": false,
      "transfer": null,
      "continuation": null,
@@ -1095,6 +1112,7 @@
       "label": "Waiting for provider usage",
       "condition": "usage_limited"
      },
+     "control_rejection": null,
      "responsibility_awaiting": false,
      "transfer": null,
      "continuation": null,
@@ -1174,6 +1192,7 @@
       }
      },
      "waiting_context": null,
+     "control_rejection": null,
      "responsibility_awaiting": true,
      "transfer": null,
      "continuation": null,
@@ -1239,6 +1258,7 @@
       "removal": null
      },
      "waiting_context": null,
+     "control_rejection": null,
      "responsibility_awaiting": false,
      "transfer": null,
      "continuation": null,
@@ -1289,6 +1309,7 @@
      },
      "agent": null,
      "waiting_context": null,
+     "control_rejection": null,
      "responsibility_awaiting": false,
      "transfer": null,
      "continuation": null,
@@ -1355,6 +1376,7 @@
       "kind": "user",
       "label": "Waiting for you"
      },
+     "control_rejection": null,
      "responsibility_awaiting": false,
      "transfer": null,
      "continuation": null,
@@ -1421,6 +1443,7 @@
       "removal": null
      },
      "waiting_context": null,
+     "control_rejection": null,
      "responsibility_awaiting": false,
      "transfer": null,
      "continuation": {
@@ -1500,6 +1523,7 @@
       "kind": "user",
       "label": "Waiting for you"
      },
+     "control_rejection": null,
      "responsibility_awaiting": false,
      "transfer": null,
      "continuation": null,
@@ -1571,6 +1595,7 @@
       "removal": null
      },
      "waiting_context": null,
+     "control_rejection": null,
      "responsibility_awaiting": false,
      "transfer": null,
      "continuation": null,
@@ -1652,6 +1677,7 @@
       "removal": null
      },
      "waiting_context": null,
+     "control_rejection": null,
      "responsibility_awaiting": false,
      "transfer": null,
      "continuation": {
@@ -1713,6 +1739,7 @@
      },
      "agent": null,
      "waiting_context": null,
+     "control_rejection": null,
      "responsibility_awaiting": false,
      "transfer": null,
      "continuation": null,
@@ -1777,6 +1804,7 @@
       "kind": "user",
       "label": "Waiting for you"
      },
+     "control_rejection": null,
      "responsibility_awaiting": false,
      "transfer": null,
      "continuation": null,
@@ -1845,6 +1873,7 @@
       "removal": null
      },
      "waiting_context": null,
+     "control_rejection": null,
      "responsibility_awaiting": false,
      "transfer": null,
      "continuation": {
@@ -1926,6 +1955,7 @@
       "removal": null
      },
      "waiting_context": null,
+     "control_rejection": null,
      "responsibility_awaiting": false,
      "transfer": null,
      "continuation": null,
@@ -2007,6 +2037,7 @@
       "removal": null
      },
      "waiting_context": null,
+     "control_rejection": null,
      "responsibility_awaiting": false,
      "transfer": null,
      "continuation": {

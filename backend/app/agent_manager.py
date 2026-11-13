@@ -1667,9 +1667,11 @@ def _finish_structured(agent_id, process):
                 _task_store().accept_replanning_message(context.origin, message,
                     session_id=context.events.session_id, message_id=context.events.message_id, plans=context.events.plans)
             elif orchestrating:
-                _task_store().accept_orchestration_message(context.origin, message,
+                receipt = _task_store().accept_orchestration_message(context.origin, message,
                     session_id=context.events.session_id, message_id=context.events.message_id,
                     plans=context.events.plans)
+                for warning in receipt.get('warnings', []) if isinstance(receipt, dict) else []:
+                    agent_outputs[agent_id].append(f'--- Note: {warning} ---')
                 if getattr(context.events, 'plan_phase', False):
                     # Delegating straight from the planning turn is a decided plan too.
                     with _task_store()._connection() as db:
@@ -1708,12 +1710,14 @@ def _finish_structured(agent_id, process):
         # work_control.sync retains the committed orchestration continuation.
         logger.exception('Structured execution did not complete normally for %s', agent_id)
         rejection = _control_rejection(exc, context.events, stage)
-        if rejection and _plan_retry_allowed(agent_id, context, rejection[0]):
-            # An invalid plan in a planning turn: keep the assignment open and offer one correction
-            # (the completion handler resumes the same session with the validation error).
-            agent_outputs[agent_id].append(f'--- Plan not accepted ({rejection[0]}): {rejection[1]} ---')
+        retry = _control_retry_kind(agent_id, context, rejection[0]) if rejection else None
+        if retry:
+            # A refused plan or delegation decision: keep the assignment open and offer one correction
+            # (the completion handler resumes the same session with the exact reason).
+            noun = 'Plan' if retry == 'plan' else 'Delegation decision'
+            agent_outputs[agent_id].append(f'--- {noun} not accepted ({rejection[0]}): {rejection[1]} ---')
             _persist_control_rejection(agent_id, context.origin, *rejection)
-            context.plan_retry = rejection[1]
+            context.plan_retry = (retry, rejection[1])
             _save_agent(agent_id)
             return True
         condition = getattr(context.events, 'condition', None)
@@ -2575,33 +2579,55 @@ def _after_plan(agent_id, process, allow_auto):
         return False
 
 
-def _plan_retry_allowed(agent_id, context, kind):
-    if not getattr(context.events, 'plan_phase', False) or kind not in ('format', 'missing_step'):
-        return False
+def _control_retry_kind(agent_id, context, kind):
+    """'plan' or 'decision' when a refused control message gets one corrected retry, else None."""
+    if kind not in ('format', 'missing_step', 'admission'):
+        return None
     if not (context.events.session_id or agent_sessions.get(agent_id)) or context.revoked or _shutting_down:
-        return False
+        return None
+    task_id = _agent_task_id(agent_id)
     with _task_store()._connection() as db:
-        row = plan_phase.get(db, _agent_task_id(agent_id))
-    return bool(row and row['phase'] == 'planning' and row['retries'] < plan_phase.MAX_RETRIES)
+        if getattr(context.events, 'plan_phase', False):
+            row = plan_phase.get(db, task_id)
+            if kind != 'admission' and row and row['phase'] == 'planning' and row['retries'] < plan_phase.MAX_RETRIES:
+                return 'plan'
+            return None
+        message = getattr(context.events, 'message', None) or ''
+        if not orchestration.is_envelope(message):
+            return None  # Only a delegation decision, the control message every lead uses, is retried.
+        settings = db.execute('SELECT * FROM agents WHERE agent_id=?', (agent_id,)).fetchone()
+        if not managed_orchestration.can_promote(settings):
+            return None
+        # One correction per assignment: an earlier refusal of this assignment used up the retry.
+        refused = db.execute('SELECT COUNT(*) FROM control_rejections WHERE assignment_id=?',
+                             (context.origin.assignment_id,)).fetchone()[0] if context.origin else 1
+    return 'decision' if refused == 0 else None
 
 
 def _retry_plan(agent_id, process):
-    """One correction for an invalid plan: the same session gets the validation error."""
+    """One correction for a refused plan or delegation decision: the same session gets the exact reason."""
     context = _structured(process)
-    reason = getattr(context, 'plan_retry', None) if context else None
-    if not reason:
+    retry = getattr(context, 'plan_retry', None) if context else None
+    if not retry:
         return False
+    kind, reason = retry
     task_id = _agent_task_id(agent_id)
     with _task_store()._connection() as db:
         db.execute('BEGIN IMMEDIATE')
-        plan_phase.count_retry(db, task_id)
+        if kind == 'plan':
+            plan_phase.count_retry(db, task_id)
         current = planning.current(db, task_id)
     if context.events.session_id and not agent_sessions.get(agent_id):
         agent_sessions[agent_id] = context.events.session_id
+    if kind == 'plan':
+        text = plan_phase.retry_prompt(reason, current['revision'] if current else 0)
+        marker = '--- Asking once for a corrected plan ---'
+    else:
+        text = orchestration.retry_prompt(reason)
+        marker = '--- Asking once for a corrected delegation decision ---'
     try:
         command = _agent_command(agent_id)
-        _resume_agent(agent_id, command, plan_phase.retry_prompt(reason, current['revision'] if current else 0),
-                      '--- Asking once for a corrected plan ---', history_text=reason)
+        _resume_agent(agent_id, command, text, marker, history_text=reason)
         return True
     except (OSError, RuntimeError, ValueError, LookupError, sqlite3.Error):
         logger.exception('The plan correction could not start for %s', agent_id)

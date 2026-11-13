@@ -78,18 +78,28 @@ class EnvelopeRuntimeTests(unittest.TestCase):
     def output(self, key):
         return self.store.full_output(key)
 
-    def assert_rejected(self, key, kind, reason_part):
+    def assert_rejected(self, key, kind, reason_part, retried=False):
         lines = self.output(key)
-        self.assertIn(STOPPED, lines)
-        line = next(l for l in lines if l.startswith('Structured control rejected ('))
-        self.assertTrue(line.startswith(f'Structured control rejected ({kind}): '), line)
-        self.assertIn(reason_part, line)
-        self.assertEqual(manager.agent_statuses[key], 'stopped')
+        if retried:
+            # A refused delegation decision gets one correction in the same session, with the exact reason.
+            line = next(l for l in lines if l.startswith('--- Delegation decision not accepted ('))
+            self.assertTrue(line.startswith(f'--- Delegation decision not accepted ({kind}): '), line)
+            self.assertIn(reason_part, line)
+            self.assertNotIn(STOPPED, lines)
+            self.assertEqual(manager.agent_statuses[key], 'running')
+            self.assertEqual(len(self.commands), 2)  # Exactly one correction.
+            self.assertIn('--- Asking once for a corrected delegation decision ---', lines)
+        else:
+            self.assertIn(STOPPED, lines)
+            line = next(l for l in lines if l.startswith('Structured control rejected ('))
+            self.assertTrue(line.startswith(f'Structured control rejected ({kind}): '), line)
+            self.assertIn(reason_part, line)
+            self.assertEqual(manager.agent_statuses[key], 'stopped')
+            self.assertEqual(len(self.commands), 1)  # No retry and no other model call.
         self.assertNotEqual(self.store.get_task(self.task['task_id'])['status'], 'completed')
         rejection, = self.store.control_rejections(self.task['task_id'])
         self.assertEqual(rejection['kind'], kind)
         self.assertIn(reason_part, rejection['reason'])
-        self.assertEqual(len(self.commands), 1)  # No retry and no other model call.
         return rejection
 
     # ---------------------------------------------------------------- acceptance
@@ -182,10 +192,70 @@ class EnvelopeRuntimeTests(unittest.TestCase):
     def test_an_unknown_resource_type_is_refused_with_the_accepted_values(self):
         key, _ = self.run_final(decision([entry('a', resources=[{'resource_type': 'service', 'resource_key': 'api',
             'scope': 'project', 'mode': 'exclusive', 'recursive': False}])]))
-        self.assertIn(STOPPED, self.output(key))
+        self.assertIn("--- Delegation decision not accepted (admission): Invalid resource type 'service'",
+                      '\n'.join(self.output(key)))
         rejection = manager.orchestration_status(self.task['task_id'])['decision']['last_rejection']
         self.assertIn("Invalid resource type 'service'", rejection['reason'])
         self.assertIn('file_path (files and folders', rejection['reason'])
+
+    def test_a_real_lead_naming_its_provider_openai_is_accepted_as_codex(self):
+        # amit's 0.14.0 FrameSeek run: a valid split whose helpers named "openai" and gpt-5.6-terra was refused.
+        item = entry('media-ingestion', scope=dict(namespace='component', key='frameseek/media-ingestion'), parallel=True,
+                     resources=[{'resource_type': 'file_path', 'resource_key': 'backend/app/ingest', 'scope': 'project',
+                                 'mode': 'exclusive', 'recursive': True}], provider='openai', model='gpt-5.6-terra')
+        key, _ = self.run_final(decision([item], key='frameseek-components', continuation=None))
+        self.assertNotIn(STOPPED, self.output(key))
+        self.assertEqual(manager.orchestration_status(self.task['task_id'])['decision']['state'], 'promoted')
+        record, = self.store.orchestration_history(self.task['task_id'])
+        self.assertEqual(record['content']['delegate'][0]['provider'], 'codex')
+
+    def test_provider_aliases_are_case_insensitive_and_unknown_ones_still_refused(self):
+        self.assertEqual([orchestration.provider_id(v) for v in ('OpenAI', 'anthropic', 'Google', 'codex', 'Claude-Code')],
+                         ['codex', 'claude', 'gemini', 'codex', 'claude'])
+        with self.assertRaisesRegex(ValueError, 'Unknown Child provider; use one of'):
+            orchestration.validate(decision([entry('a', provider='skynet')]))
+
+    def test_a_model_the_catalog_does_not_list_is_dropped_with_a_note(self):
+        value = orchestration.validate(decision([entry('a', provider='openai', model='gpt-5.6-terra'),
+                                                 entry('b', provider='codex', model='gpt-5.6-sol')]))
+        with patch('app.model_catalog.current_scope', return_value={'scope_key': 'k'}), \
+                patch('app.model_catalog.lookup', side_effect=lambda db, provider, model, scope=None:
+                      {'model_id': model} if model == 'gpt-5.6-sol' else None), self.store._connection() as db:
+            warnings = orchestration._reconcile_models(db, value)
+        self.assertNotIn('model', value['delegate'][0])
+        self.assertEqual(value['delegate'][1]['model'], 'gpt-5.6-sol')
+        self.assertEqual(warnings, ["a: model 'gpt-5.6-terra' is not listed for codex; the helper uses its provider's "
+                                    "default model instead"])
+        with patch('app.model_catalog.current_scope', return_value=None), self.store._connection() as db:
+            unknown = orchestration.validate(decision([entry('a', provider='codex', model='anything')]))
+            self.assertEqual(orchestration._reconcile_models(db, unknown), [])  # No catalog: admission decides.
+        self.assertEqual(unknown['delegate'][0]['model'], 'anything')
+
+    def test_a_second_refusal_after_the_correction_stops(self):
+        key, process = self.launch()
+        self.stream(key, process, [decision([entry('a', provider='skynet')])])
+        self.finish(key, process)
+        self.assertEqual(len(self.commands), 2)
+        second = manager.agents[key]
+        self.stream(key, second, [decision([entry('a', provider='skynet')], key='split-2')])
+        self.finish(key, second)
+        self.assertEqual(len(self.commands), 2)  # No second correction.
+        self.assertIn(STOPPED, self.output(key))
+        self.assertEqual(manager.agent_statuses[key], 'stopped')
+
+    def test_a_corrected_decision_after_the_refusal_is_accepted(self):
+        key, process = self.launch()
+        self.stream(key, process, [decision([entry('a', provider='skynet')])])
+        self.finish(key, process)
+        second = manager.agents[key]
+        self.stream(key, second, [decision([entry('a', provider='codex')], key='split-2')])
+        self.finish(key, second)
+        self.assertEqual(manager.orchestration_status(self.task['task_id'])['decision']['state'], 'promoted')
+
+    def test_the_prompt_states_the_accepted_provider_values(self):
+        with self.store._connection() as db:
+            text = orchestration.instruction(db, self.task['task_id'])
+        self.assertIn('provider (one of codex, claude or gemini; omit it to use your own)', text)
 
     def test_the_prompt_states_the_accepted_resource_values(self):
         with self.store._connection() as db:
@@ -275,7 +345,8 @@ class EnvelopeRuntimeTests(unittest.TestCase):
                 self.setUp()
                 key, _ = self.run_final(message)
                 self.assertEqual(self.counts(), self.NOTHING)
-                self.assert_rejected(key, kind, reason)
+                # A decision that parses gets one correction; malformed JSON (duplicate keys) is not one.
+                self.assert_rejected(key, kind, reason, retried=reason != 'Duplicate')
 
     def test_prose_around_an_envelope_and_fenced_examples(self):
         key, _ = self.run_final('Delegating now.\n\n' + decision())
