@@ -1,5 +1,5 @@
 from . import runtime_resources, dependencies
-from .codex_events import StructuredCommand, Execution, CodexEvents
+from .codex_events import StructuredCommand, Execution, CodexEvents, failure_text
 from . import delegation_protocol
 from . import managed_orchestration
 from . import planning, promotion, replanning, orchestration
@@ -372,6 +372,11 @@ def _finalize_process(agent_id: str, process: subprocess.Popen | None, allow_aut
             status = 'stopped'
             agent_outputs[agent_id].append(f'--- {providers.LABELS[agent_types[agent_id]]} exited with code '
                                            f'{returncode}; the Task was not completed ---')
+            reason = _output_failure(agent_outputs[agent_id])
+            if reason and task_id:
+                # The provider's own reason, so the task says why it stopped (needs attention), not "not running".
+                agent_outputs[agent_id].append(f'--- Provider error: {reason} ---')
+                _persist_control_rejection(agent_id, None, 'internal', 'Provider error: ' + reason, task_id=task_id)
         agent_statuses[agent_id] = status
         _save_agent(agent_id)
         _settle_coordination()
@@ -1775,11 +1780,20 @@ def _control_rejection(exc, events, stage):
                         'while processing its control message; details are in the backend log.')
 
 
-def _persist_control_rejection(agent_id, origin, kind, reason):
+def _output_failure(lines, recent=40):
+    """The provider's reason from a plain run's last ERROR line (Codex prints `ERROR: {json}`), or None."""
+    for line in reversed(list(lines)[-recent:]):
+        text = str(line).strip()
+        if text.startswith('ERROR:'):
+            return failure_text({'message': text[len('ERROR:'):].strip()})
+    return None
+
+
+def _persist_control_rejection(agent_id, origin, kind, reason, task_id=None):
     if _store is None:
         return
     try:
-        _store.record_control_rejection(agent_id=agent_id, task_id=origin.parent_task_id if origin else None,
+        _store.record_control_rejection(agent_id=agent_id, task_id=task_id or (origin.parent_task_id if origin else None),
                                         assignment_id=origin.assignment_id if origin else None,
                                         generation=origin.generation if origin else None, kind=kind, reason=reason)
     except (sqlite3.Error, OSError, ValueError, LookupError):

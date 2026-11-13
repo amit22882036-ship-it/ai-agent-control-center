@@ -92,7 +92,9 @@ function Overview({ view, loading, runner, blocked, status, navigate, reload }) 
 function ProviderPage({ provider, view, runner, blocked, status, navigate }) {
   const entry = entryOf(view, provider)
   const update = view?.updates?.[provider] || null
-  const models = useModelCatalog(entry ? provider : null)
+  // Model availability follows readiness (sign-in, turned on, billing acknowledgment): re-read it when they change.
+  const readiness = [entry?.status?.state?.state, entry?.status?.settings?.enabled, entry?.status?.settings?.billing_confirmed].join(':')
+  const models = useModelCatalog(entry ? provider : null, readiness)
   const condition = conditionOf(entry)
   const step = entry ? setupView(entry, update).step : null
   const off = Boolean(runner.busy) || Boolean(blocked)

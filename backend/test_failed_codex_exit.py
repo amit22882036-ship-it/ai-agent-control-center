@@ -61,6 +61,23 @@ class FailedCodexExitTests(unittest.TestCase):
                 # No "Agent finished" notification for a failure ('stopped' is not announced).
                 self.assertNotIn('finished', [call.args[1] for call in self.notify.call_args_list])
 
+    def test_a_provider_refusal_says_why_the_task_stopped(self):
+        # A real run: Codex refused the model; the task said only "Not running" and looked never started.
+        key, source, _ = self.dependent_pair()
+        error = ('ERROR: {"type":"error","status":400,"error":{"type":"invalid_request_error","message":"The '
+                 "'gpt-6.1-sol' model is not supported when using Codex with a ChatGPT account.\",\"code\":\"model_not_found\"}}")
+        self.exit(key, 'codex\n' + error + '\n', 1)
+        self.assertEqual(manager.agent_statuses[key], 'stopped')
+        reason = "The 'gpt-6.1-sol' model is not supported when using Codex with a ChatGPT account."
+        self.assertEqual(manager.agent_outputs[key][-1], f'--- Provider error: {reason} ---')
+        rejection, = manager._store.control_rejections(source['task_id'])
+        self.assertEqual(rejection['reason'], 'Provider error: ' + reason)
+
+    def test_a_failure_without_a_provider_reason_records_none(self):
+        key, source, _ = self.dependent_pair()
+        self.exit(key, 'codex\nboom\n', 1)
+        self.assertEqual(manager._store.control_rejections(source['task_id']), [])
+
     def test_failure_survives_restart_recovery(self):
         key, source, dependent = self.dependent_pair()
         self.exit(key, 'codex\nboom\n', 1)
