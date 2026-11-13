@@ -5,7 +5,7 @@ import { Button } from '../primitives'
 import { TextField } from '../controls'
 import { Check, GroupedSelect } from '../agent/fields'
 import { GROUP_LABELS, OTHER_MODEL, effortChoices, freshness, groupModels, modelLimitation, optionLabel,
-  selection } from '../../../modelPresentation.mjs'
+  selection, unofferedDefaultWarning } from '../../../modelPresentation.mjs'
 import { providerLabel } from '../../../providerPresentation.mjs'
 import { LEAD_TOOLS, toolState } from '../../model/newTask.mjs'
 import { TOOLS } from '../../vocabulary.mjs'
@@ -51,7 +51,7 @@ export function ToolCards({ value, onChange, policy, statuses, disabled, tools =
 // Model, effort and file access for one agent, from its provider's catalog. Unavailable models
 // stay visible but cannot be chosen; an unverified one needs an explicit attempt.
 export function LeadSettings({ provider, models, picker, onPicker, sandbox, onSandbox, disabled, fullConfirmed = false, onFullConfirmed = () => {},
-  helpers = false, helperAccess = 'workspace-write', onHelperAccess = () => {}, external = false, onExternal = () => {} }) {
+  helpers = false, helperAccess = 'workspace-write', onHelperAccess = () => {}, external = false, onExternal = () => {}, notices = [] }) {
   if (provider === 'mock') return null
   const catalog = models.catalog
   const groups = groupModels(catalog)
@@ -59,6 +59,7 @@ export function LeadSettings({ provider, models, picker, onPicker, sandbox, onSa
   const efforts = effortChoices(provider, catalog, chosen.model)
   const fresh = freshness(catalog)
   const limitation = modelLimitation(provider, chosen.model)
+  const unoffered = unofferedDefaultWarning(catalog, picker.choice, notices)
   const update = (patch) => onPicker({ ...picker, ...patch })
   const items = (list, off = false) => list.map((model) => ({ value: model.model_id, label: optionLabel(model), disabled: off }))
   return <div className="a-leadcfg">
@@ -73,6 +74,7 @@ export function LeadSettings({ provider, models, picker, onPicker, sandbox, onSa
         after={provider !== 'gemini' ? [{ value: OTHER_MODEL, label: 'Other model identifier…' }] : []} />
       {picker.choice === OTHER_MODEL && <TextField label="Model identifier" mono value={picker.typed} maxLength={128} disabled={disabled}
         onChange={(event) => update({ typed: event.target.value, attempt: false })} />}
+      {unoffered && <p className="a-fine a-tone-alert" role="note">{unoffered}</p>}
     </div>
     <div className="a-lc">
       {efforts.levels.length ? <Choice label="Reasoning effort" value={picker.effort} disabled={disabled} onChange={(effort) => update({ effort })}

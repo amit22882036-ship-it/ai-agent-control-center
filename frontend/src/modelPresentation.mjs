@@ -187,3 +187,18 @@ export function instructionPlan(agent, catalog, value) {
   return { defaults: null, fields: promptPayload({ enabled: true, modelSet: true, model: config.model, effortSet: true,
     effort: config.effort, confirmNewSession: value.confirmNewSession, attempt: config.attempt }) }
 }
+
+// "Provider default" when Codex's own default (config.toml, possibly written by a newer Codex app) is a
+// model the installed CLI does not offer: the backend then runs the lead on the nearest listed model
+// (configured_default.substitute: the same tier's newest, else the CLI's first).
+// Says so, and points to a pending Codex update when the release check found one.
+export function unofferedDefaultWarning(catalog, choice, notices = []) {
+  const configured = catalog?.configured_default
+  if (choice !== '' || !configured || configured.listed !== false) return null
+  const substitute = configured.substitute
+  const update = (Array.isArray(notices) ? notices : []).find((notice) => notice.provider === catalog.provider && notice.kind === 'update')
+  return `Codex’s own default, ${configured.model}, isn’t offered by the installed Codex CLI.`
+    + (substitute ? ` With Provider default, the lead runs on the closest listed model, ${substitute}, instead.` : '')
+    + ' Choose a listed model to pick it yourself.'
+    + (update ? ` A Codex update (${update.available_version}) is available in Connections and may add newer models.` : '')
+}

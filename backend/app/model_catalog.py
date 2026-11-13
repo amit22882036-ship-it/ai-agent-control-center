@@ -27,6 +27,7 @@ makes the cached entitlements stale at once, without a manual refresh.
 """
 from datetime import datetime, timezone
 from hashlib import sha256
+import re
 import json
 import logging
 import os
@@ -491,6 +492,43 @@ def _entries(db, provider, scope_key):
     return rows
 
 
+def configured_default(db, provider, scope=None):
+    """Codex's own default model (config.toml) and whether this CLI's current catalog offers it."""
+    if provider != 'codex':
+        return None
+    model = providers.CODEX.configured_model()
+    if not model:
+        return None
+    scope = scope if scope is not None else current_scope(db, provider)
+    if scope is None:
+        return {'model': model, 'listed': None}
+    entry = lookup(db, provider, model, scope)
+    listed = bool(entry and entry['listing'] != 'hidden')
+    return {'model': model, 'listed': listed, 'substitute': None if listed else closest_listed(db, provider, model, scope)}
+
+
+def _listed_ids(db, provider, scope=None):
+    scope = scope if scope is not None else current_scope(db, provider)
+    return [entry['model_id'] for entry in (_entries(db, provider, scope['scope_key']) if scope else [])
+            if entry['listing'] != 'hidden' and not entry['removed_at']]
+
+
+def _version(model_id):
+    return tuple(int(part) for part in re.findall(r'\d+', model_id))
+
+
+def closest_listed(db, provider, model, scope=None):
+    """The listed model nearest to `model`, which this catalog does not list: the newest listed model of the
+    same tier (its last name part, e.g. gpt-6.1-sol -> the newest listed *-sol), else the first listed
+    (the CLI's own priority order), else None."""
+    listed = _listed_ids(db, provider, scope)
+    tier = model.rsplit('-', 1)[-1].lower() if model and '-' in model else None
+    same = [item for item in listed if tier and item.lower().rsplit('-', 1)[-1] == tier]
+    if same:
+        return max(same, key=_version)
+    return listed[0] if listed else None
+
+
 def lookup(db, provider, model, scope=None):
     scope = scope if scope is not None else current_scope(db, provider)
     if scope is None or not model:
@@ -589,7 +627,8 @@ def catalog_view(db, provider, provider_state=None):
                        'supports_effort_updates': entry['capabilities'].get('supports_reasoning_effort_updates') is True,
                        'removed_at': entry['removed_at']})
     latest = latest_refresh(db, provider)
-    return {'provider': provider, 'models': models,
+    configured = configured_default(db, provider, scope)
+    return {'provider': provider, 'models': models, 'configured_default': configured,
             'refresh': {'last_success_at': scope['finished_at'] if scope else None,
                         'fresh': bool(scope and scope['fresh']),
                         'scope_label': scope['scope_label'] if scope else None,

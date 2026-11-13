@@ -625,6 +625,10 @@ def collect_signals(db):
     for row in db.execute('''SELECT r.result_id,r.outcome,d.parent_task_id FROM delegation_results r
         JOIN delegations d USING(delegation_id) WHERE r.outcome IN ('failed','stopped','unverified')'''):
         signal(db,row['parent_task_id'],'result:'+row['result_id'],'Child execution requires review: '+row['outcome'])
+    # A result the Parent rejected or reported failed, whose helper ended: the part is back with the Parent
+    # (delivered by hybrid.returned_prompt, which also marks it delivered).
+    for row in hybrid.returned_rows(db):
+        signal(db,row['parent_task_id'],hybrid.RETURNED+row['result_id'],hybrid.returned_evidence(row))
     for row in db.execute("SELECT task_id,proposal_id,reason FROM promotion_items WHERE disposition IN ('conflict','unauthorized','invalid')"):
         signal(db,row['task_id'],'promotion:'+row['proposal_id']+':'+sha256(row['reason'].encode()).hexdigest(),row['reason'])
     for row in db.execute("SELECT * FROM task_replan_reasons WHERE active=1 AND reason_type='dependency'"):

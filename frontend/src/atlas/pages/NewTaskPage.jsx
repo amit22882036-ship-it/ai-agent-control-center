@@ -7,7 +7,7 @@ import { HelpersSection, StartCard } from '../components/create/NewTaskParts'
 import { useCreationContext } from '../components/create/useCreationContext'
 import useModelCatalog from '../../useModelCatalog'
 import { API_BASE, apiFetch } from '../../apiClient.mjs'
-import { useLiveResource } from '../hooks'
+import { useLiveResource, useProviderNotices } from '../hooks'
 import { agentActions, OFFLINE_MESSAGE, refusalText } from '../api/agentClient.mjs'
 import { projectDirectory } from '../model/projects.mjs'
 import { TEMPLATES, addTemplate, draftView, emptyDraft, newTaskPayload } from '../model/newTask.mjs'
@@ -58,6 +58,7 @@ export default function NewTaskPage({ live, navigate, route }) {
   const directory = useMemo(() => projectDirectory(projectsResource), [projectsResource])
   const real = draft.provider !== 'mock'
   const models = useModelCatalog(real ? draft.provider : null)
+  const notices = useProviderNotices(live, false)
   const view = draftView(draft, { policy: context.policy, statuses: context.statuses, catalog: models.catalog, projects: projectsResource.data?.projects || [] })
   const update = (patch) => { setEdited(true); setDraft((current) => ({ ...current, ...patch })) }
   const startOver = () => {
@@ -165,7 +166,7 @@ export default function NewTaskPage({ live, navigate, route }) {
             sandbox={draft.sandbox} onSandbox={(sandbox) => update({ sandbox, fullConfirmed: false })} disabled={starting}
             fullConfirmed={draft.fullConfirmed} onFullConfirmed={(fullConfirmed) => update({ fullConfirmed })}
             helpers={view.helpers} helperAccess={draft.helperAccess} onHelperAccess={(helperAccess) => update({ helperAccess })}
-            external={draft.external === true} onExternal={(external) => update({ external })} />
+            external={draft.external === true} onExternal={(external) => update({ external })} notices={notices.notices} />
         </section>
         <HelpersSection draft={draft} view={view} update={update} policy={context.policy} statuses={context.statuses} disabled={starting} />
       </div>

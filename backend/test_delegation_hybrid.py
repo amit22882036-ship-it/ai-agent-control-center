@@ -417,9 +417,70 @@ class HybridDomainTests(unittest.TestCase):
         self.ack(origin,self.acknowledgement(launch,'reject'))
         self.assertEqual(self.rows()[0]['phase'],'rejected')
         self.assertEqual(self.store.get_task(child)['status'],'completed')
-        self.assertIsNone(self.prepare())
         with self.assertRaises(ValueError):
             self.store.end_assignment(self.origin['assignment_id'],'completed')
+
+    def returned_after(self, decision):
+        identifier, = self.enable()
+        child, _, _ = self.make_deliverable(identifier)
+        launch, origin = self.launch()
+        payload = self.acknowledgement(launch, decision)
+        payload['results'][0]['reason'] = 'It loads fonts from the network.'
+        self.ack(origin, payload)
+        self.save_status(self.origin['agent_id'], 'stopped')
+        return identifier, child
+
+    def test_a_rejected_part_whose_helper_ended_goes_back_to_the_lead_with_the_reason(self):
+        # The real run: the lead rejected one helper's result; its helper had ended, so nothing more could arrive
+        # and the lead waited forever. Now the part comes back to the lead, once, with the lead's own reason.
+        identifier, child = self.returned_after('reject')
+        with self.store._connection() as db:
+            self.assertEqual(domain.idle_parents(db), [self.parent['task_id']])
+            self.assertTrue(domain.outstanding(db, self.parent['task_id']))
+        launch = self.prepare()
+        self.assertEqual(launch['mode'], 'independent')
+        self.assertIn(f'You rejected the result of helper delegation {identifier} (Task {child}): It loads fonts '
+                      'from the network. Its helper has ended', launch['prompt'])
+        self.assertIn('Their changes are already integrated in your Task Workspace.', launch['prompt'])
+        with self.store._connection() as db:
+            # Told once: the part no longer holds the lead back, so it can finish after doing it.
+            self.assertFalse(domain.outstanding(db, self.parent['task_id']))
+            self.assertIsNone(domain.returned_prompt(db, self.parent['task_id']))
+
+    def test_a_failure_report_also_returns_the_part(self):
+        identifier, child = self.returned_after('failure')
+        launch = self.prepare()
+        self.assertEqual(launch['mode'], 'independent')
+        self.assertIn(f'You reported as failed the result of helper delegation {identifier}', launch['prompt'])
+
+    def test_a_rejected_part_is_not_returned_while_its_helper_runs_again(self):
+        identifier, child = self.returned_after('reject')
+        with self.store._connection() as db:
+            db.execute("INSERT INTO task_assignments(assignment_id,task_id,agent_id) SELECT ?,?,agent_id FROM task_assignments "
+                       "WHERE task_id=? ORDER BY rowid DESC LIMIT 1", (str(uuid4()), child, child))
+            self.assertEqual(domain.returned_rows(db, self.parent['task_id']), [])
+
+    def test_a_lead_with_nothing_left_to_wait_for_gets_one_note(self):
+        identifier, = self.enable()
+        self.make_deliverable(identifier)
+        with self.store._connection() as db:
+            # A dead end no other path covers: the result was consumed without a decision.
+            db.execute("UPDATE delegation_results SET phase='accepted' WHERE delegation_id=?", (identifier,))
+        launch = self.prepare()
+        self.assertEqual(launch['mode'], 'independent')
+        self.assertIn('Nothing more will arrive from your helpers', launch['prompt'])
+        self.assertIn(f'delegation {identifier}', launch['prompt'])
+        with self.store._connection() as db:
+            db.execute("UPDATE delegation_continuations SET phase='waiting'")
+            # Told once about exactly this state; never a loop.
+            self.assertIsNone(domain.stall_prompt(db, self.parent['task_id']))
+
+    def test_a_lead_whose_helper_still_runs_is_neither_idle_nor_noted(self):
+        identifier, = self.enable()
+        self.complete_child(identifier, status='running')
+        with self.store._connection() as db:
+            self.assertEqual(domain.idle_parents(db), [])
+            self.assertIsNone(domain.stall_prompt(db, self.parent['task_id']))
 
     def test_ack_cannot_override_integration_failure(self):
         identifier, = self.enable()

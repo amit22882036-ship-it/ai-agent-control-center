@@ -246,7 +246,7 @@ def _reconcile_models(db, value):
         if scope is not None and model_catalog.lookup(db, provider, model, scope) is None:
             item.pop('model')
             warnings.append(f"{item['proposal_id']}: model {model!r} is not listed for {provider}; the helper uses "
-                            "its provider's default model instead")
+                            "the lead's model (same provider) or the provider's default instead")
     return warnings
 
 

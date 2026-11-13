@@ -423,6 +423,18 @@ class CodexAdapter(Adapter):
         home = os.environ.get('CODEX_HOME') or str(Path(os.environ.get('USERPROFILE') or Path.home()) / '.codex')
         return Path(home) / 'config.toml'
 
+    def configured_model(self):
+        """The model Codex uses when none is chosen (the top-level `model` of config.toml), or None.
+
+        Read only. Another Codex installation (such as the Codex app) may write a model that the CLI
+        the Control Center runs does not offer; callers compare it with that CLI's catalog."""
+        try:
+            data = tomllib.loads(self.config_path().read_text(encoding='utf-8'))
+        except (OSError, ValueError):
+            return None
+        value = data.get('model')
+        return value.strip() if isinstance(value, str) and value.strip() else None
+
     @staticmethod
     def _table_problems(table, where):
         problems = []

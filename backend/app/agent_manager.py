@@ -1737,9 +1737,21 @@ def _finish_structured(agent_id, process):
             kind, reason = rejection
             agent_outputs[agent_id].append(f'Structured control rejected ({kind}): {reason}' if kind != 'internal' else reason)
             _persist_control_rejection(agent_id, context.origin, kind, reason)
+        elif condition not in providers.BLOCKING and _provider_failure(context.events):
+            # The provider refused or failed the turn (for example an unsupported model): record its own
+            # reason, so the Task reads "Stopped: needs attention" with why, not "Not started".
+            reason = 'Provider error: ' + _provider_failure(context.events)
+            agent_outputs[agent_id].append(f'--- {reason} ---')
+            _persist_control_rejection(agent_id, context.origin, 'internal', reason)
         _save_agent(agent_id)
         _notify_hybrid_child_end(agent_id)
         return True
+
+
+def _provider_failure(events):
+    """The provider's short reason for a failed turn (Codex error events, Claude Code/Gemini CLI results)."""
+    detail = getattr(events, 'failure_detail', None) or getattr(events, 'detail', None)
+    return detail.strip()[:300] if isinstance(detail, str) and detail.strip() else None
 
 
 def _control_rejection(exc, events, stage):
@@ -2235,11 +2247,12 @@ def start_agent(task: str, agent_type: AgentType = "mock", sandbox: CodexSandbox
                 or not (planning_enabled and delegation_protocol_enabled and child_materialization_enabled
                         and hybrid_delegation_enabled)):
             raise ValueError('A split policy applies to a root task whose lead may bring in helpers.')
+    model, substituted = _unoffered_default_fallback(agent_type, model, _materialization)
     with _prompt_config({}):
         _launch.execution_config = dict(model=model, effort=effort, source='agent_default',
                                         attempt=bool(attempt_unverified))
         _launch.new_agent_effort = effort
-        return _start_agent(task, agent_type, sandbox, parent_id, task_id=task_id, project_id=project_id,
+        agent_id = _start_agent(task, agent_type, sandbox, parent_id, task_id=task_id, project_id=project_id,
                             delegation_protocol_enabled=delegation_protocol_enabled,
                             child_materialization_enabled=child_materialization_enabled,
                             hybrid_delegation_enabled=hybrid_delegation_enabled,
@@ -2248,6 +2261,23 @@ def start_agent(task: str, agent_type: AgentType = "mock", sandbox: CodexSandbox
                             effort=effort, auto_allocation_providers=auto_allocation_providers,
                             helper_access=helper_access, external_integrations=external_integrations,
                             split_policy=split_policy)
+    if substituted:
+        with _data_lock:
+            if agent_id in agent_outputs:
+                agent_outputs[agent_id].append(f"--- Model: {model}{', ' + effort + ' effort' if effort else ''} "
+                                               f'({substituted}) ---')
+    return agent_id
+
+
+def _unoffered_default_fallback(agent_type, model, materialization):
+    """An agent started on its provider's default (no model chosen) whose default the installed CLI does not
+    offer (Codex's config.toml may name a model of another, newer Codex installation): it runs on the nearest
+    listed model instead (same tier, newest; else the CLI's first), with the reason. Helpers resolve their model at launch (_resolved_helper_model).
+    Returns (model, reason or None)."""
+    if model is not None or materialization is not None:
+        return model, None
+    substitute, why = _offered_default(agent_type, None)
+    return (substitute, why) if substitute is not None else (model, None)
 
 
 def _start_agent(task, agent_type, sandbox, parent_id, *, task_id, project_id, delegation_protocol_enabled,
@@ -2426,10 +2456,11 @@ def _launch_prepared_agent(task, parent_id, task_id, parent_task, command, agent
                 identifier, limits = materialization
                 record, _, provider = delegation_materialization.authorize(db, identifier, limits)
                 expected = record.get('child_provider') or provider['agent_type']
+                # The model and effort the helper must run with (requested, or inherited from the lead).
+                want_model, want_effort, _ = _resolved_helper_model(record, provider, expected)
                 if (record['child_task_id'] != task_id or expected != agent_type
                         or (agent_type in providers.REAL and delegation_safety.helper_sandbox(db, task_id, provider['sandbox']) != sandbox)
-                        or (record.get('child_provider') and record.get('child_model') != model)
-                        or (record.get('child_provider') and record.get('child_effort') != effort)):
+                        or (want_model != model) or (want_effort != effort)):
                     raise ValueError('Child launch provider, permissions or ownership changed')
                 db.execute("UPDATE delegation_materializations SET phase='workspace_ready' WHERE delegation_id=? AND phase='attached'", (identifier,))
                 agent_id, _ = delegation_materialization.admit(db, identifier, limits)
@@ -3019,17 +3050,59 @@ def _launch_delegated_child(task_id, identifier, limits):
     # Stage 2F: the Child's provider is the one the Parent requested (never a
     # substitute) or, without a request, the Parent's own; access never widens.
     child_provider = record.get('child_provider') or provider['agent_type']
+    model, effort, why = _resolved_helper_model(record, provider, child_provider)
     # An automated launch: never an unverified model, never a self-granted attempt.
     previous, _launch.automated = getattr(_launch, 'automated', False), True
     try:
         # An Auto allocation is recorded in the same fields as an explicit request.
-        return start_agent('', child_provider, child_sandbox,
-                           task_id=task_id, _materialization=(identifier, limits),
-                           model=record.get('child_model') if record.get('child_provider') else None,
-                           effort=record.get('child_effort') if record.get('child_provider') else None,
-                           **delegation_safety.inherited(provider, child_provider))
+        agent_id = start_agent('', child_provider, child_sandbox,
+                               task_id=task_id, _materialization=(identifier, limits),
+                               model=model, effort=effort,
+                               **delegation_safety.inherited(provider, child_provider))
     finally:
         _launch.automated = previous
+    with _data_lock:
+        if agent_id in agent_outputs:
+            agent_outputs[agent_id].append(f"--- Model: {model or 'the provider default'}"
+                                           f"{', ' + effort + ' effort' if effort else ''} ({why}) ---")
+    return agent_id
+
+
+def _resolved_helper_model(record, lead, child_provider):
+    model, effort, why = _helper_model(record, lead, child_provider)
+    if model is None:
+        model, why = _offered_default(child_provider, why)
+    return model, effort, why
+
+
+def _offered_default(provider, why):
+    """No model chosen: keep the provider's default only when its CLI offers it (Codex's config.toml may name
+    a model from another, newer Codex installation); else the nearest listed model (same tier, newest), saying why."""
+    if _store is None:
+        return None, why
+    with _store._connection() as db:
+        configured = model_catalog.configured_default(db, provider)
+    if not configured or configured['listed'] is not False:
+        return None, why
+    substitute = configured['substitute']
+    if substitute is None:
+        return None, why
+    return substitute, (f"Codex's configured default {configured['model']} is not offered by the installed Codex CLI; "
+                        f'using {substitute}')
+
+
+def _helper_model(record, lead, child_provider):
+    """(model, effort, reason) of a delegated helper. A helper of the lead's provider without its own model
+    runs on the lead's model and effort, never on the provider CLI's global default (which may not be
+    available to this account). A different provider uses the model the lead named, else its default."""
+    requested = record.get('child_provider')
+    if requested and record.get('child_model'):
+        return record['child_model'], record.get('child_effort'), 'requested by the lead'
+    if child_provider == lead['agent_type'] and lead.get('model'):
+        effort = record.get('child_effort') if requested and record.get('child_effort') else lead.get('effort')
+        return lead['model'], effort, 'inherited from the lead'
+    effort = record.get('child_effort') if requested else None
+    return None, effort, f"{providers.LABELS.get(child_provider, child_provider)} default model"
 
 
 def materialize_delegations(parent_task_id, *, limits=None, retry=False):
@@ -3124,6 +3197,19 @@ def wake_orchestration(task_id, steps=orchestration_waker.STEPS, reason='event')
         logger.info('Wake for Task %s suppressed during explicit recovery; use the orchestration wake action', task_id)
         return {'state': 'suppressed'}
     return _waker.wake(task_id, steps, reason)
+
+
+def wake_idle_parents():
+    """Startup only: a lead left waiting for helpers that can no longer send anything (all ended, none may
+    start) gets one delivery pass, so a restart never leaves it waiting forever. The pass decides what runs:
+    results, a part returned to the lead, finishing, or a one-time note; nothing when there is nothing to do."""
+    if _store is None or _shutting_down:
+        return []
+    with _store._connection() as db:
+        idle = delegation_orchestration.idle_parents(db)
+    for task_id in idle:
+        wake_orchestration(task_id, ('advance',), reason='startup')
+    return idle
 
 
 def orchestration_status(task_id):
@@ -3822,7 +3908,7 @@ def advance_replanning(task_id, *, report_busy=False):
 
 
 def advance_delegations(task_id):
-    """Backend-only bounded pass; never called by startup or polling."""
+    """Backend-only bounded pass; never polled. At startup only for idle leads (wake_idle_parents)."""
     store = _task_store()
     # Acquire the Task lock nonblocking before runtime serialization. Starts use
     # this same order; existing resume paths use nonblocking Task acquisition.

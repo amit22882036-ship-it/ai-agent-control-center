@@ -5,6 +5,7 @@ and local turn ordinal (1) identify that turn; item IDs identify messages.
 Unknown/malformed events make the invocation ineligible for control actions.
 """
 from dataclasses import dataclass, field
+import json
 from hashlib import sha256
 from uuid import UUID
 
@@ -16,6 +17,26 @@ MAX_EVENT = 1048576
 MAX_ITEMS = 4096
 ITEM_TYPES = {'agent_message', 'reasoning', 'command_execution', 'file_change',
               'mcp_tool_call', 'web_search', 'todo_list', 'collab_tool_call'}
+
+
+def failure_text(event):
+    """A short, human reason from a Codex error event (the provider's own message, nested JSON unwrapped)."""
+    value = event.get('error') if isinstance(event.get('error'), dict) else event
+    message = value.get('message') if isinstance(value, dict) else None
+    for _ in range(3):  # Codex wraps the provider's JSON error inside a message string.
+        if not isinstance(message, str):
+            return None
+        try:
+            inner = json.loads(message)
+        except (ValueError, TypeError):
+            break
+        if not isinstance(inner, dict):
+            break
+        nested = inner.get('error') if isinstance(inner.get('error'), dict) else inner
+        message = nested.get('message') if isinstance(nested.get('message'), str) else message
+        if message is inner:
+            break
+    return message.strip()[:300] if isinstance(message, str) and message.strip() else None
 
 
 class StructuredCommand(str):
@@ -55,6 +76,7 @@ class CodexEvents:
     completion: str | None = None
     condition: str | None = None  # Stage 2F classification of a provider-reported limit
     rejection: ControlRejected | None = None  # Why a structured control message was refused
+    failure_detail: str | None = None  # The provider's own short reason when the turn failed
 
     def feed(self, line):
         """Return readable output only. Control state is consumed after EOF."""
@@ -95,6 +117,7 @@ class CodexEvents:
             return []
         if kind in ('error', 'turn.failed'):
             self.error = 'Codex turn failed'
+            self.failure_detail = self.failure_detail or failure_text(event)
             detail = event.get('error')
             if isinstance(detail, dict) and detail.get('code') in (
                     'rate_limit_exceeded', 'usage_limit_reached', 'insufficient_quota'):

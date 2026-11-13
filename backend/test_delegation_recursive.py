@@ -637,7 +637,11 @@ class RecursiveTests(unittest.TestCase):
         self.respond(child, ack)
         count = len(self.commands)
         manager.advance_delegations(self.task_for(child))
-        self.assertEqual(len(self.commands), count)
+        # The rejected part goes back to the rejecting lead, once, with its own reason; the root never sees it.
+        self.assertEqual(len(self.commands), count + 1)
+        self.assertIn('resume', str(self.commands[-1]))
+        self.assertTrue(any('--- Parent continuation: independent ---' in list(lines)
+                            for lines in manager.agent_outputs.values()))
         self.assertEqual(self.rows(child)[0]['phase'], 'rejected')
         self.assertEqual(self.rows(root), [])
 

@@ -133,3 +133,18 @@ test('execution facts report requested and provider-reported values only', () =>
   assert.equal(facts['Reported model'], 'x-sonnet')
   assert.deepEqual(executionFacts(null), [])
 })
+
+test('Provider default warns when Codex’s own default is not offered by the installed CLI', async () => {
+  const { unofferedDefaultWarning } = await import('../src/modelPresentation.mjs')
+  const catalog = { provider: 'codex', configured_default: { model: 'gpt-6.1-sol', listed: false, substitute: 'gpt-5.6-sol' },
+    models: [{ model_id: 'gpt-6-astra' }, { model_id: 'gpt-5.6-sol' }] }
+  const update = [{ provider: 'codex', kind: 'update', available_version: '0.169.0' }, { provider: 'claude', kind: 'update', available_version: '9' }]
+  assert.equal(unofferedDefaultWarning(catalog, '', update),
+    'Codex’s own default, gpt-6.1-sol, isn’t offered by the installed Codex CLI. With Provider default, the lead runs on '
+    + 'the closest listed model, gpt-5.6-sol, instead. Choose a listed model to pick it yourself. A Codex update (0.169.0) is available in Connections and may add newer models.')
+  assert.ok(!unofferedDefaultWarning(catalog, '', []).includes('update'))
+  assert.equal(unofferedDefaultWarning(catalog, 'gpt-5.6-sol', update), null) // a chosen model
+  assert.equal(unofferedDefaultWarning({ ...catalog, configured_default: { model: 'gpt-5.6-sol', listed: true } }, '', update), null)
+  assert.equal(unofferedDefaultWarning({ ...catalog, configured_default: null }, ''), null)
+  assert.equal(unofferedDefaultWarning(null, ''), null)
+})

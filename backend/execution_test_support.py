@@ -91,6 +91,9 @@ def attested_test_doubles():
 def use_attested_test_doubles(test):
     """Apply `attested_test_doubles()` for the rest of a test (call from setUp)."""
     test.enterContext(attested_test_doubles())  # Not a started patch: patch.stopall() leaves it alone.
+    # Independent of this computer's Codex config.toml: its default model must not change a test's agents.
+    from app import providers
+    test.enterContext(patch.object(providers.CODEX, 'configured_model', return_value=None))
 
 
 def genuine_unsupervised():

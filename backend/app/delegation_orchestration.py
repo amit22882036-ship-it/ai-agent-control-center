@@ -64,14 +64,101 @@ def initialize(db, task, receipt, plan, batch_id):
 
 
 def outstanding(db, task_id):
-    # Canceled/rejected work is unresolved, not silently treated as success.
+    # Canceled/rejected work is unresolved, not silently treated as success. A part returned to the Parent
+    # (its result rejected or reported failed, its helper ended) is resolved once the Parent was told so.
     if not db.execute("SELECT 1 FROM sqlite_master WHERE name='delegations'").fetchone():
         return False
     from . import replanning
     if replanning.pending(db, task_id):
         return True
-    return any(not replanning.retired(db,r[0]) for r in db.execute(
+    handed = {r['delegation_id'] for r in returned_rows(db, task_id) if r['told']}
+    return any(not replanning.retired(db,r[0]) and r[0] not in handed for r in db.execute(
         "SELECT delegation_id FROM delegations WHERE parent_task_id=? AND status<>'acknowledged'",(task_id,)))
+
+
+RETURNED = 'returned:'
+STALLED = 'stalled:'
+
+
+def returned_rows(db, task_id=None):
+    """Parts returned to their Parent: the latest result of an open delegation was rejected or reported failed by
+    the Parent and its helper has ended (no open or newer assignment), so nothing more will arrive for it.
+    `told` says whether the Parent was already told (its returned: signal delivered)."""
+    if not db.execute("SELECT 1 FROM sqlite_master WHERE name='replan_signals'").fetchone():
+        return []
+    rows = db.execute(f"""SELECT d.delegation_id, d.parent_task_id, d.child_task_id, r.result_id, r.phase,
+            r.acknowledgement, r.integration_id,
+            (SELECT delivered FROM replan_signals s WHERE s.task_id=d.parent_task_id
+             AND s.event_key='{RETURNED}'||r.result_id) AS told
+        FROM delegations d JOIN delegation_results r ON r.delegation_id=d.delegation_id
+        WHERE d.status NOT IN ('acknowledged','canceled') AND (? IS NULL OR d.parent_task_id=?)
+        AND r.rowid=(SELECT MAX(rowid) FROM delegation_results WHERE delegation_id=d.delegation_id)
+        AND r.phase IN ('rejected','failure')
+        AND NOT EXISTS (SELECT 1 FROM task_assignments a WHERE a.task_id=d.child_task_id AND a.ended_at IS NULL)
+        AND r.assignment_id=(SELECT assignment_id FROM task_assignments WHERE task_id=d.child_task_id
+                             ORDER BY rowid DESC LIMIT 1)
+        ORDER BY r.rowid""", (task_id, task_id)).fetchall()
+    return [dict(r) | {'told': r['told'] == 1} for r in rows]
+
+
+def returned_evidence(row):
+    try:
+        reason = json.loads(row['acknowledgement'] or '{}').get('reason') or 'no reason recorded'
+    except ValueError:
+        reason = 'no reason recorded'
+    verb = 'rejected' if row['phase'] == 'rejected' else 'reported as failed'
+    return (f"You {verb} the result of helper delegation {row['delegation_id']} (Task {row['child_task_id']}): "
+            f"{reason} Its helper has ended and will not send another result.")
+
+
+def returned_prompt(db, task_id):
+    """Tell the Parent, once, which parts came back to it; it then does them itself."""
+    rows = [r for r in returned_rows(db, task_id) if not r['told']]
+    if not rows:
+        return None
+    from . import replanning
+    for row in rows:
+        replanning.signal(db, task_id, RETURNED + row['result_id'], returned_evidence(row))
+        db.execute('UPDATE replan_signals SET delivered=1 WHERE task_id=? AND event_key=?',
+                   (task_id, RETURNED + row['result_id']))
+    integrated = any(db.execute("SELECT 1 FROM integrations WHERE integration_id=? AND status IN ('applied','noop')",
+                                (r['integration_id'],)).fetchone() for r in rows if r['integration_id'])
+    return ('These helper parts are back with you:\n' + '\n'.join('- ' + returned_evidence(r) for r in rows) + '\n'
+            + ('Their changes are already integrated in your Task Workspace. ' if integrated else '')
+            + "Do these parts yourself now: fix what you found, verify them, and keep each helper's scope. Do not "
+            'wait for these helpers. Then yield; the Control Center continues the original Task once nothing else '
+            'is outstanding.')
+
+
+def stall_prompt(db, task_id):
+    """A Parent waiting for helpers with nothing left to wait for (no helper may run, no result to process, no
+    pending replanning or evidence) is woken once per such state with a clear note, never left waiting forever."""
+    from hashlib import sha256
+    from . import replanning
+    if not replanning.exists(db) or children_may_run(db, task_id) or replanning.pending(db, task_id):
+        return None
+    if db.execute("""SELECT 1 FROM delegation_results r JOIN delegations d USING(delegation_id)
+            WHERE d.parent_task_id=? AND r.phase IN ('recorded','blocked','ready','delivered')""", (task_id,)).fetchone():
+        return None
+    if db.execute('SELECT 1 FROM replan_signals WHERE task_id=? AND delivered=0', (task_id,)).fetchone():
+        return None
+    open_rows = [r for r in db.execute("""SELECT d.delegation_id, d.child_task_id, d.status, t.status AS task_status
+            FROM delegations d LEFT JOIN tasks t ON t.task_id=d.child_task_id
+            WHERE d.parent_task_id=? AND d.status NOT IN ('acknowledged','canceled') ORDER BY d.rowid""", (task_id,))
+                 if not replanning.retired(db, r['delegation_id'])]
+    if not open_rows:
+        return None
+    state = json.dumps([[r['delegation_id'], r['status'], r['task_status']] for r in open_rows])
+    key = STALLED + sha256(state.encode()).hexdigest()[:40]
+    listing = '\n'.join(f"- delegation {r['delegation_id']} (Task {r['child_task_id']}): {r['status']}, helper task "
+                        f"{r['task_status'] or 'not created'}" for r in open_rows)
+    inserted = db.execute('INSERT OR IGNORE INTO replan_signals(task_id,event_key,evidence,delivered) VALUES (?,?,?,1)',
+                          (task_id, key, listing[:1500]))
+    if not inserted.rowcount:
+        return None  # Already told about exactly this state.
+    return ('Nothing more will arrive from your helpers: none is running or can start, and no result is waiting. '
+            'Still open:\n' + listing + '\nDo the remaining work yourself, or use an explicit replanning decision '
+            'to retire parts you no longer need; then yield.')
 
 
 def blocks(db, task_id):
@@ -256,6 +343,30 @@ def collect(db, task_id):
              outcome, through, 'Child execution ' + outcome))
 
 
+def idle_parents(db):
+    """Parents waiting for helpers with nothing left to wait for (no helper may run, the lead not running). A
+    startup pass wakes them, so a restart never leaves a Parent waiting forever; the delivery pass decides what,
+    if anything, runs."""
+    return [r[0] for r in db.execute("""SELECT c.task_id FROM delegation_continuations c
+        JOIN task_assignments a ON a.assignment_id=c.assignment_id JOIN agents g ON g.agent_id=a.agent_id
+        WHERE c.phase='waiting' AND g.status NOT IN ('running','waiting') ORDER BY c.rowid""").fetchall()
+            if not children_may_run(db, r[0])]
+
+
+def children_may_run(db, task_id):
+    """Whether any Child of this Parent is working now or may still start (not ended with a result)."""
+    return db.execute('''SELECT 1 FROM delegations d LEFT JOIN tasks t ON t.task_id=d.child_task_id
+        WHERE d.parent_task_id=? AND d.status NOT IN ('acknowledged','canceled')
+        AND (d.child_task_id IS NULL
+             OR (t.status NOT IN ('completed','canceled') AND (
+                 EXISTS (SELECT 1 FROM task_assignments a JOIN agents g USING(agent_id)
+                         WHERE a.task_id=t.task_id AND a.ended_at IS NULL)
+                 OR EXISTS (SELECT 1 FROM delegation_materializations m WHERE m.delegation_id=d.delegation_id
+                            AND m.phase IN ('attached','workspace_ready','launching','recovery_required'))
+                 OR NOT EXISTS (SELECT 1 FROM delegation_results r WHERE r.child_task_id=t.task_id))))
+        LIMIT 1''', (task_id,)).fetchone() is not None
+
+
 def result_rows(db, task_id):
     return [dict(r) for r in db.execute('''SELECT r.* FROM delegation_results r JOIN delegations d USING(delegation_id)
         WHERE d.parent_task_id=? ORDER BY r.rowid''', (task_id,))]
@@ -304,14 +415,22 @@ def prepare_delivery(db, task_id):
         required_intents = plan['intent_ids']
         parallel_admission(db, task_id, required_intents)
         prompt = 'Perform only the approved independent work, then yield at a safe synchronization point:\n' + plan['instruction']
+    elif (returned := returned_prompt(db, task_id)):
+        mode, delivery_id, prompt = 'independent', None, returned
     elif (review := replanning.review_prompt(db, task_id)):
         mode, delivery_id, prompt = 'independent', None, review
     elif not outstanding(db, task_id):
         mode, delivery_id = 'finishing', None
-        prompt = 'All required Child responsibilities have been accepted or safely retired. Continue the original Parent Task, verify the overall outcome, and finish only when the whole task is complete.'
+        prompt = 'All required Child responsibilities have been accepted, safely retired or returned to you and done. Continue the original Parent Task, verify the overall outcome, and finish only when the whole task is complete.'
+    elif (stalled := stall_prompt(db, task_id)):
+        mode, delivery_id, prompt = 'independent', None, stalled
     else:
         return None
-    parallel_admission(db, task_id, required_intents)
+    if required_intents or children_may_run(db, task_id):
+        # The Parent would run beside Children that are working or may still be launched: their scopes
+        # must not overlap. When every Child has ended (finished, failed or stopped), the Parent runs
+        # alone, so its results (failures included) are delivered and it is never left waiting forever.
+        parallel_admission(db, task_id, required_intents)
     delegation_safety.worker_boundary(db, task_id)
     launch_id = str(uuid4())
     db.execute(f"UPDATE delegation_continuations SET phase='launching',mode=?,launch_id=?,delivery_id=?,last_error=NULL,updated_at={NOW} WHERE task_id=?",

@@ -224,8 +224,8 @@ class EnvelopeRuntimeTests(unittest.TestCase):
             warnings = orchestration._reconcile_models(db, value)
         self.assertNotIn('model', value['delegate'][0])
         self.assertEqual(value['delegate'][1]['model'], 'gpt-5.6-sol')
-        self.assertEqual(warnings, ["a: model 'gpt-5.6-terra' is not listed for codex; the helper uses its provider's "
-                                    "default model instead"])
+        self.assertEqual(warnings, ["a: model 'gpt-5.6-terra' is not listed for codex; the helper uses the lead's "
+                                    "model (same provider) or the provider's default instead"])
         with patch('app.model_catalog.current_scope', return_value=None), self.store._connection() as db:
             unknown = orchestration.validate(decision([entry('a', provider='codex', model='anything')]))
             self.assertEqual(orchestration._reconcile_models(db, unknown), [])  # No catalog: admission decides.

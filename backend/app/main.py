@@ -32,6 +32,7 @@ async def lifespan(app):
     # Harmless supervised probe; each execution is still verified individually.
     process_supervision.self_test()
     initialize_persistence()
+    manager.wake_idle_parents()  # A lead waiting for helpers that all ended is never left waiting forever.
     manager.start_recovery_sweep()
     manager.start_diagnostics_worker()
     # In-process update awareness only: about once a day while running, never while closed.
