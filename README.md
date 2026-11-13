@@ -80,6 +80,9 @@ project or any model usage, start the app with `--demo`.
 The build needs Python 3.11+, Node.js 22.13+ and Git. To run the backend and the interface from
 source instead, see [Run from source](docs/getting-started.md).
 
+New to the app? [How to use the Control Center](docs/USER_GUIDE.md) walks through adding a project,
+starting a task, answering agents and applying results to your folder.
+
 To try the repository's current code without building an installer, double-click
 `scripts\start-dev.cmd`. It opens the development version (marked **Dev**) at
 http://127.0.0.1:5180 with its own data, separate from the installed app. See
