@@ -115,7 +115,8 @@ export default function AtlasApp() {
   useLayoutEffect(() => {
     const samePage = currentKey.current === key
     currentKey.current = key
-    document.title = documentTitle(route)
+    // Running from the repository's code (the development launcher): say so in the window title too.
+    document.title = (import.meta.env.DEV ? 'Dev · ' : '') + documentTitle(route)
     const element = main.current
     if (!element) return
     if (samePage) {

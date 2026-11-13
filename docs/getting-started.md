@@ -133,6 +133,26 @@ Summarize what this repository contains and suggest one small improvement.
 
 Choose **Workspace** only when you want the agent to change files in its isolated Task workspace, and **Full Access** only when you accept what the page says it allows for that tool.
 
+## Development launcher
+
+To try the current code without building an installer, double-click `scripts\start-dev.cmd` (or run
+`.\scripts\start-dev.ps1` from the repository root in PowerShell). It replaces steps 7 to 9:
+
+- Two windows open, **Control Center Dev - backend** (port 8100) and **Control Center Dev - interface**
+  (port 5180), then the browser opens http://127.0.0.1:5180. The interface shows a **Dev** badge and
+  its window title starts with "Dev".
+- Its data is separate from the installed app: the development database `data\control_center.sqlite3`
+  (git-ignored) and Task workspaces and Trash under `%LOCALAPPDATA%\AI Agent Control Center (Dev)`. The
+  installed app's data is never read or changed. Its ports do not clash with the installed app, but do
+  not work on the same project in both at once.
+- Real provider CLIs work as in the installed app, with your own sign-in and usage; Connections
+  settings belong to each database, so confirm them once in the Dev version. The local-work rule and
+  provider guards are the same code.
+- After a change: the interface reloads by itself. For a backend change, close the backend window and
+  run the launcher again (the backend does not reload by itself, because a reload stops running agents).
+- Close both windows to stop. On first run the launcher creates the Python environment and installs
+  the interface packages if they are missing.
+
 ## Stopping and restarting
 
 Press `Ctrl+C` in each window, then run the commands from steps 7 and 8 again. Stopping the backend also stops any running agents. History stays in the database, but running work does not resume automatically.

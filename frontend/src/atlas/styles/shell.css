@@ -86,3 +86,7 @@
   .atlas .a-page-head { flex-direction: column; align-items: stretch; gap: 12px; }
   .atlas .a-work > .a-inspector > .a-inspector-resize { display: none; }
 }
+
+/* The development launcher's build (Vite dev server): never shown in the installed app. */
+.atlas .a-dev-badge { margin-inline-start: 8px; padding: 2px 7px; border-radius: 999px; font: 700 11px/1.4 var(--a-font);
+  letter-spacing: .04em; color: var(--a-ask); background: var(--a-ask-soft); border: 1px solid var(--a-ask-line); }

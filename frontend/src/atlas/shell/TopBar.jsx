@@ -39,7 +39,8 @@ export default function TopBar({ live, appearance, markPush, attention: watch, o
   const urgent = summary.loaded > 0 || (summary.reported ?? 0) > 0 || panel.tools.length > 0
   const calm = !urgent && panel.notices.notices.length > 0
   return <header className="a-topbar">
-    <a className="a-brand" href={formatHash('work')} onClick={markPush}><BrandMark /><span className="a-brand-name">Control Center</span></a>
+    <a className="a-brand" href={formatHash('work')} onClick={markPush}><BrandMark /><span className="a-brand-name">Control Center</span>
+      {import.meta.env.DEV && <span className="a-dev-badge" title="Development version: the repository's current code, with its own data">Dev</span>}</a>
     <span className="a-sp" />
     {onGoTo && <button type="button" className="a-goto-btn" onClick={onGoTo} aria-keyshortcuts="Control+K" title="Go to a task, project or page · Ctrl K">
       <Icon name="search" size={15} /><span className="a-goto-btn-label">Go to…</span><span aria-hidden="true"><Kbd>Ctrl K</Kbd></span></button>}
