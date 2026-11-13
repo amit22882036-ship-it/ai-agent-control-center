@@ -211,6 +211,15 @@ def materialization_owner(db, parent, agent, receipt):
             and current['assignment_id'] == receipt.get('assignment_id'))
 
 
+def continuation_gate(db, task_id, required_intents=()):
+    """The one scope gate for a Parent continuation, checked when it is prepared and again at its launch.
+    The Parent would run beside Children that are working or may still start: their scopes must not overlap.
+    When none can run (all ended, or waiting for a prerequisite only this Parent can accept), the Parent runs
+    alone, so its results (failures included) are delivered and it is never left waiting forever."""
+    if required_intents or children_may_run(db, task_id):
+        parallel_admission(db, task_id, required_intents)
+
+
 def parallel_admission(db, task_id, required_intents=()):
     task = dependencies.task(db, task_id)
     own = [r for r in work_intents.inspect(db, task_id)
@@ -354,9 +363,15 @@ def idle_parents(db):
 
 
 def children_may_run(db, task_id):
-    """Whether any Child of this Parent is working now or may still start (not ended with a result)."""
+    """Whether any Child of this Parent is working now or may still start (not ended with a result). A Child
+    that waits for a prerequisite the Parent has not accepted yet cannot start before the Parent reviews it, so
+    it never holds the Parent back (that would wait forever)."""
     return db.execute('''SELECT 1 FROM delegations d LEFT JOIN tasks t ON t.task_id=d.child_task_id
         WHERE d.parent_task_id=? AND d.status NOT IN ('acknowledged','canceled')
+        AND NOT EXISTS (SELECT 1 FROM task_blockers b WHERE b.task_id=d.child_task_id AND b.active=1
+                        AND b.blocker_type='promotion' AND b.reason_code='proposal_dependency_unavailable'
+                        AND NOT EXISTS (SELECT 1 FROM task_assignments a WHERE a.task_id=d.child_task_id
+                                        AND a.ended_at IS NULL))
         AND (d.child_task_id IS NULL
              OR (t.status NOT IN ('completed','canceled') AND (
                  EXISTS (SELECT 1 FROM task_assignments a JOIN agents g USING(agent_id)
@@ -426,11 +441,7 @@ def prepare_delivery(db, task_id):
         mode, delivery_id, prompt = 'independent', None, stalled
     else:
         return None
-    if required_intents or children_may_run(db, task_id):
-        # The Parent would run beside Children that are working or may still be launched: their scopes
-        # must not overlap. When every Child has ended (finished, failed or stopped), the Parent runs
-        # alone, so its results (failures included) are delivered and it is never left waiting forever.
-        parallel_admission(db, task_id, required_intents)
+    continuation_gate(db, task_id, required_intents)
     delegation_safety.worker_boundary(db, task_id)
     launch_id = str(uuid4())
     db.execute(f"UPDATE delegation_continuations SET phase='launching',mode=?,launch_id=?,delivery_id=?,last_error=NULL,updated_at={NOW} WHERE task_id=?",

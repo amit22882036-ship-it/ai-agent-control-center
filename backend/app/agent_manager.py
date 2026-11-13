@@ -2814,8 +2814,9 @@ def _admitted_spawn(task_id, agent_id, command, agent_type, cwd, *, materializat
                     if current['phase'] not in delegation_orchestration.EXECUTING or owner['agent_id'] != agent_id:
                         raise ValueError('Parent launch is not authorized')
                     plan = json.loads(current['plan']) if current['plan'] else None
-                    delegation_orchestration.parallel_admission(db, task_id,
-                        plan['intent_ids'] if plan and current['mode'] == 'independent' else ())
+                    # The same gate as when the continuation was prepared (prepare_delivery).
+                    delegation_orchestration.continuation_gate(
+                        db, task_id, plan['intent_ids'] if plan and current['mode'] == 'independent' else ())
                     require_active(dependencies.task(db, task_id), db=db)
                 else:
                     # Task control (Cancel/Pause/blockers) is rechecked here, after

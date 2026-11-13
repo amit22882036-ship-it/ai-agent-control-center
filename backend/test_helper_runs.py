@@ -94,6 +94,7 @@ class DeliveryGateTests(unittest.TestCase):
             CREATE TABLE task_assignments (assignment_id TEXT PRIMARY KEY, task_id TEXT, agent_id TEXT, ended_at TEXT);
             CREATE TABLE delegation_materializations (delegation_id TEXT, phase TEXT);
             CREATE TABLE delegation_results (result_id TEXT, delegation_id TEXT, child_task_id TEXT);
+            CREATE TABLE task_blockers (id TEXT, task_id TEXT, blocker_type TEXT, reason_code TEXT, active INTEGER);
             INSERT INTO tasks VALUES ('lead', 'blocked');''')
         self.addCleanup(self.db.close)
 
@@ -136,6 +137,37 @@ class DeliveryGateTests(unittest.TestCase):
         other.setUp()
         other.child(materialized=False, delegation='requested')
         self.assertTrue(other.may_run())
+
+    def test_a_helper_waiting_for_a_prerequisite_the_lead_must_accept_never_holds_the_lead(self):
+        # A real run: part B depended on part A; A finished, but its result could not reach the lead while B
+        # (attached, blocked on A's acceptance) counted as "may run": each waited for the other forever.
+        self.child(status='completed', assignment='ended', result=True)  # Part A, result ready.
+        self.child(status='blocked', phase='attached')  # Part B.
+        self.assertTrue(self.may_run())
+        b = self.db.execute("SELECT child_task_id FROM delegations ORDER BY rowid DESC LIMIT 1").fetchone()[0]
+        self.db.execute("INSERT INTO task_blockers VALUES ('x', ?, 'promotion', 'proposal_dependency_unavailable', 1)", (b,))
+        self.assertFalse(self.may_run())
+        # Once it may start (its blocker resolved), it holds the gate again.
+        self.db.execute("UPDATE task_blockers SET active=0")
+        self.assertTrue(self.may_run())
+
+    def test_preparing_and_launching_a_continuation_use_one_gate(self):
+        # A real run: delivery skipped the scope gate (no helper could run) but the launch still applied it,
+        # so the lead's resume was refused and its continuation parked as "requires inspection".
+        import inspect
+        from unittest.mock import patch
+        self.child(status='completed', assignment='ended', result=True)
+        with patch.object(delegation_orchestration, 'parallel_admission') as gate:
+            delegation_orchestration.continuation_gate(self.db, 'lead')
+            gate.assert_not_called()
+            delegation_orchestration.continuation_gate(self.db, 'lead', ('intent',))
+            gate.assert_called_once_with(self.db, 'lead', ('intent',))
+            self.child(status='in_progress', assignment='active')
+            delegation_orchestration.continuation_gate(self.db, 'lead')
+            self.assertEqual(gate.call_count, 2)
+        self.assertIn('continuation_gate(', inspect.getsource(delegation_orchestration.prepare_delivery))
+        self.assertIn('delegation_orchestration.continuation_gate(', inspect.getsource(manager))
+        self.assertNotIn('delegation_orchestration.parallel_admission(', inspect.getsource(manager))
 
     def test_finished_accepted_or_canceled_helpers_never_hold_the_lead(self):
         self.child(status='completed', assignment='ended', result=True)
