@@ -1022,6 +1022,13 @@ class AgentStore:
                                  '(process_ownership_unknown).')
                 db.executemany('INSERT INTO output(agent_id,sequence,line) VALUES (?,?,?)',
                                [(key, seq + i, line) for i, line in enumerate(marker)])
+                held = db.execute('SELECT assignment_id, task_id FROM task_assignments WHERE agent_id=? AND ended_at IS NULL',
+                                  (key,)).fetchone()
+                if held and not unresolved:
+                    # The task says why it stopped (needs attention), instead of only "Not running".
+                    orchestration.record_rejection(db, agent_id=key, task_id=held['task_id'],
+                                                   assignment_id=held['assignment_id'], generation=None, kind='internal',
+                                                   reason='Interrupted by a backend restart. Start an agent again to continue.')
             rows = db.execute('''SELECT a.assignment_id, a.task_id, a.agent_id, g.status, t.status AS task_status FROM task_assignments a
                 JOIN tasks t ON t.task_id=a.task_id
                 JOIN agents g ON g.agent_id=a.agent_id WHERE a.ended_at IS NULL''').fetchall()

@@ -132,6 +132,16 @@ class PersistenceTests(unittest.TestCase):
             with closing(sqlite3.connect(path)) as db, db:
                 self.assertEqual(db.execute('SELECT value FROM important').fetchone()[0], 'keep me')
 
+    def test_a_run_ended_by_a_restart_says_why_its_task_stopped(self):
+        key, _ = self.create()
+        from app import persistence
+        with patch.object(persistence.executions, 'blocking', return_value=[]),                 patch.object(manager, '_spawn_process'):
+            self.recover()  # The process tree is confirmed ended.
+        task_id = manager._store.agent_task_ids(key)[0]
+        rejection, = manager._store.control_rejections(task_id)
+        self.assertEqual(rejection['reason'], 'Interrupted by a backend restart. Start an agent again to continue.')
+        self.assertEqual(manager._store.get_task(task_id)['status'], 'pending')
+
     def test_status_recovery_and_running_marker_once_without_notifications(self):
         keys = {}
         for status in ('running', 'waiting', 'finished', 'stopped'):
@@ -149,6 +159,9 @@ class PersistenceTests(unittest.TestCase):
             self.recover()
             first = manager.get_agent(keys['running'])['output']
             self.assertEqual(first.count('--- Backend Restart ---'), 1)
+            # Its end is not established here (it may still run): no "interrupted" reason is claimed.
+            interrupted = manager._store.agent_task_ids(keys['running'])[0]
+            self.assertEqual(manager._store.control_rejections(interrupted), [])
             self.recover()
             self.assertEqual(manager.get_agent(keys['running'])['output'], first)
             for status, key in keys.items():
