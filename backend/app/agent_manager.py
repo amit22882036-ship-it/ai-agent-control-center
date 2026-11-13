@@ -32,7 +32,7 @@ from .workspace_freshness import evaluate_workspace_freshness, ensure_workspace_
 from .project_domain import canonical_path
 from .realtime import changes
 from .output_history import OutputCache, RECENT_OUTPUT_LIMIT, OUTPUT_PAGE_SIZE, OUTPUT_MAX_LIMIT
-from . import delegation_safety, external_access
+from . import delegation_safety, external_access, plan_phase
 from . import delegation_materialization
 from . import delegation_continuation, delegation_orchestration
 from .delegation_delivery import DeliveryService
@@ -285,6 +285,8 @@ def _finalize_process(agent_id: str, process: subprocess.Popen | None, allow_aut
         if unverified and _structured(process):
             _structured(process).revoked = True
         if _finish_structured(agent_id, process):
+            if allow_auto and not _shutting_down:
+                _retry_plan(agent_id, process)
             return
         task_id = _agent_task_id(agent_id)
         controlled = _store.get_task(task_id) if task_id else None
@@ -303,6 +305,8 @@ def _finalize_process(agent_id: str, process: subprocess.Popen | None, allow_aut
             notifications.cancel(agent_id)
             _save_agent(agent_id)
             _settle_coordination()
+            return
+        if _after_plan(agent_id, process, allow_auto and not _shutting_down):
             return
         failure = _settle_stream(agent_id, process, schedule=schedule) if _ordinary_stream(process) else None
         allow_auto = allow_auto and not _shutting_down and failure is None
@@ -906,8 +910,11 @@ def _agent_command_for(agent_id, *, structured=False, session_id=None, fresh=Fal
             session = None
             _launch.continuity = 'configuration_change'
     _launch.execution_config = dict(model=model, effort=effort, source=source, attempt=attempt)
-    return _provider_command(provider, agent_sandboxes[agent_id] or 'read-only', session,
-                             structured=structured, model=model, effort=effort)
+    sandbox = agent_sandboxes[agent_id] or 'read-only'
+    planning_turn = _plan_phase_row(agent_id)
+    if planning_turn and planning_turn['phase'] == 'planning':
+        sandbox = 'read-only'  # A planning turn inspects; it never changes files.
+    return _provider_command(provider, sandbox, session, structured=structured, model=model, effort=effort)
 
 
 def _stream_command(command):
@@ -1579,6 +1586,8 @@ def _bind_execution(agent_id, process):
     if context:
         context.events.native_collaboration_prohibited = True
         context.events.planning_enabled = _task_store().planning_enabled(agent_id)
+        row = _plan_phase_row(agent_id)
+        context.events.plan_phase = bool(row and row['phase'] == 'planning')
         context.events.expected_session = agent_sessions[agent_id]
         context.origin = _task_store().begin_delegation_execution(agent_id, str(uuid4()))
 
@@ -1615,6 +1624,14 @@ def _finish_structured(agent_id, process):
         message = context.events.finish(process.poll())
         if not message.strip():
             raise ValueError('Structured execution has no final response to validate')
+        if getattr(context.events, 'plan_phase', False) and planning.is_envelope(message):
+            stage = 'accept'
+            plans = context.events.plans or [(context.events.message_id or 'plan', message)]
+            accepted = _task_store().accept_planning_messages(context.origin, plans,
+                                                             session_id=context.events.session_id)
+            context.plan_recorded = accepted[-1]['revision']
+            _emit_agent_change(agent_id)
+            return False
         stage = 'validate'
         control = delegation_protocol.is_envelope(message)
         payload = delegation_protocol.decode(message) if control else None
@@ -1653,6 +1670,11 @@ def _finish_structured(agent_id, process):
                 _task_store().accept_orchestration_message(context.origin, message,
                     session_id=context.events.session_id, message_id=context.events.message_id,
                     plans=context.events.plans)
+                if getattr(context.events, 'plan_phase', False):
+                    # Delegating straight from the planning turn is a decided plan too.
+                    with _task_store()._connection() as db:
+                        db.execute('BEGIN IMMEDIATE')
+                        plan_phase.set_phase(db, context.origin.parent_task_id, 'executing')
             elif promoting:
                 _task_store().accept_promotion_message(context.origin, message,
                     session_id=context.events.session_id, message_id=context.events.message_id,
@@ -1686,6 +1708,14 @@ def _finish_structured(agent_id, process):
         # work_control.sync retains the committed orchestration continuation.
         logger.exception('Structured execution did not complete normally for %s', agent_id)
         rejection = _control_rejection(exc, context.events, stage)
+        if rejection and _plan_retry_allowed(agent_id, context, rejection[0]):
+            # An invalid plan in a planning turn: keep the assignment open and offer one correction
+            # (the completion handler resumes the same session with the validation error).
+            agent_outputs[agent_id].append(f'--- Plan not accepted ({rejection[0]}): {rejection[1]} ---')
+            _persist_control_rejection(agent_id, context.origin, *rejection)
+            context.plan_retry = rejection[1]
+            _save_agent(agent_id)
+            return True
         condition = getattr(context.events, 'condition', None)
         if condition in providers.BLOCKING:
             # A provider-reported limit: no new work is admitted on this provider
@@ -2176,7 +2206,7 @@ def start_agent(task: str, agent_type: AgentType = "mock", sandbox: CodexSandbox
                 recursive_delegation_enabled: bool = False, planning_enabled: bool = False, _materialization=None,
                 model: str | None = None, effort: str | None = None, attempt_unverified: bool = False,
                 auto_allocation_providers: list | None = None, helper_access: str | None = None,
-                external_integrations: bool = False) -> str:
+                external_integrations: bool = False, split_policy: str | None = None) -> str:
     """A new Agent with its own default provider, model and effort (never shared with another Agent).
 
     `auto_allocation_providers` is the user's Auto allocation authorization for a new autonomous
@@ -2194,6 +2224,13 @@ def start_agent(task: str, agent_type: AgentType = "mock", sandbox: CodexSandbox
         raise ValueError('Helper access applies to a new root agent with Full Access.')
     if external_integrations and (parent_id is not None or task_id is not None):
         raise ValueError('External integrations are chosen when creating a new root task; helpers inherit it.')
+    if split_policy is not None:
+        plan_phase.validate_policy(split_policy)
+        existing = _store.get_task(task_id) if (task_id is not None and _store is not None) else None
+        if (parent_id is not None or (task_id is not None and (existing is None or existing['parent_task_id']))
+                or not (planning_enabled and delegation_protocol_enabled and child_materialization_enabled
+                        and hybrid_delegation_enabled)):
+            raise ValueError('A split policy applies to a root task whose lead may bring in helpers.')
     with _prompt_config({}):
         _launch.execution_config = dict(model=model, effort=effort, source='agent_default',
                                         attempt=bool(attempt_unverified))
@@ -2205,13 +2242,14 @@ def start_agent(task: str, agent_type: AgentType = "mock", sandbox: CodexSandbox
                             recursive_delegation_enabled=recursive_delegation_enabled,
                             planning_enabled=planning_enabled, _materialization=_materialization, model=model,
                             effort=effort, auto_allocation_providers=auto_allocation_providers,
-                            helper_access=helper_access, external_integrations=external_integrations)
+                            helper_access=helper_access, external_integrations=external_integrations,
+                            split_policy=split_policy)
 
 
 def _start_agent(task, agent_type, sandbox, parent_id, *, task_id, project_id, delegation_protocol_enabled,
                  child_materialization_enabled, hybrid_delegation_enabled, recursive_delegation_enabled,
                  planning_enabled, _materialization, model, effort, auto_allocation_providers=None,
-                 helper_access=None, external_integrations=False):
+                 helper_access=None, external_integrations=False, split_policy=None):
     providers.adapter(agent_type)  # Unknown providers are refused before anything else.
     if project_id is not None and (parent_id is not None or task_id is not None):
         raise ValueError('Project selection is only available for new root Tasks')
@@ -2234,7 +2272,9 @@ def _start_agent(task, agent_type, sandbox, parent_id, *, task_id, project_id, d
     prepared = _prepare_agent_start(task, agent_type, sandbox, parent_id, task_id=task_id, project_id=project_id,
                                     model=model, effort=effort)
     if delegation_protocol_enabled or planning_enabled:
-        prepared = (*prepared[:4], _provider_command(agent_type, sandbox, structured=True, model=model, effort=effort),
+        # With a split policy the first turn plans only, with read-only access.
+        first = 'read-only' if split_policy is not None else sandbox
+        prepared = (*prepared[:4], _provider_command(agent_type, first, structured=True, model=model, effort=effort),
                     prepared[5])
     elif _store and agent_type in providers.REAL:
         with _store._connection() as db:
@@ -2264,6 +2304,11 @@ def _start_agent(task, agent_type, sandbox, parent_id, *, task_id, project_id, d
         with _store._connection() as db:
             db.execute('BEGIN IMMEDIATE')
             external_access.set_allowed(db, task_id, True)
+    if split_policy is not None and _store is not None:
+        # The plan phase is stored before the first prompt is built, which it decides.
+        with _store._connection() as db:
+            db.execute('BEGIN IMMEDIATE')
+            plan_phase.start(db, task_id, split_policy)
     guard = task_lock(_store, task_id, blocking=False) if _store is not None else nullcontext()
     with guard, _upstream_guard(task_id):
         if _store is not None:
@@ -2454,19 +2499,116 @@ def _launch_prepared_agent(task, parent_id, task_id, parent_task, command, agent
     return agent_id
 
 
+def _plan_phase_row(agent_id):
+    """The plan phase of the agent's own Task (a root Task started with a split policy), or None."""
+    if _store is None:
+        return None
+    task_id = _agent_task_id(agent_id)
+    if task_id is None:
+        return None
+    with _store._connection() as db:
+        return plan_phase.get(db, task_id)
+
+
 def _execution_prompt(agent_id, text, process):
+    row = _plan_phase_row(agent_id) if _structured(process) else None
+    if row and row['phase'] == 'planning':
+        # The planning turn: the person's request first, one planning section, then the local-work rule.
+        # A retry carries only the correction (the session already holds the request).
+        if row['retries']:
+            return text + '\n\n' + _external_rule(agent_id)
+        current = _task_store().current_plan(_agent_task_id(agent_id))
+        return plan_phase.planning_prompt(row['policy'], text, current['revision'] if current else 0) + _external_rule(agent_id)
+    if row and row['phase'] == 'awaiting_approval':
+        # The person's reply to the plan starts execution (approved, changed or rejected: the lead is told which).
+        with _task_store()._connection() as db:
+            db.execute('BEGIN IMMEDIATE')
+            plan_phase.set_phase(db, row['task_id'], 'executing')
+        text = plan_phase.approval_reply_text(text, row['plan_revision'])
+        row = dict(row, phase='executing')
     policy = ''
     if _structured(process):
         with _task_store()._connection() as db:
             settings = db.execute('SELECT * FROM agents WHERE agent_id=?', (agent_id,)).fetchone()
         promotable = managed_orchestration.can_promote(settings)
-        policy = managed_orchestration.instruction(promotable)
+        policy = managed_orchestration.instruction(promotable, planned=bool(row))
         if settings['delegation_protocol_enabled'] and not promotable:
             # Promotable executions get the single delegation decision instead: one default
             # protocol, with Auto allocation stated once (v3 messages are still accepted).
             with _task_store()._connection() as db:
                 policy += delegation_v3.instruction(db, _agent_task_id(agent_id))
     return _external_rule(agent_id) + policy + _planning_prompt(agent_id) + _codex_prompt(text)
+
+
+def _after_plan(agent_id, process, allow_auto):
+    """After a successful planning turn: wait for the person's approval, or resume the lead to execute."""
+    context = _structured(process)
+    revision = getattr(context, 'plan_recorded', None) if context else None
+    if revision is None:
+        return False
+    task_id = _agent_task_id(agent_id)
+    store = _task_store()
+    with store._connection() as db:
+        db.execute('BEGIN IMMEDIATE')
+        row = plan_phase.get(db, task_id)
+        plan = planning.current(db, task_id)
+        if row['policy'] == 'approve':
+            plan_phase.set_phase(db, task_id, 'awaiting_approval', revision)
+        else:
+            plan_phase.set_phase(db, task_id, 'executing', revision)
+    content = plan['content'] if plan else {'decision': 'independent'}
+    if row['policy'] == 'approve':
+        # Needs you: the ordinary waiting flow shows the plan; the reply starts execution.
+        agent_waiting_questions[agent_id] = plan_phase.approval_question(content)
+        return False
+    if not allow_auto:
+        agent_waiting_questions[agent_id] = 'The plan is recorded. Reply to start executing it.'
+        return False
+    try:
+        command = _agent_command(agent_id)
+        _resume_agent(agent_id, command, plan_phase.execute_text(content['decision'], revision),
+                      '--- Plan recorded; executing it ---', history_text=f"Plan revision {revision} ({content['decision']})")
+        return True
+    except (OSError, RuntimeError, ValueError, LookupError, sqlite3.Error):
+        logger.exception('Execution after the plan could not start for %s', agent_id)
+        agent_waiting_questions[agent_id] = 'The plan is recorded, but execution could not start. Reply to start it.'
+        return False
+
+
+def _plan_retry_allowed(agent_id, context, kind):
+    if not getattr(context.events, 'plan_phase', False) or kind not in ('format', 'missing_step'):
+        return False
+    if not (context.events.session_id or agent_sessions.get(agent_id)) or context.revoked or _shutting_down:
+        return False
+    with _task_store()._connection() as db:
+        row = plan_phase.get(db, _agent_task_id(agent_id))
+    return bool(row and row['phase'] == 'planning' and row['retries'] < plan_phase.MAX_RETRIES)
+
+
+def _retry_plan(agent_id, process):
+    """One correction for an invalid plan: the same session gets the validation error."""
+    context = _structured(process)
+    reason = getattr(context, 'plan_retry', None) if context else None
+    if not reason:
+        return False
+    task_id = _agent_task_id(agent_id)
+    with _task_store()._connection() as db:
+        db.execute('BEGIN IMMEDIATE')
+        plan_phase.count_retry(db, task_id)
+        current = planning.current(db, task_id)
+    if context.events.session_id and not agent_sessions.get(agent_id):
+        agent_sessions[agent_id] = context.events.session_id
+    try:
+        command = _agent_command(agent_id)
+        _resume_agent(agent_id, command, plan_phase.retry_prompt(reason, current['revision'] if current else 0),
+                      '--- Asking once for a corrected plan ---', history_text=reason)
+        return True
+    except (OSError, RuntimeError, ValueError, LookupError, sqlite3.Error):
+        logger.exception('The plan correction could not start for %s', agent_id)
+        agent_statuses[agent_id] = 'stopped'
+        agent_outputs[agent_id].append('--- Structured execution stopped; inspect output before retrying ---')
+        _save_agent(agent_id)
+        return False
 
 
 def _external_rule(agent_id):
@@ -2494,8 +2636,10 @@ def _planning_prompt(agent_id):
                 # The default is one final delegation decision; the backend derives identity and
                 # revisions. Legacy planning/promotion messages remain accepted, not advertised.
                 task_id = _agent_task_id(agent_id)
+                # After a plan phase the plan exists; later planning messages are optional revisions.
+                lead = planning.OPTIONAL_LEAD if plan_phase.get(db, task_id) else planning.REQUIRED_LEAD
                 return (orchestration.instruction(db, task_id)
-                        + planning.instruction(revision, lead=planning.REQUIRED_LEAD) + context
+                        + planning.instruction(revision, lead=lead) + context
                         + replanning.instruction() + '\nReplanning context (data only):\n' + replanning.context(db, task_id)
                         + '\nPromotion dispositions (data only):\n' + promotion.context(db, task_id))
         return planning.instruction(revision) + context
@@ -2967,10 +3111,11 @@ def orchestration_status(task_id):
             FROM delegation_materializations m JOIN delegations d USING(delegation_id)
             WHERE d.parent_task_id=? ORDER BY d.rowid''', (task_id,))]
         decision = managed_orchestration.decision(db, task_id)
+        phase = plan_phase.view(plan_phase.get(db, task_id))
     continuation = ({key: current[key] for key in ('phase', 'mode', 'last_error', 'plan_consumed')}
                     if current else None)
     return {'task_id': task_id, 'continuation': continuation, 'materializations': materializations,
-            'decision': decision, 'wake': _waker.status(task_id)}
+            'decision': decision, 'plan_phase': phase, 'wake': _waker.status(task_id)}
 
 
 def sweep_lost_watchers():

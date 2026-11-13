@@ -132,6 +132,7 @@
       }
      ]
     },
+    "plan_phase": null,
     "wake": {
      "state": "idle"
     }
@@ -406,6 +407,7 @@
      "last_rejection": null,
      "promotions": []
     },
+    "plan_phase": null,
     "wake": {
      "state": "idle"
     }
@@ -550,6 +552,7 @@
      "last_rejection": null,
      "promotions": []
     },
+    "plan_phase": null,
     "wake": {
      "state": "idle"
     }
@@ -683,6 +686,7 @@
      "last_rejection": null,
      "promotions": []
     },
+    "plan_phase": null,
     "wake": {
      "state": "idle"
     }
@@ -820,6 +824,7 @@
      "last_rejection": null,
      "promotions": []
     },
+    "plan_phase": null,
     "wake": {
      "state": "idle"
     }
@@ -958,6 +963,7 @@
      "last_rejection": null,
      "promotions": []
     },
+    "plan_phase": null,
     "wake": {
      "state": "idle"
     }
@@ -1092,6 +1098,7 @@
      "last_rejection": null,
      "promotions": []
     },
+    "plan_phase": null,
     "wake": {
      "state": "idle"
     }
@@ -1252,6 +1259,7 @@
      "last_rejection": null,
      "promotions": []
     },
+    "plan_phase": null,
     "wake": {
      "state": "idle"
     }
@@ -1392,6 +1400,7 @@
      "last_rejection": null,
      "promotions": []
     },
+    "plan_phase": null,
     "wake": {
      "state": "idle"
     }

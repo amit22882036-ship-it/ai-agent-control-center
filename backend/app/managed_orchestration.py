@@ -6,7 +6,21 @@ VIOLATION = ('Managed orchestration policy violation: native Codex collaboration
              'Use Control Center delegation; explicit inspection is required before continuation.')
 
 
-def instruction(can_promote):
+EARLY_PLANNING = '''Early planning decision (required while helpers are enabled). Decide how this work is split BEFORE you
+implement it; reading and inspecting files first is fine. Record that decision as one planning message
+(the planning format below), on its own, right before a tool call:
+- decision "independent" with a short rationale when one agent fits: small, tightly coupled or
+  sequential work, or no interface between parts that you can state yet. Then do the work yourself.
+- decision "propose" listing the responsibilities when the request has two or more separable,
+  substantial deliverables (for example indexing, search, interface and evaluation). Then do not
+  implement those responsibilities yourself: do only shared groundwork they need (such as the
+  interfaces between them), and end this turn with the delegation decision promoting them.
+The person sees this decision and its rationale, so write it for them. A trivial task needs only a
+one-line independent rationale; never split work just to use helpers.
+'''
+
+
+def instruction(can_promote, planned=False):
     policy = '''Control Center managed orchestration policy:
 The user describes the desired result in natural language; do not ask them to supply internal
 protocols, Task IDs, planning or promotion instructions. Complete simple or tightly coupled work
@@ -36,18 +50,9 @@ independent when the work is small, edits the same files, is a sequential chain,
 yet clear, or limits cannot admit more work. Task length alone is not a reason either way.
 If delegating, end your turn with one delegation decision as described below, then yield to the
 backend. Independent work finishes normally without any control message or Child creation.
-Early planning decision (required while helpers are enabled). Decide how this work is split BEFORE you
-implement it; reading and inspecting files first is fine. Record that decision as one planning message
-(the planning format below), on its own, right before a tool call:
-- decision "independent" with a short rationale when one agent fits: small, tightly coupled or
-  sequential work, or no interface between parts that you can state yet. Then do the work yourself.
-- decision "propose" listing the responsibilities when the request has two or more separable,
-  substantial deliverables (for example indexing, search, interface and evaluation). Then do not
-  implement those responsibilities yourself: do only shared groundwork they need (such as the
-  interfaces between them), and end this turn with the delegation decision promoting them.
-The person sees this decision and its rationale, so write it for them. A trivial task needs only a
-one-line independent rationale; never split work just to use helpers.
 '''
+        if not planned:  # Leads in a plan phase decided already, in their planning turn.
+            policy += EARLY_PLANNING
     else:
         policy += '''Do only your assigned responsibility. Do not infer recursive delegation authority from
 the Parent's task description. Use only explicitly supplied, authorized control contracts; when
@@ -96,6 +101,15 @@ def final_message(events):
     """Shared post-exit checks of the final message; raises a classified refusal when it fails."""
     from . import planning
     from .delegation_protocol import ControlRejected, is_envelope
+    if getattr(events, 'plan_phase', False):
+        # A planning turn succeeds with the plan itself (or an immediate delegation decision).
+        from . import orchestration
+        if planning.is_envelope(events.message) or orchestration.is_envelope(events.message):
+            return events.message
+        events.error = ('The planning turn must end with the plan: exactly one control-center.planning.v1 JSON '
+                        'object as the final message, with no prose')
+        events.rejection = ControlRejected('missing_step', events.error)
+        raise events.rejection
     if events.planning_enabled and planning.is_envelope(events.message):
         events.error = 'Plan-only final response is not proof of Task completion; explicit continuation required'
         events.rejection = ControlRejected('missing_step', events.error)

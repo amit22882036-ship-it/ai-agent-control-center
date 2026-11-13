@@ -1,3 +1,5 @@
+import PlanApproval from '../task/PlanApproval'
+import { planPhaseView } from '../../model/planPhase.mjs'
 import { useEffect, useState } from 'react'
 import Inspector from '../Inspector'
 import { Avatar, StatusBead } from '../identity'
@@ -211,7 +213,7 @@ function ActivityTab({ store, derived, id, activity, assignments }) {
   </>
 }
 
-function DetailsTab({ store, derived, id, projectName, decision = null }) {
+function DetailsTab({ store, derived, id, projectName, decision = null, planPhase = null }) {
   const task = store.tasks[id]
   const who = whoView(derived, id)
   const agent = who.agent
@@ -224,7 +226,7 @@ function DetailsTab({ store, derived, id, projectName, decision = null }) {
         <dt>Effort</dt><dd>{agent.effort || 'Not reported'}</dd>
         <dt>Agent status</dt><dd>{AGENT_STATUS[agent.status] || 'Not reported'}{agent.removed ? ' · removed' : ''}</dd>
         <dt>Helpers</dt><dd>{agent.autonomous ? 'May bring in helpers' : 'Works without helpers'}</dd>
-        {agent.autonomous && decision && <><dt>Plan</dt><dd>{planText(decision)}
+        {agent.autonomous && decision && <><dt>Plan</dt><dd><PlanApproval phase={planPhaseView(planPhase)} agentId={agent.id} />{planText(decision)}
           {decision.rationale && <span className="a-fine a-bidi" dir="auto"> “{decision.rationale}”</span>}
           {decision.promotions?.length > 0 && <span className="a-fine"> {decision.promotions.length} helper {decision.promotions.length === 1 ? 'task' : 'tasks'} proposed.</span>}</dd></>}
       </>}
@@ -299,7 +301,8 @@ export default function TaskInspector({ store, derived, taskId, selection, proje
       {tab === 'activity' && <ActivityTab store={store} derived={derived} id={taskId} activity={activity} assignments={assignments} />}
       {tab === 'output' && (agentScope.agentId ? <OutputHistory key={agentScope.agentId} agentId={agentScope.agentId} version={version}
         historical={agentScope.target.kind !== 'current'} /> : <EmptyState icon="layers" title="No output yet">No agent has worked on this task.</EmptyState>)}
-      {tab === 'settings' && <><DetailsTab store={store} derived={derived} id={taskId} projectName={projectName} decision={orchestration.data?.decision || null} />
+      {tab === 'settings' && <><DetailsTab store={store} derived={derived} id={taskId} projectName={projectName} decision={orchestration.data?.decision || null}
+        planPhase={orchestration.data?.plan_phase || null} />
         <AgentSettingsPanels agent={agentScope} taskId={taskId} /></>}
     </div>
   </Inspector>

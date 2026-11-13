@@ -2,6 +2,7 @@
 // the Task projection (store), GET /tasks/{id}, /assignments, /orchestration, /integrations, the
 // lead's /delegations (a helper's recorded result) and POST /tasks/{id}/control-impact. Nothing
 // here infers progress, invents an outcome or treats an agent's words as checked facts. Pure.
+import { planPhaseView } from './planPhase.mjs'
 
 // A recorded time in a short, readable form (or null when none was recorded).
 export const when = (value) => {
@@ -86,6 +87,8 @@ export function progressView({ task, status, detail, orchestration }) {
     state: decision.state,
     text: planText(decision),
     missing: Boolean(decision.plan_missing),
+    phase: planPhaseView(orchestration?.plan_phase),
+    leadAgentId: detail?.current_assignment?.agent_id || null,
     revision: decision.revision,
     // Written by the agent; shown as its words, never as a checked fact.
     rationale: decision.rationale || null,

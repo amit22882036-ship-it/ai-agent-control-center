@@ -1,6 +1,7 @@
 // The New Task draft and what it means, from the same rules as the classic form: provider
 // permission and readiness (onboarding/provider presentation), the model catalog (model
 // presentation), autonomy eligibility and the creation payload (autonomousCreation). Pure.
+import { splitPolicySummary } from './planPhase.mjs'
 import { autonomyEligible, creationPayload } from '../../autonomousCreation.mjs'
 import { chosenConfig, initialChoice, selection, selectionReady } from '../../modelPresentation.mjs'
 import { permissionFor, submissionProblem } from '../../onboardingPresentation.mjs'
@@ -22,7 +23,7 @@ export const TEMPLATES = [
 export const INITIAL_HELPERS = false
 
 export function emptyDraft() {
-  return { text: '', projectId: null, provider: 'mock', sandbox: 'read-only', fullConfirmed: false, helperAccess: 'workspace-write', external: false,
+  return { text: '', projectId: null, provider: 'mock', sandbox: 'read-only', fullConfirmed: false, helperAccess: 'workspace-write', external: false, splitPolicy: 'lead_decides',
     picker: initialChoice(), autonomous: INITIAL_HELPERS, allocation: 'explicit', autoProviders: [] }
 }
 
@@ -72,7 +73,7 @@ export function draftView(draft, { policy, statuses, catalog, projects = [] }) {
     ...(helpers && draft.sandbox === 'full-access' ? [draft.helperAccess === 'full-access' ? 'Its helpers also get Full Access.' : 'Its helpers work with Workspace access, not Full Access.'] : []),
     !canLead ? `It works alone: only Claude Code and Codex can lead helpers.`
       : !helpers ? 'It works alone. No helper creation is authorized for this task.'
-        : 'It may bring in helpers for parts of the work if it decides that helps. It is not required to.',
+        : `It may bring in helpers for parts of the work. ${splitPolicySummary(draft.splitPolicy)}`,
     ...(!helpers ? [] : auto
       ? [draft.autoProviders.length ? `The lead’s own choices still win. For a helper it leaves open, the Control Center may pick ${join(draft.autoProviders.map(providerLabel))}, only if allowed, ready and suited; otherwise that helper waits.`
         : 'Check at least one tool for automatic choice.']
@@ -89,5 +90,5 @@ export function newTaskPayload(draft, view) {
   return creationPayload(draft.text, draft.provider, draft.sandbox, draft.autonomous, null, view.project.project_id,
     view.config.model || undefined, { effort: view.config.effort, attempt: view.config.attempt,
       autoProviders: draft.allocation === 'auto' ? draft.autoProviders : null, helperAccess: draft.helperAccess,
-      external: draft.external === true })
+      external: draft.external === true, splitPolicy: draft.splitPolicy || 'lead_decides' })
 }

@@ -117,6 +117,9 @@ class StartAgentRequest(BaseModel):
     # Provider integrations that act outside the workspace (publishing, connectors). Off unless the
     # person allows them for a new root Task; its helpers inherit the choice.
     external_integrations: StrictBool = False
+    # With helpers: how the lead's plan becomes work (lead_decides, approve, always). Sent by the New task
+    # page; omitted, the lead keeps the earlier single-turn behaviour.
+    split_policy: Literal['lead_decides', 'approve', 'always'] | None = None
 
     @field_validator('model')
     @classmethod
@@ -242,12 +245,15 @@ def _start_agent_response(request: StartAgentRequest, parent_id: str | None = No
                                    **({'auto_allocation_providers': request.auto_allocation_providers}
                                       if request.auto_allocation_providers is not None else {}),
                                    **({'helper_access': request.helper_access} if request.helper_access is not None else {}),
-                                   **({'external_integrations': True} if request.external_integrations else {}))
+                                   **({'external_integrations': True} if request.external_integrations else {}),
+                                   **({'split_policy': request.split_policy} if request.split_policy is not None else {}))
         else:
             if request.helper_access is not None:
                 raise ValueError('Helper access applies to a new root agent with Full Access.')
             if request.external_integrations:
                 raise ValueError('External integrations are chosen when creating a new root task; helpers inherit it.')
+            if request.split_policy is not None:
+                raise ValueError('A split policy applies to a new root task whose lead may bring in helpers.')
             agent_id = start_agent(request.task, request.agent_type, request.sandbox, parent_id=parent_id, **model)
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc

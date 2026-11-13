@@ -40,7 +40,10 @@ test('the creation payload is the classic one, with helpers and Auto only for an
     autonomous: false, model: 'Sonnet 4.6', effort: 'high' })
   const auto = { ...ready, autonomous: true, allocation: 'auto', autoProviders: ['claude', 'codex'], sandbox: 'workspace-write' }
   assert.deepEqual(newTaskPayload(auto, draftView(auto, context)), { project_id: 'p1', task: 'Fix the parser', agent_type: 'claude',
-    sandbox: 'workspace-write', autonomous: true, model: 'Sonnet 4.6', effort: 'high', auto_allocation_providers: ['claude', 'codex'] })
+    sandbox: 'workspace-write', autonomous: true, model: 'Sonnet 4.6', effort: 'high', auto_allocation_providers: ['claude', 'codex'],
+    split_policy: 'lead_decides' })
+  assert.equal(newTaskPayload({ ...auto, splitPolicy: 'approve' }, draftView(auto, context)).split_policy, 'approve')
+  assert.equal(newTaskPayload(solo, draftView(solo, context)).split_policy, undefined)
   const explicit = { ...auto, allocation: 'explicit' }
   assert.equal(newTaskPayload(explicit, draftView(explicit, context)).auto_allocation_providers, undefined)
   const attempt = { ...ready, autonomous: false, picker: { choice: 'Preview X', typed: '', effort: '', attempt: true } }
@@ -61,7 +64,7 @@ test('the summary explains lead and helpers without promising either', () => {
   assert.match(solo[0], /^Claude Code \(Sonnet 4\.6, high effort\) leads this task in a private copy of Release planning and can only read files\.$/)
   assert.equal(solo[1], 'It works alone. No helper creation is authorized for this task.')
   const helpers = draftView({ ...ready, autonomous: true }, context).summary
-  assert.match(helpers[1], /It is not required to\./)
+  assert.match(helpers[1], /It plans first, with read-only access/)
   assert.match(helpers[2], /never replaced/)
   const auto = draftView({ ...ready, autonomous: true, allocation: 'auto', autoProviders: ['claude', 'codex'] }, context).summary
   assert.match(auto[2], /may pick Claude Code or Codex, only if allowed, ready and suited/)
@@ -113,4 +116,17 @@ test('publishing and outside integrations are off unless chosen, and only a new 
   assert.equal(newTaskPayload(allowedDraft, allowed).external_integrations, true)
   assert.equal(creationPayload('Fix it', 'mock', 'read-only', false, null, 'p1', undefined, { external: true }).external_integrations, undefined)
   assert.equal(creationPayload('Help', 'codex', 'workspace-write', false, 'parent-agent', undefined, undefined, { external: true }).external_integrations, undefined)
+})
+
+test('the split policy and plan phase read in plain words', async () => {
+  const { SPLIT_POLICIES, planPhaseView, splitPolicySummary } = await import('../src/atlas/model/planPhase.mjs')
+  assert.deepEqual(SPLIT_POLICIES.map((item) => item.value), ['lead_decides', 'approve', 'always'])
+  assert.equal(planPhaseView(null), null)
+  assert.equal(planPhaseView({ policy: 'unknown', phase: 'planning' }), null)
+  const waiting = planPhaseView({ policy: 'approve', phase: 'awaiting_approval', retries: 0 })
+  assert.equal(waiting.awaiting, true)
+  assert.equal(waiting.policyTitle, 'Lead proposes, I approve')
+  assert.equal(waiting.text, 'The plan is waiting for your approval.')
+  assert.equal(planPhaseView({ policy: 'always', phase: 'planning', retries: 1 }).retried, true)
+  assert.match(splitPolicySummary('approve'), /waits for your approval/)
 })

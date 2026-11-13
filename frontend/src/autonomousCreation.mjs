@@ -6,7 +6,7 @@ export function autonomyEligible(provider, parentId = null) {
   return MANAGED_PROVIDERS.includes(provider) && parentId === null
 }
 export function creationPayload(task, provider, sandbox, choice, parentId = null, projectId = undefined, model = undefined,
-  { effort = null, attempt = false, autoProviders = null, helperAccess = null, external = false } = {}) {
+  { effort = null, attempt = false, autoProviders = null, helperAccess = null, external = false, splitPolicy = null } = {}) {
   if (parentId === null && projectId !== undefined && (typeof projectId !== 'string' || !projectId.trim())) throw new Error('Choose a valid Project before starting.')
   const real = provider !== 'mock'
   const selected = real && typeof model === 'string' && model.trim() ? { model: model.trim() } : {}
@@ -22,6 +22,8 @@ export function creationPayload(task, provider, sandbox, choice, parentId = null
   // Publishing and the tool's outside apps, plugins and connectors stay off unless the person allows them
   // for a new root task (its helpers inherit the choice).
   if (real && parentId === null && external === true) selected.external_integrations = true
+  // With helpers, the lead plans first; the policy says how that plan becomes work.
+  if (autonomous && splitPolicy) selected.split_policy = splitPolicy
   return { ...(parentId === null && projectId !== undefined ? { project_id: projectId } : {}), task: task.trim(), agent_type: provider, sandbox,
     autonomous, ...selected }
 }

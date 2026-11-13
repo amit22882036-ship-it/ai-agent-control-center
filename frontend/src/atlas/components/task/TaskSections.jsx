@@ -1,3 +1,4 @@
+import PlanApproval from './PlanApproval'
 import { Fragment, useMemo, useRef, useState } from 'react'
 import Icon from '../Icon'
 import { Avatar, StatusBead } from '../identity'
@@ -68,6 +69,7 @@ export function ProgressCard({ progress, activity, taskId, store, onOpenTask }) 
     </div>}
     {plan && <div className="a-tblock">
       <h3>Plan{progress.planRevision ? <span className="a-h3-aside">revision {progress.planRevision}</span> : null}</h3>
+      <PlanApproval phase={plan.phase} agentId={plan.leadAgentId} />
       <p>{plan.text}</p>
       {plan.rationale && <blockquote className="a-quote a-bidi" dir="auto"><span className="a-quote-by">In the lead’s words (not checked by the Control Center)</span>
         <FoldedText id="t-plan-rationale" text={plan.rationale} noun="explanation" as="span" className="a-quote-text" /></blockquote>}

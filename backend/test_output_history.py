@@ -106,7 +106,7 @@ class OutputHistoryTests(unittest.TestCase):
         self.append(key, ['new'])
         with manager._store._connection() as db:
             rows = list(map(tuple, db.execute('SELECT * FROM output ORDER BY sequence')))
-            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 40)
+            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 41)
         self.assertEqual(rows[:-1], before)
         self.assertEqual(rows[-1], (key, 5, 'new'))
 

@@ -110,3 +110,6 @@
 .atlas .a-coord small { color: var(--a-text-3); }
 .atlas .a-coord-confirm { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
 
+
+.atlas .a-plan-phase { display: grid; gap: 6px; margin: 4px 0 8px; }
+.atlas .a-plan-phase .a-act-row { margin: 0; }

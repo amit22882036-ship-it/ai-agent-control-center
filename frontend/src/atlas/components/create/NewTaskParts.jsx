@@ -1,3 +1,4 @@
+import { SPLIT_POLICIES } from '../../model/planPhase.mjs'
 import Icon from '../Icon'
 import { AUTO_PROVIDERS } from '../../../allocationPresentation.mjs'
 import { providerLabel } from '../../../providerPresentation.mjs'
@@ -21,6 +22,13 @@ export function HelpersSection({ draft, view, update, policy, statuses, disabled
         disabled={disabled || !view.canLead} onClick={() => update({ autonomous: !draft.autonomous })} />
     </div>
     {view.helpers && <div className="a-hcfg">
+      <span className="a-lc-l" id="nt-split">How the plan becomes work</span>
+      <div className="a-acards" role="radiogroup" aria-labelledby="nt-split">
+        {SPLIT_POLICIES.map((item) => <label key={item.value} className={`a-acard${(draft.splitPolicy || 'lead_decides') === item.value ? ' is-on' : ''}`}>
+          <input type="radio" name="nt-split" value={item.value} checked={(draft.splitPolicy || 'lead_decides') === item.value} disabled={disabled}
+            onChange={() => update({ splitPolicy: item.value })} />
+          <span><b>{item.title}</b><small>{item.text}</small></span></label>)}
+      </div>
       <span className="a-lc-l" id="nt-alloc">Choosing each helper’s tool</span>
       <div className="a-acards" role="radiogroup" aria-labelledby="nt-alloc">
         {[['explicit', 'Follow the lead’s choices', 'The lead picks each helper’s tool and model.'],

@@ -236,6 +236,38 @@ Startup preserves round history, results and acknowledgements, collects ended-Ch
 
 These structural/rate safeguards do not detect semantic infinite loops, prove that another Delegation is useful, or provide unlimited resources. Work Intent declarations must accurately describe actual work. Automatic decomposition, corrective replanning and tooling to resolve unknown external ownership remain outside this milestone. The recursive extension below adds ancestor admission gates and inherited capability; intelligent planning remains outside this milestone. Authenticated paid Codex E2E remains a separate explicitly authorized check.
 
+## Plan phase and split policy (schema v41)
+
+**Why.** A lead used to plan and implement in one non-interactive turn and could delegate only by ending that
+turn with a JSON decision. Real runs showed leads implementing everything themselves, or a correct split being
+lost to one invalid field. The plan phase separates deciding from doing.
+
+**Design.**
+
+- A new root Task started with helpers and a `split_policy` (`lead_decides`, `approve` or `always`; sent by the
+  New task page) begins in the plan phase. The policy and phase are stored per root Task in
+  `task_plan_phase(task_id, policy, phase, retries, plan_revision)`. Requests without `split_policy` (older API
+  callers) keep the previous single-turn behaviour.
+- **Planning turn.** The lead's first turn runs with read-only access. Its prompt starts with the person's
+  request, then the local-work rule and one planning section (no delegation or replanning protocols): decide
+  the split, and end the turn with one `control-center.planning.v1` JSON object as the final message. A plan-only
+  final message is a successful planning turn here. `propose` lists the parts, their dependencies, and the
+  shared contract (data model, interfaces, folder layout) in its rationale. An empty or new project is not by
+  itself a reason to work alone. Under `always`, the lead splits whenever two or more substantial parts can be
+  separated. A delegation decision as the first final message is also accepted.
+- **Invalid plan.** If the final message is not a valid plan, the same session is resumed once with the
+  validation error and asked for the corrected plan only. A second failure stops as before.
+- **After the plan.** The plan is recorded (task page and side panel show it). Under `lead_decides` and
+  `always`, the lead is resumed automatically with its own access to execute: for `propose`, write the shared
+  contract as groundwork, then end the turn with the delegation decision promoting those parts (they are not
+  implemented by the lead); for `independent`, implement it. Under `approve`, the lead waits in Needs you with
+  the plan; the person approves, describes changes (the lead revises, then executes) or rejects (the lead works
+  alone).
+- Everything after the plan uses the existing delegation, integration and acknowledgement flow unchanged.
+
+**Verification.** Covered by deterministic tests with synthetic provider events (mock CLI). Whether real models
+follow the plan phase has not been measured.
+
 ## Recursive delegation (Stage 2H.5)
 
 Recursive execution is a separate backend opt-in: pass `recursive_delegation_enabled=True` to `agent_manager.start_agent`, together with the existing protocol/materialization/Hybrid flags. The originating Codex Agent grants the same capability to automatically materialized Children. Ordinary Agents, HTTP start models and Mock remain disabled by default. A nested Agent cannot acquire recursive capability without an authorized direct Parent assignment. Replacement does not silently acquire new permissions.
