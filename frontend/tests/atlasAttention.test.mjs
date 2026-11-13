@@ -192,3 +192,17 @@ test('the keyboard reference lists the attention keys', () => {
   assert.equal(work['Next or previous task that needs you'], 'A · Shift A')
   assert.equal(work['Reply to the selected task’s question'], 'R')
 })
+
+test('a task whose agent stopped for a reason (provider error, restart) needs the person in the bell and the panel too', () => {
+  // A real run: Work listed it under Needs you, but the notifications panel said nothing needs you.
+  const stopped = node('refused', null, { title: 'Say hey', status: 'pending', created_at: '2026-11-13T19:34:00.000Z',
+    assignment: { current: null, last_ended: { assignment_id: 'as-x', agent_id: 'x', ended_at: '2026-11-13T19:34:17.000Z', ended_reason: 'stopped' }, count: 1, previous_agent_ids: [] },
+    agent: agent('x', { status: 'stopped', name: 'Agent x' }),
+    control_rejection: { kind: 'internal', reason: 'Provider error: The model is not supported.', at: '2026-11-13T19:34:17.674Z' } })
+  const { store, derived } = build(page([stopped]))
+  assert.equal(derived.status.refused.key, 'refused')
+  assert.equal(attentionKind(derived, 'refused'), 'stopped')
+  const items = attentionItems(store, derived)
+  assert.deepEqual(items.map((item) => [item.taskId, item.kind]), [['refused', 'stopped']])
+  assert.match(bellLabel(attentionSummary(items, { needs_input: 0 }, store)), /1 other task needs you/)
+})

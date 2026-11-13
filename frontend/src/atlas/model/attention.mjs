@@ -16,8 +16,10 @@ export const ATTENTION_KINDS = {
   owner: { label: 'Waiting for a new owner', short: 'Needs a new owner', action: 'Choose an owner' },
   recovery: { label: 'Needs inspection', short: 'Stopped short of guessing', action: 'Review' },
   integration: { label: 'Work couldn’t be combined', short: 'Combining needs you', action: 'Review' },
+  // Its agent stopped for a reason the person must see (a provider error, a refused control message, a restart).
+  stopped: { label: 'Stopped: needs attention', short: 'Stopped: needs attention', action: 'Review' },
 }
-export const KIND_ORDER = ['reply', 'owner', 'recovery', 'integration']
+export const KIND_ORDER = ['reply', 'owner', 'recovery', 'integration', 'stopped']
 
 // The kind of attention a loaded Task needs, or null.
 export function attentionKind(derived, taskId) {
@@ -27,6 +29,7 @@ export function attentionKind(derived, taskId) {
   if (status.key === 'needs_owner') return 'owner'
   if (status.key === 'recovery') return 'recovery'
   if (derived.integration[taskId]?.attention) return 'integration'
+  if (status.key === 'refused') return 'stopped'
   return null
 }
 
