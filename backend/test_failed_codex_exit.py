@@ -72,6 +72,9 @@ class FailedCodexExitTests(unittest.TestCase):
         self.assertEqual(manager.agent_outputs[key][-1], f'--- Provider error: {reason} ---')
         rejection, = manager._store.control_rejections(source['task_id'])
         self.assertEqual(rejection['reason'], 'Provider error: ' + reason)
+        # Tied to the run's assignment, so the task list shows it as the task's stop reason.
+        assignment = manager._store.list_task_assignments(source['task_id'])[-1]
+        self.assertEqual(rejection['assignment_id'], assignment['assignment_id'])
 
     def test_a_failure_without_a_provider_reason_records_none(self):
         key, source, _ = self.dependent_pair()

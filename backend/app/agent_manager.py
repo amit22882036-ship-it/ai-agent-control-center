@@ -376,7 +376,8 @@ def _finalize_process(agent_id: str, process: subprocess.Popen | None, allow_aut
             if reason and task_id:
                 # The provider's own reason, so the task says why it stopped (needs attention), not "not running".
                 agent_outputs[agent_id].append(f'--- Provider error: {reason} ---')
-                _persist_control_rejection(agent_id, None, 'internal', 'Provider error: ' + reason, task_id=task_id)
+                _persist_control_rejection(agent_id, None, 'internal', 'Provider error: ' + reason, task_id=task_id,
+                                           assignment_id=getattr(process, '_control_center_assignment', None))
         agent_statuses[agent_id] = status
         _save_agent(agent_id)
         _settle_coordination()
@@ -1789,12 +1790,12 @@ def _output_failure(lines, recent=40):
     return None
 
 
-def _persist_control_rejection(agent_id, origin, kind, reason, task_id=None):
+def _persist_control_rejection(agent_id, origin, kind, reason, task_id=None, assignment_id=None):
     if _store is None:
         return
     try:
         _store.record_control_rejection(agent_id=agent_id, task_id=task_id or (origin.parent_task_id if origin else None),
-                                        assignment_id=origin.assignment_id if origin else None,
+                                        assignment_id=assignment_id or (origin.assignment_id if origin else None),
                                         generation=origin.generation if origin else None, kind=kind, reason=reason)
     except (sqlite3.Error, OSError, ValueError, LookupError):
         logger.exception('Control rejection for %s could not be recorded', agent_id)
