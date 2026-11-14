@@ -353,7 +353,9 @@ class ProtocolTests(unittest.TestCase):
         promotion.validate(self.promotion())
         promotion.validate(self.promotion(provider='claude'))
         promotion.validate(self.promotion(provider='gemini', model='flash'))
-        for extra in (dict(provider='antigravity'), dict(model='flash'), dict(provider='claude', model='a b'),
+        promotion.validate(self.promotion(model='flash', effort='low', reason='Small edits.'))  # The lead's own provider.
+        for extra in (dict(provider='antigravity'), dict(provider='claude', model='a b'), dict(effort='LOW!'),
+                      dict(reason='x' * 301),
                       dict(provider='codex', other=1)):
             with self.assertRaises(ValueError, msg=extra):
                 promotion.validate(self.promotion(**extra))

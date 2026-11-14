@@ -173,11 +173,11 @@ class TaskTests(unittest.TestCase):
     def test_future_schema_is_untouched(self):
         task = self.store.create_task('keep')
         with closing(sqlite3.connect(self.path)) as db, db:
-            db.execute('PRAGMA user_version=42')
+            db.execute('PRAGMA user_version=43')
         with self.assertRaisesRegex(RuntimeError, 'Unsupported'):
             AgentStore(self.path)
         with closing(sqlite3.connect(self.path)) as db:
-            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 42)
+            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 43)
             self.assertEqual(db.execute('SELECT task_id FROM tasks').fetchone()[0], task['task_id'])
 
     def test_recovery_failure_rolls_back_task_and_assignment_together(self):
