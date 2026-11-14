@@ -36,7 +36,7 @@ test('the disabled reason names the first missing requirement', () => {
 test('the creation payload is the classic one, with helpers and Auto only for an eligible lead', () => {
   const context = { policy, statuses, catalog, projects }
   const solo = { ...ready, autonomous: false }
-  assert.deepEqual(newTaskPayload(solo, draftView(solo, context)), { project_id: 'p1', task: 'Fix the parser', agent_type: 'claude', sandbox: 'read-only',
+  assert.deepEqual(newTaskPayload(solo, draftView(solo, context)), { project_id: 'p1', task: 'Fix the parser', agent_type: 'claude', sandbox: 'workspace-write',
     autonomous: false, model: 'Sonnet 4.6', effort: 'high' })
   const auto = { ...ready, autonomous: true, allocation: 'auto', autoProviders: ['claude', 'codex'], sandbox: 'workspace-write' }
   assert.deepEqual(newTaskPayload(auto, draftView(auto, context)), { project_id: 'p1', task: 'Fix the parser', agent_type: 'claude',
@@ -55,13 +55,13 @@ test('the creation payload is the classic one, with helpers and Auto only for an
   assert.equal(geminiView.canLead, false)
   // Mock sends no model.
   const mock = { ...ready, provider: 'mock' }
-  assert.deepEqual(newTaskPayload(mock, draftView(mock, context)), { project_id: 'p1', task: 'Fix the parser', agent_type: 'mock', sandbox: 'read-only', autonomous: false })
+  assert.deepEqual(newTaskPayload(mock, draftView(mock, context)), { project_id: 'p1', task: 'Fix the parser', agent_type: 'mock', sandbox: 'workspace-write', autonomous: false })
 })
 
 test('the summary explains lead and helpers without promising either', () => {
   const context = { policy, statuses, catalog, projects }
   const solo = draftView({ ...ready, autonomous: false }, context).summary
-  assert.match(solo[0], /^Claude Code \(Sonnet 4\.6, high effort\) leads this task in a private copy of Release planning and can only read files\.$/)
+  assert.match(solo[0], /^Claude Code \(Sonnet 4\.6, high effort\) leads this task in a private copy of Release planning and may edit files there.$/)
   assert.equal(solo[1], 'It works alone. No helper creation is authorized for this task.')
   const helpers = draftView({ ...ready, autonomous: true }, context).summary
   assert.match(helpers[1], /It plans first, with read-only access/)
@@ -86,7 +86,7 @@ test('Atlas starts with helpers off, without changing the classic default', asyn
   assert.equal(view.canLead, true)
   assert.equal(view.helpers, false)
   assert.equal(view.summary[1], 'It works alone. No helper creation is authorized for this task.')
-  assert.deepEqual(newTaskPayload(fresh, view), { project_id: 'p1', task: 'Fix the parser', agent_type: 'claude', sandbox: 'read-only',
+  assert.deepEqual(newTaskPayload(fresh, view), { project_id: 'p1', task: 'Fix the parser', agent_type: 'claude', sandbox: 'workspace-write',
     autonomous: false, model: 'Sonnet 4.6' })
 })
 
@@ -129,4 +129,25 @@ test('the split policy and plan phase read in plain words', async () => {
   assert.equal(waiting.text, 'The plan is waiting for your approval.')
   assert.equal(planPhaseView({ policy: 'always', phase: 'planning', retries: 1 }).retried, true)
   assert.match(splitPolicySummary('approve'), /waits for your approval/)
+})
+
+test('a new task may edit its private copy by default; nothing reaches the folder until review and apply', () => {
+  // Read only by default left tasks that must change files unable to do their job.
+  assert.equal(emptyDraft().sandbox, 'workspace-write')
+})
+
+test('a plan waiting for approval is shown part by part, and named as a plan in lists', async () => {
+  const { planPhaseView } = await import('../src/atlas/model/planPhase.mjs')
+  const { attentionLabel, PLAN_APPROVAL_LABEL } = await import('../src/atlas/model/attention.mjs')
+  const waiting = planPhaseView({ policy: 'approve', phase: 'awaiting_approval', retries: 0, proposal: { decision: 'propose', rationale: 'Two independent parts.',
+    items: [{ proposal_id: 'calc-sub', deliverable: 'sub(a, b) with tests', depends_on: [] }, { proposal_id: 'units', deliverable: 'km_to_miles', depends_on: ['calc-sub'] }] } })
+  assert.equal(waiting.awaiting, true)
+  assert.deepEqual(waiting.proposal.items.map((item) => [item.name, item.deliverable, item.dependsOn]),
+    [['calc-sub', 'sub(a, b) with tests', []], ['units', 'km_to_miles', ['calc-sub']]])
+  assert.equal(waiting.proposal.alone, false)
+  assert.equal(planPhaseView({ policy: 'approve', phase: 'awaiting_approval', proposal: { decision: 'independent', items: [] } }).proposal.alone, true)
+  assert.equal(planPhaseView({ policy: 'approve', phase: 'executing', proposal: { decision: 'propose', items: [] } }).proposal, null)
+  // "Asked you a question" hid that the answer is a plan approval.
+  assert.equal(attentionLabel({ kind: 'reply', plan: true }), PLAN_APPROVAL_LABEL)
+  assert.equal(attentionLabel({ kind: 'reply', plan: false }), 'Waiting for your reply')
 })

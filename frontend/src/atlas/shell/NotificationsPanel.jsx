@@ -6,7 +6,7 @@ import { ToolMark } from '../components/connections/ProviderParts'
 import { useActionRunner } from '../hooks'
 import { agentActions, refusalText } from '../api/agentClient.mjs'
 import { noticeText } from '../../onboardingPresentation.mjs'
-import { ATTENTION_KINDS, coverageText } from '../model/attention.mjs'
+import { ATTENTION_KINDS, attentionLabel, coverageText } from '../model/attention.mjs'
 import { humanTimes } from '../model/connections.mjs'
 import { deliveryView } from '../model/notify.mjs'
 import { formatHash } from '../router.mjs'
@@ -92,7 +92,7 @@ export default function NotificationsPanel({ attention, summary, tools, notices,
           <StatusBead state={BEAD[entry.kind]} size={14} decorative />
           <div className="a-ntf-main">
             <p className="a-ntf-line"><span className="a-bidi" dir="auto">{entry.title}</span></p>
-            <small>{ATTENTION_KINDS[entry.kind].label}{entry.agentName ? <> · <span className="a-bidi" dir="auto">{entry.agentName}</span></> : null}</small>
+            <small>{attentionLabel(entry)}{entry.agentName ? <> · <span className="a-bidi" dir="auto">{entry.agentName}</span></> : null}</small>
             <div className="a-ntf-acts">
               {entry.kind === 'reply' && entry.agentId && <Button size="sm" variant="ask" icon="reply" onClick={() => go(onReply)(entry.taskId)}>Reply</Button>}
               <Button size="sm" variant={entry.kind === 'reply' ? 'ghost' : 'secondary'} onClick={() => go(onShow)(entry.taskId)}>

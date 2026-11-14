@@ -31,6 +31,10 @@ export function accessText(provider, level) {
   return TEXT[provider]?.[level] || ''
 }
 
+// What the three levels mean for the person's own folder, in one line under the choice.
+export const ACCESS_HINT = 'Read only: looks, changes nothing. Workspace: edits only the task’s private copy; nothing reaches your '
+  + 'folder until you review and apply it. Full Access: not sandboxed.'
+
 // Full Access is never sandboxed: said plainly, with the exact scope, before it can be chosen.
 export const FULL_ACCESS_WARNING = 'Full Access is not sandboxed. The agent can run any command, use the network and change any file your '
   + 'Windows account can change, outside the task’s private copy too. Choose it only for work you would run yourself.'

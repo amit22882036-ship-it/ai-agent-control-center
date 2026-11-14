@@ -23,7 +23,7 @@ export const TEMPLATES = [
 export const INITIAL_HELPERS = false
 
 export function emptyDraft() {
-  return { text: '', projectId: null, provider: 'mock', sandbox: 'read-only', fullConfirmed: false, helperAccess: 'workspace-write', external: false, splitPolicy: 'lead_decides',
+  return { text: '', projectId: null, provider: 'mock', sandbox: 'workspace-write', fullConfirmed: false, helperAccess: 'workspace-write', external: false, splitPolicy: 'lead_decides',
     picker: initialChoice(), autonomous: INITIAL_HELPERS, allocation: 'explicit', autoProviders: [] }
 }
 

@@ -484,6 +484,8 @@ class TrashProjectRequest(BaseModel):
     # The person's explicit choice after being told the folder no longer exists: the Project goes to
     # the Trash as records only, and nothing on disk is touched.
     folder_missing: StrictBool = False
+    # Remove from Control Center: records only, the existing folder stays where it is, untouched.
+    keep_folder: StrictBool = False
 
 
 class RestoreProjectRequest(BaseModel):
@@ -533,7 +535,8 @@ def trash_project_route(project_id: str, request: TrashProjectRequest | None = N
     """Moves the Project's folder into the Trash. Refused while work in it is running. With folder_missing,
     a Project whose folder was already deleted goes to the Trash as records only."""
     folder_missing = bool(request and request.folder_missing)
-    return _lifecycle_action(lambda: manager.trash_project(project_id, folder_missing=folder_missing))
+    keep_folder = bool(request and request.keep_folder)
+    return _lifecycle_action(lambda: manager.trash_project(project_id, folder_missing=folder_missing, keep_folder=keep_folder))
 
 
 @app.post('/projects/{project_id}/restore')

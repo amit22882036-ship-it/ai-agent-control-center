@@ -10,7 +10,7 @@ import { tabPanelProps } from '../../a11y.mjs'
 import { API_BASE } from '../../../apiClient.mjs'
 import { useLiveResource } from '../../hooks'
 import { TOOLS, tagOf } from '../../vocabulary.mjs'
-import { helpersView, plannedView, resultView } from '../../model/taskStatus.mjs'
+import { canApply, helpersView, plannedView, resultView } from '../../model/taskStatus.mjs'
 import { agentLabel, nowView, timeView, whoView } from '../../model/workList.mjs'
 import { pathTo } from '../../model/tasks.mjs'
 import { planText } from '../../model/taskPage.mjs'
@@ -19,6 +19,8 @@ import { AgentFooterActions, AgentNowPanels, AgentSettingsPanels, AgentStopResul
 import { useAgentScope } from '../agent/useAgentScope'
 import { OutputHistory } from '../agent/OutputHistory'
 import TaskTitle from '../task/TaskTitle'
+import { ApplyDialog } from '../task/TaskControls'
+import ContinueRecovery from '../task/ContinueRecovery'
 
 const TABS = [{ id: 'now', label: 'Now' }, { id: 'activity', label: 'Activity' }, { id: 'output', label: 'Output' }, { id: 'settings', label: 'Settings' }]
 const AGENT_STATUS = { running: 'Working', waiting: 'Waiting', finished: 'Finished', stopped: 'Stopped' }
@@ -108,7 +110,7 @@ function Family({ store, derived, id, onSelect, onShowInMap, lens }) {
   </>
 }
 
-function NowTab({ store, derived, id, projectName, onSelect, task, activity, now, agent, onShowInMap, lens, onOpenTask, onRenamed }) {
+function NowTab({ store, derived, id, projectName, onSelect, task, activity, now, agent, onShowInMap, lens, onOpenTask, onRenamed, planPhase = null }) {
   const data = store.tasks[id]
   const parent = data.parentId ? store.tasks[data.parentId] : null
   const children = derived.forest.children[id] || []
@@ -117,8 +119,21 @@ function NowTab({ store, derived, id, projectName, onSelect, task, activity, now
   const result = resultView(data)
   const into = derived.integration[id]
   const description = task?.data?.task_id === id ? task.data.description : null
+  // Keyed by task: selecting another task never carries a dialog or an outcome over.
+  const [applyState, setApplyState] = useState({ id: null, open: false, outcome: null })
+  const applying = applyState.id === id && applyState.open
+  const applied = applyState.id === id ? applyState.outcome : null
+  const plan = planPhaseView(planPhase)
   return <>
+    {plan?.awaiting && <section className="a-blk" aria-labelledby={`plan-now-${id}`}>
+      <h3 id={`plan-now-${id}`}>Plan waiting for approval</h3>
+      <PlanApproval phase={plan} agentId={agent.scope?.agentId || agent.agentId || null} />
+    </section>}
     <AgentNowPanels agent={agent} store={store} taskId={id} now={now} />
+    {data.continuation?.phase === 'recovery_required' && <section className="a-blk" aria-labelledby={`rec-${id}`}>
+      <h3 id={`rec-${id}`}>Recovery required</h3>
+      <ContinueRecovery taskId={id} reason={task?.data?.task_id === id ? task.data.delegation_continuation?.last_error || null : null} />
+    </section>}
     <StateNotes store={store} derived={derived} id={id} activity={activity} controls={agent.scope?.caps} />
     <section className="a-blk" aria-labelledby={`resp-${id}`}>
       <h3 id={`resp-${id}`}>Responsible for</h3>
@@ -172,7 +187,14 @@ function NowTab({ store, derived, id, projectName, onSelect, task, activity, now
           <dd className={into.attention ? 'a-tone-alert' : undefined}>{into.label}{into.appliedAt ? ` · ${clock(into.appliedAt)}` : ''}</dd></>}
         {into && <><dt>Checked</dt><dd>Not independently verified</dd></>}
       </dl>
+      {canApply(data, into) && <div className="a-apply">
+        <Button variant="primary" size="sm" icon="check" onClick={() => setApplyState({ id, open: true, outcome: null })}>Review and apply…</Button>
+        <span className="a-fine">Shows the files it changed before anything is written to your project.</span></div>}
+      {applied && <div className={`a-result a-result--${applied.tone === 'ok' ? 'ok' : applied.tone === 'warn' ? 'warn' : 'error'}`} role="status">
+        <Icon name={applied.tone === 'ok' ? 'check' : 'info'} size={15} /><div>{applied.text}</div></div>}
     </section>}
+    {applying && <ApplyDialog taskId={id} onClose={() => setApplyState({ id, open: false, outcome: null })}
+      onFinished={(outcome) => setApplyState({ id, open: false, outcome })} />}
   </>
 }
 
@@ -254,7 +276,9 @@ export default function TaskInspector({ store, derived, taskId, selection, proje
   const task = useLiveResource(present ? `${API_BASE}/tasks/${encode(taskId)}` : null, version)
   const assignments = useLiveResource(present && tab === 'activity' ? `${API_BASE}/tasks/${encode(taskId)}/assignments` : null, version)
   // The lead's planning decision, only where it is shown (Settings) and only for a lead with helpers.
-  const orchestration = useLiveResource(present && tab === 'settings' && agent?.autonomous ? `${API_BASE}/tasks/${encode(taskId)}/orchestration` : null, version)
+  // In Now too while a plan waits for approval: the plan is shown there with its Approve / changes / Work alone.
+  const orchestration = useLiveResource(present && agent?.autonomous && (tab === 'settings' || (tab === 'now' && agent.awaitsPlanApproval))
+    ? `${API_BASE}/tasks/${encode(taskId)}/orchestration` : null, version)
   const activity = useLiveResource(present && agent && (tab === 'activity' || derived.status[taskId].key === 'needs_input')
     ? `${API_BASE}/agents/${encode(agent.id)}/activity` : null, version)
 
@@ -297,7 +321,8 @@ export default function TaskInspector({ store, derived, taskId, selection, proje
     <div {...tabPanelProps(idBase, tab)} className="a-insp-panel">
       <AgentStopResult agent={agentScope} />
       {tab === 'now' && <NowTab store={store} derived={derived} id={taskId} projectName={projectName} onSelect={onSelect} task={task} activity={activity.data} now={now}
-        agent={agentScope} onShowInMap={onShowInMap} lens={lens} onOpenTask={onOpenTask}  onRenamed={onRefresh} />}
+        agent={agentScope} onShowInMap={onShowInMap} lens={lens} onOpenTask={onOpenTask}  onRenamed={onRefresh}
+        planPhase={agent?.awaitsPlanApproval ? orchestration.data?.plan_phase || null : null} />}
       {tab === 'activity' && <ActivityTab store={store} derived={derived} id={taskId} activity={activity} assignments={assignments} />}
       {tab === 'output' && (agentScope.agentId ? <OutputHistory key={agentScope.agentId} agentId={agentScope.agentId} version={version}
         historical={agentScope.target.kind !== 'current'} /> : <EmptyState icon="layers" title="No output yet">No agent has worked on this task.</EmptyState>)}

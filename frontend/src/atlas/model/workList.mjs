@@ -386,7 +386,10 @@ export function nowView(store, derived, id) {
   let second = status.detail || ''
   let tone = status.tone
   switch (status.key) {
-    case 'needs_input': line = 'Asked you a question'; second = 'Waiting for your reply'; break
+    case 'needs_input':
+      if (who?.awaitsPlanApproval) { line = 'Plan waiting for approval'; second = 'Approve, request changes or work alone' }
+      else { line = 'Asked you a question'; second = 'Waiting for your reply' }
+      break
     case 'waiting_helpers':
       // Only helpers still working count; a delivered result is waiting for the lead, not the other way round.
       if (!status.detail && task.delegations.materialized) line = `Waiting for ${task.delegations.materialized} helper${task.delegations.materialized === 1 ? '' : 's'}`

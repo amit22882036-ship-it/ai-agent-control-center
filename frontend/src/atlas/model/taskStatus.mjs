@@ -130,6 +130,12 @@ export function integrationView(task) {
   return { ...source, label: INTEGRATION_LABELS[source.status] || 'Unknown', attention: INTEGRATION_ATTENTION.has(source.status), verified: false }
 }
 
+// A finished top-level task whose changes are not in the project folder yet: the person can review and apply them.
+export function canApply(task, into) {
+  return Boolean(task && !task.parentId && task.lifecycle === 'completed' && into?.scope === 'project'
+    && !['applied', 'noop', 'applying'].includes(into.status))
+}
+
 const RESULT_LABELS = { completed: 'Reported complete', stopped: 'Stopped before finishing', failed: 'Reported failure',
   canceled: 'Canceled', unverified: 'Outcome not confirmed' }
 

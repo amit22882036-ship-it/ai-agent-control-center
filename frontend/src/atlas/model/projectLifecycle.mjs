@@ -46,15 +46,19 @@ export function trashSummary(project) {
   if (!trash) return ''
   if (trash.state === 'deleting') return trash.error || 'Deletion did not finish. Choose Delete permanently again to finish it.'
   if (trash.state === 'moving' || trash.state === 'restoring') return 'A move is in progress.'
+  if (trash.folder_kept) return `Removed from the Control Center; its folder stays at ${trash.original_root_path}, untouched.`
   if (trash.folder_missing) return `Was at ${trash.original_root_path}; its folder had already been deleted. Restore it once the folder is back there.`
   return `Was at ${trash.original_root_path}`
 }
 
-export function deletionScope(preview) {
+export function deletionScope(preview, project = null) {
   const lines = []
   const folder = preview?.folder
-  if (folder?.exists) lines.push(`The folder ${folder.path}, with all its files and its Git history (.git).`)
-  else lines.push('The folder is already gone from the Trash; only the records remain.')
+  // Removed while keeping its folder: the folder is not this deletion's to touch, so it is not listed.
+  if (!project?.trash?.folder_kept) {
+    if (folder?.exists) lines.push(`The folder ${folder.path}, with all its files and its Git history (.git).`)
+    else lines.push('The folder is already gone from the Trash; only the records remain.')
+  }
   if (preview?.worktrees) lines.push(`${plural(preview.worktrees, 'private task worktree', 'private task worktrees')} the Control Center made for its tasks.`)
   const tasks = preview?.activity?.tasks || 0
   lines.push(`${plural(tasks, 'task', 'tasks')}, ${plural(preview?.agents || 0, 'agent', 'agents')} and their output history in the Control Center.`)

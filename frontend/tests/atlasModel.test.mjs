@@ -450,3 +450,16 @@ test('a task stopped by a refused control message needs attention instead of rea
   assert.match(refused.detail, /Unknown Child provider/)
   assert.equal(taskStatus({ ...base, rejection: null }, { current: null, last: null }).key, 'pending')
 })
+
+test('a finished top-level task offers Review and apply until its changes are in the project', async () => {
+  // A real run: the side panel said "Not applied to the project yet" with no way to apply from there.
+  const { canApply } = await import('../src/atlas/model/taskStatus.mjs')
+  const done = { parentId: null, lifecycle: 'completed' }
+  assert.equal(canApply(done, { scope: 'project', status: 'not_started' }), true)
+  assert.equal(canApply(done, { scope: 'project', status: 'conflict' }), true)
+  assert.equal(canApply(done, { scope: 'project', status: 'applied' }), false)
+  assert.equal(canApply(done, { scope: 'project', status: 'noop' }), false)
+  assert.equal(canApply({ ...done, parentId: 'lead' }, { scope: 'lead', status: 'not_started' }), false)  // A helper: its lead combines it.
+  assert.equal(canApply({ ...done, lifecycle: 'in_progress' }, { scope: 'project', status: 'not_started' }), false)
+  assert.equal(canApply(done, null), false)
+})

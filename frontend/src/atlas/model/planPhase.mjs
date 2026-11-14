@@ -25,7 +25,17 @@ export function planPhaseView(phase) {
     text: PHASE_TEXT[phase.phase] || 'The plan phase is not reported.',
     awaiting: phase.phase === 'awaiting_approval',
     retried: Number(phase.retries) > 0,
+    // While it waits: the plan itself, one row per part (name and deliverable), or null.
+    proposal: phase.phase === 'awaiting_approval' ? proposalView(phase.proposal) : null,
   }
+}
+
+function proposalView(raw) {
+  if (!raw || typeof raw !== 'object') return null
+  const items = (Array.isArray(raw.items) ? raw.items : []).filter((item) => item && typeof item.proposal_id === 'string')
+    .slice(0, 16).map((item) => ({ name: item.proposal_id, deliverable: String(item.deliverable || ''),
+      dependsOn: Array.isArray(item.depends_on) ? item.depends_on.map(String) : [] }))
+  return { alone: raw.decision !== 'propose' || !items.length, rationale: String(raw.rationale || ''), items }
 }
 
 // The New task summary line for the chosen policy (only when helpers are on).

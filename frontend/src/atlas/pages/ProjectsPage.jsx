@@ -130,7 +130,7 @@ export default function ProjectsPage({ live, navigate }) {
       onMap={openMap}
       onNewTask={(project) => navigate('new', { project: project.id })}
       onHide={(project) => setHidden(project, true)}
-      onTrash={(project) => setDialog({ kind: 'trash', project })} />}
+      onTrash={(project, mode = 'remove') => setDialog({ kind: 'trash', project, mode })} />}
     {ready && !complete && visible.length > 0 && <p className="a-fine a-projects-note">Counts cover the loaded tasks.</p>}
 
     {hidden.length > 0 && <section className="a-shelf" aria-labelledby="a-shelf-hidden">
@@ -162,15 +162,17 @@ export default function ProjectsPage({ live, navigate }) {
 
     {adding && <RegisterProjectDialog open onClose={() => setAdding(false)} onRefresh={refresh}
       onRegistered={(project) => { setAdding(false); setMessage({ tone: 'ok', title: `${project?.name || 'The project'} was added`, text: 'It is ready for a new task.' }); refresh() }} />}
-    {dialog?.kind === 'trash' && <TrashDialog project={dialog.project} onClose={() => setDialog(null)}
-      onDone={(result) => { setDialog(null); setMessage({ tone: 'ok', title: `${dialog.project.name} is in the Trash`,
-        text: result?.trash?.folder_missing ? 'Its folder had already been deleted, so nothing on disk changed. Its history is in the Trash below.'
-          : `Its folder was moved to ${result?.trash?.path}. Restore it from the Trash below at any time.` }); announce(`${dialog.project.name} moved to the Trash.`); refresh() }} />}
+    {dialog?.kind === 'trash' && <TrashDialog project={dialog.project} mode={dialog.mode} onClose={() => setDialog(null)}
+      onDone={(result) => { setDialog(null); setMessage({ tone: 'ok', title: result?.trash?.folder_kept ? `${dialog.project.name} was removed from the Control Center` : `${dialog.project.name} is in the Trash`,
+        text: result?.trash?.folder_kept ? `Its folder stays at ${result.trash.original_root_path}, untouched. Its history is in the Trash below; restore it at any time.`
+          : result?.trash?.folder_missing ? 'Its folder had already been deleted, so nothing on disk changed. Its history is in the Trash below.'
+          : `Its folder was moved to ${result?.trash?.path}. Restore it from the Trash below at any time.` }); announce(result?.trash?.folder_kept ? `${dialog.project.name} removed from the Control Center; its folder was kept.` : `${dialog.project.name} moved to the Trash.`); refresh() }} />}
     {dialog?.kind === 'restore' && <RestoreDialog project={dialog.project} initialRefusal={dialog.refusal} onClose={() => setDialog(null)}
       onDone={(result) => { setDialog(null); setMessage({ tone: 'ok', title: `${dialog.project.name} is back`, text: `Its folder is at ${result.root_path}.` }); refresh() }} />}
     {dialog?.kind === 'delete' && <DeleteDialog project={dialog.project} onClose={() => setDialog(null)}
       onDone={() => { setDialog(null); setMessage({ tone: 'ok', title: `${dialog.project.name} was deleted`,
-        text: 'Its folder, its task worktrees and its records are gone from this computer. Remote repositories were not touched.' }); announce(`${dialog.project.name} deleted.`); refresh() }} />}
+        text: dialog.project.trash?.folder_kept ? `Its task worktrees and its records are gone. Its folder at ${dialog.project.trash.original_root_path} was not touched.`
+          : 'Its folder, its task worktrees and its records are gone from this computer. Remote repositories were not touched.' }); announce(`${dialog.project.name} deleted.`); refresh() }} />}
     <div ref={region} className="a-sr" role="status" aria-live="polite" />
   </div>
 }

@@ -30,7 +30,7 @@ function Remotes({ git }) {
 }
 
 // Move to Trash: what moves where, what stops it, and a way to stop the work first.
-export function TrashDialog({ project, onClose, onDone }) {
+export function TrashDialog({ project, mode = 'move', onClose, onDone }) {
   const [nonce, setNonce] = useState(0)
   const preview = usePreview(project.id, nonce)
   const [busy, setBusy] = useState(null)
@@ -39,7 +39,9 @@ export function TrashDialog({ project, onClose, onDone }) {
   const blocked = Boolean(data?.activity?.busy)
   // The folder was deleted outside the app: nothing to move, so the project itself is removed (to the Trash).
   const missing = data?.folder?.exists === false || (refusal?.code === 'folder_missing' && refusal?.canRemove)
-  const protectedFolder = !missing && (data?.protections || []).length > 0
+  // Remove from Control Center: records only, the folder stays where it is (nothing on disk changes).
+  const keep = mode === 'remove' && !missing
+  const protectedFolder = !missing && !keep && (data?.protections || []).length > 0
 
   async function stopAll() {
     setBusy('stop')
@@ -53,7 +55,7 @@ export function TrashDialog({ project, onClose, onDone }) {
   }
   async function trash() {
     setBusy('trash')
-    const result = await agentActions.trashProject(project.id, undefined, missing)
+    const result = await agentActions.trashProject(project.id, undefined, missing, keep)
     setBusy(null)
     if (result.ok) { onDone(result.data); return }
     const next = lifecycleRefusal(result) || { message: refusalText(result, 'The project could not be moved to the Trash.'), reasons: [] }
@@ -61,26 +63,29 @@ export function TrashDialog({ project, onClose, onDone }) {
     setNonce((value) => value + 1)
   }
   return <Dialog open onClose={onClose} size="lg"
-    title={missing ? `Remove “${project.name}” from the Control Center?` : `Move “${project.name}” to the Trash?`}
+    title={missing || keep ? `Remove “${project.name}” from the Control Center?` : `Move the folder of “${project.name}” to the Trash?`}
     description={missing
       ? 'Its folder no longer exists, so nothing on disk is moved or deleted. The project and its history go to the Trash: restore it once the folder is back, or delete it permanently.'
-      : 'The project folder moves out of its location into the Trash. You can restore it with everything in it, or delete it permanently later.'}
+      : keep ? 'Its folder stays where it is, untouched: nothing on disk is moved, changed or deleted. The project and its history go to the Trash, where you can restore it at any time.'
+        : 'The project folder itself (your files) moves out of its location into the Control Center Trash. You can restore it with everything in it, or delete it permanently later. To keep the folder where it is, choose Remove from Control Center instead.'}
     actions={<>
       <Button onClick={onClose}>Keep project</Button>
       {blocked && <Button icon="stop" onClick={stopAll} disabled={Boolean(busy)}>{busy === 'stop' ? 'Stopping…' : 'Stop all work in this project'}</Button>}
-      <Button variant="danger" icon="trash" onClick={trash} disabled={!data || blocked || protectedFolder || Boolean(busy)}>
-        {busy === 'trash' ? (missing ? 'Removing…' : 'Moving…') : (missing ? 'Remove from Control Center' : 'Move to Trash')}</Button>
+      <Button variant={keep ? 'primary' : 'danger'} icon="trash" onClick={trash} disabled={!data || blocked || protectedFolder || Boolean(busy)}>
+        {busy === 'trash' ? (missing || keep ? 'Removing…' : 'Moving…') : (missing || keep ? 'Remove from Control Center' : 'Move folder to Trash')}</Button>
     </>}>
     {!data && !preview.error && <Skeleton lines={4} label="Reading the project" />}
     {preview.error && <Notice tone="error" title="The project could not be read">{preview.error}</Notice>}
     {data && <div className="a-life">
-      <div className="a-life-move">
+      {!keep && <div className="a-life-move">
         <span className="a-life-folder"><Icon name="folder" size={18} /><span className="a-mono">{data.folder.path}</span>
           {missing && <span className="a-fine"> · not found</span>}</span>
         <Icon name="right" size={16} />
         <span className="a-life-folder a-life-folder--trash"><Icon name="trash" size={18} />Trash</span>
-      </div>
-      <p className="a-fine">{missing ? `Nothing was found at ${data.folder.path}. Only the project’s records go to the Trash; no folder is created, moved or deleted.` : trashPlace(data)}</p>
+      </div>}
+      {keep && <p className="a-life-folder"><Icon name="folder" size={18} /><span className="a-mono">{data.folder.path}</span><span className="a-fine"> · stays here, untouched</span></p>}
+      <p className="a-fine">{missing ? `Nothing was found at ${data.folder.path}. Only the project’s records go to the Trash; no folder is created, moved or deleted.`
+        : keep ? 'Only the project’s records go to the Trash. You can add the folder again as a project, or restore this one.' : trashPlace(data)}</p>
       <ul className="a-life-facts">
         <li><b>{data.activity.tasks}</b> tasks and <b>{data.agents}</b> agents keep their history.</li>
         <li><b>{data.worktrees}</b> private task worktrees stay where they are.</li>
@@ -139,18 +144,19 @@ export function DeleteDialog({ project, onClose, onDone }) {
     setRefusal(lifecycleRefusal(result) || { message: refusalText(result, 'The project could not be deleted.'), reasons: [] })
   }
   return <Dialog open onClose={onClose} size="lg" title={`Delete “${project.name}” permanently?`}
-    description="This cannot be undone. It deletes files from this computer."
+    description={project.trash?.folder_kept ? "This cannot be undone. It deletes the project's records and private task copies; its folder is not touched." : "This cannot be undone. It deletes files from this computer."}
     actions={<><Button onClick={onClose}>Cancel</Button>
       <Button variant="danger" icon="trash" onClick={remove} disabled={!data || !matches || busy}>{busy ? 'Deleting…' : 'Delete permanently'}</Button></>}>
     {!data && !preview.error && <Skeleton lines={4} label="Reading the project" />}
     {preview.error && <Notice tone="error" title="The project could not be read">{preview.error}</Notice>}
     {data && <div className="a-life">
       <h3 className="a-life-head">What will be deleted</h3>
-      <ul className="a-life-facts a-life-facts--danger">{deletionScope(data).map((line) => <li key={line}>{line}</li>)}</ul>
+      <ul className="a-life-facts a-life-facts--danger">{deletionScope(data, project).map((line) => <li key={line}>{line}</li>)}</ul>
       <h3 className="a-life-head">What will not be affected</h3>
       <ul className="a-life-facts">
         <li>Remote repositories, such as GitHub. Nothing is sent to them, and they are not changed.</li>
         <li>Other projects and their folders.</li>
+        {project.trash?.folder_kept && <li>Its folder at <span className="a-mono">{project.trash.original_root_path}</span>: it was kept when the project was removed.</li>}
       </ul>
       <Remotes git={data.git} />
       {warnings.length > 0 && <Notice tone="warn" title="Some of this exists only on this computer">{warnings.join(' ')}</Notice>}

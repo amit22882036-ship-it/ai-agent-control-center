@@ -18,7 +18,7 @@ import base64
 import binascii
 import json
 
-from . import providers
+from . import plan_phase, providers
 from .presentation import CAPABILITIES, waiting_context
 
 MAX_LIMIT = 500
@@ -144,9 +144,11 @@ def _nodes(db, rows, parents):
     agent_ids = sorted({h[0]['agent_id'] for h in history.values()})
     agents = {row['agent_id']: row for row in db.execute(
         '''SELECT agent_id,status,display_name,display_color,agent_type,model,effort,provider_condition,
-           waiting_question IS NOT NULL AND waiting_question<>'' AS asks,removed_at,{caps}
-           FROM agents WHERE agent_id IN ({marks})'''.format(caps=','.join(CAPABILITIES), marks=_marks(agent_ids)),
-        agent_ids)} if agent_ids else {}
+           waiting_question IS NOT NULL AND waiting_question<>'' AS asks,
+           COALESCE(substr(waiting_question,1,{n})=?,0) AS plan_approval,removed_at,{caps}
+           FROM agents WHERE agent_id IN ({marks})'''.format(caps=','.join(CAPABILITIES), marks=_marks(agent_ids),
+                                                             n=len(plan_phase.APPROVAL_PREFIX)),
+        [plan_phase.APPROVAL_PREFIX, *agent_ids])} if agent_ids else {}
     from . import agent_removal
     removals = agent_removal.agent_states(db, agent_ids) if agent_ids else {}
     continuations = {row['task_id']: row for row in db.execute(
@@ -256,6 +258,8 @@ def _nodes(db, rows, parents):
                 'model': _clip(agent['model'], NAME_LIMIT),
                 'effort': _clip(agent['effort'], 32),
                 'asks_user': bool(agent['asks']),
+                # Its question is a plan waiting for the person's approval (shown as such, with its own actions).
+                'awaits_plan_approval': bool(agent['asks']) and bool(agent['plan_approval']),
                 'provider_condition': condition,
                 'autonomous': all(agent[key] for key in CAPABILITIES),
                 'removed': removed,

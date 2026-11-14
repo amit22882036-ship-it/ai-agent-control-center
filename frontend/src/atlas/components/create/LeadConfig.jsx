@@ -1,6 +1,6 @@
 import { useId } from 'react'
 import Icon from '../Icon'
-import { ACCESS_LEVELS, FULL_ACCESS_WARNING, accessText } from '../../model/access.mjs'
+import { ACCESS_HINT, ACCESS_LEVELS, FULL_ACCESS_WARNING, accessText } from '../../model/access.mjs'
 import { Button } from '../primitives'
 import { TextField } from '../controls'
 import { Check, GroupedSelect } from '../agent/fields'
@@ -85,6 +85,7 @@ export function LeadSettings({ provider, models, picker, onPicker, sandbox, onSa
     <div className="a-lc-wide a-access">
       <Choice label="Access" value={sandbox} disabled={disabled} onChange={onSandbox} options={ACCESS_LEVELS} />
       <p className="a-fine a-access-text">{accessText(provider, sandbox)}</p>
+      <p className="a-fine">{ACCESS_HINT}</p>
       {sandbox === 'full-access' && <div className="a-access-full" role="group" aria-label="Full Access">
         <p className="a-access-warn"><Icon name="shield" size={15} />{FULL_ACCESS_WARNING}</p>
         <Check tone="warn" checked={fullConfirmed} disabled={disabled} onChange={onFullConfirmed}>

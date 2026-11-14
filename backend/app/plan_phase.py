@@ -149,6 +149,21 @@ def approval_reply_text(answer, revision):
             'access.\n' + _execution_steps(revision))
 
 
+# The start of the Needs you question for a plan awaiting approval; the task list recognizes it by this.
+APPROVAL_PREFIX = 'Plan ready for your approval.'
+
+
+def proposal_view(content):
+    """The plan the person is asked to approve, as data for the interface: one row per proposed part."""
+    if not isinstance(content, dict):
+        return None
+    items = content.get('items') or [] if content.get('decision') == 'propose' else []
+    return {'decision': content.get('decision'), 'rationale': str(content.get('rationale') or '')[:2000],
+            'items': [{'proposal_id': str(item.get('proposal_id', ''))[:64], 'deliverable': str(item.get('deliverable', ''))[:2000],
+                       'depends_on': [str(d)[:64] for d in (item.get('depends_on') or [])][:16]}
+                      for item in items[:16] if isinstance(item, dict)]}
+
+
 def approval_question(content):
     """The Needs you question for a plan awaiting the person's approval."""
     items = content.get('items') or []
@@ -157,5 +172,5 @@ def approval_question(content):
         summary = f'The lead proposes {len(items)} part(s) for helpers: {parts}.'
     else:
         summary = 'The lead proposes to do the work itself.'
-    return (f"Plan ready for your approval. {summary} Reason: {content.get('rationale', '')} "
+    return (f"{APPROVAL_PREFIX} {summary} Reason: {content.get('rationale', '')} "
             "Reply 'approve' to start, describe the changes you want, or reply 'reject' to have the lead work alone.")

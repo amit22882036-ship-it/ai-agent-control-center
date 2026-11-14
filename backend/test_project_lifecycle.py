@@ -386,6 +386,43 @@ class ProjectLifecycleTests(unittest.TestCase):
         self.assertIsNone(deleted['folder'])
         self.call('GET', f"/projects/{project['project_id']}", expected=404)
 
+    def snapshot(self, root):
+        return {str(path.relative_to(root)): (path.stat().st_size, path.stat().st_mtime_ns, path.read_bytes() if path.is_file() else None)
+                for path in sorted(root.rglob('*'))}
+
+    def test_remove_from_control_center_never_touches_the_folder(self):
+        # The default removal: the project leaves the Control Center; its folder (the person's code) stays as is.
+        project, root = self.project()
+        agent = self.start(project['project_id'])
+        self.stop(project['project_id'])
+        before = self.snapshot(root)
+        removed = self.call('POST', f"/projects/{project['project_id']}/trash", {'keep_folder': True})
+        self.assertTrue(removed['trashed'])
+        self.assertEqual((removed['trash']['folder_kept'], removed['trash']['path'], removed['trash']['original_root_path']),
+                         (True, None, canonical_path(root)[0]))
+        self.assertEqual(self.snapshot(root), before)
+        self.assertFalse(self.trash.exists() and any(self.trash.rglob('*')))
+        self.assertTrue(self.task_for(agent))  # Its history stays with it.
+        # Restore links it to the same folder again.
+        restored = self.call('POST', f"/projects/{project['project_id']}/restore", {})
+        self.assertEqual((restored['trashed'], restored['root_path']), (False, canonical_path(root)[0]))
+        self.assertEqual(self.snapshot(root), before)
+        # Delete permanently after a keep-folder removal deletes records and worktrees only, never the folder.
+        self.call('POST', f"/projects/{project['project_id']}/trash", {'keep_folder': True})
+        deleted = self.call('DELETE', f"/projects/{project['project_id']}", {'confirm_name': 'Shop'})
+        self.assertTrue(deleted['deleted'])
+        self.assertIsNone(deleted['folder'])
+        self.assertEqual(self.snapshot(root), before)
+        self.call('GET', f"/projects/{project['project_id']}", expected=404)
+        self.call('POST', f"/projects/{project['project_id']}/trash", {'keep_folder': 'yes'}, 422)
+
+    def test_moving_the_folder_to_the_trash_stays_a_separate_choice(self):
+        project, root = self.project()
+        moved = self.call('POST', f"/projects/{project['project_id']}/trash", {})
+        self.assertFalse(root.exists())
+        self.assertFalse(moved['trash']['folder_kept'])
+        self.assertTrue(Path(moved['trash']['path']).is_dir())
+
     # ------------------------------------------------------------ safety and recovery
 
     def test_protected_locations(self):

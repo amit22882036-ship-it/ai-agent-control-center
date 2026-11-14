@@ -116,10 +116,16 @@ class PlanPhaseTests(unittest.TestCase):
         self.assertTrue(question.startswith('Plan ready for your approval. The lead proposes 2 part(s) for helpers:'))
         self.assertIn("Reply 'approve' to start", question)
         self.assertEqual(self.phase()['phase'], 'awaiting_approval')
+        # The interface shows the plan part by part (name and deliverable) with Approve / changes / Work alone.
+        proposal = self.phase()['proposal']
+        self.assertEqual(proposal['decision'], 'propose')
+        self.assertEqual(len(proposal['items']), 2)
+        self.assertTrue(all(item['proposal_id'] and item['deliverable'] for item in proposal['items']))
         self.assertEqual(len(self.commands), 1)
         with patch.object(manager, '_resume_cwd', return_value=self.root):
             manager.reply_agent(key, 'approve')
         self.assertEqual(self.phase()['phase'], 'executing')
+        self.assertNotIn('proposal', self.phase())  # Only while it waits for the person.
         resumed = self.prompt(key)
         self.assertIn('the person reviewed your plan (revision 1) and replied:\napprove', resumed)
         self.assertEqual(self.access()[-1], 'workspace-write')

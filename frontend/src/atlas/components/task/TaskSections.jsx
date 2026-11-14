@@ -1,4 +1,5 @@
 import PlanApproval from './PlanApproval'
+import ContinueRecovery from './ContinueRecovery'
 import { Fragment, useMemo, useRef, useState } from 'react'
 import Icon from '../Icon'
 import { Avatar, StatusBead } from '../identity'
@@ -59,6 +60,7 @@ export function ProgressCard({ progress, activity, taskId, store, onOpenTask }) 
     {progress.status && <p className={`a-tstate a-tone-${progress.status.tone}`}>{progress.status.label}{progress.status.detail ? <span className="a-muted"> · {progress.status.detail}</span> : null}</p>}
     {progress.facts.map((fact) => <p key={fact.text} className={`a-fine${fact.tone === 'alert' ? ' a-tone-alert' : ''}`}>{fact.text}</p>)}
     {progress.continuation && <p className="a-fine">{progress.continuation.text}</p>}
+    {progress.continuation?.phase === 'recovery_required' && <ContinueRecovery taskId={taskId} reason={progress.continuation.reason} />}
     {(progress.blockers.length > 0 || progress.replanning.length > 0) && <div className="a-tblock">
       <h3>What holds it</h3>
       <ul className="a-tlist">

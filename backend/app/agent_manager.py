@@ -3240,6 +3240,10 @@ def orchestration_status(task_id):
             WHERE d.parent_task_id=? ORDER BY d.rowid''', (task_id,))]
         decision = managed_orchestration.decision(db, task_id)
         phase = plan_phase.view(plan_phase.get(db, task_id))
+        if phase and phase['phase'] == 'awaiting_approval':
+            # The plan the person is asked to approve, so the interface can show it part by part.
+            latest = planning.current(db, task_id)
+            phase = {**phase, 'proposal': plan_phase.proposal_view(latest['content']) if latest else None}
     continuation = ({key: current[key] for key in ('phase', 'mode', 'last_error', 'plan_consumed')}
                     if current else None)
     return {'task_id': task_id, 'continuation': continuation, 'materializations': materializations,
@@ -5008,9 +5012,9 @@ def stop_project_work(project_id):
 
 
 @_synchronized
-def trash_project(project_id, folder_missing=False):
+def trash_project(project_id, folder_missing=False, keep_folder=False):
     result = project_lifecycle.move_to_trash(_task_store(), project_id, _project_agent_statuses(project_id), storage_root(),
-                                             folder_missing=folder_missing)
+                                             folder_missing=folder_missing, keep_folder=keep_folder)
     _emit_agent_change(None)
     return result
 

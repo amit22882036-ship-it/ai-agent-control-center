@@ -44,6 +44,9 @@ export const agentActions = {
   remove: (id, body, options) => send('POST', `${agent(id)}/remove`, body, options),
   retryRemoval: (removalId, options) => send('POST', `/agent-removals/${encode(removalId)}/retry`, {}, options),
   transfer: (taskId, body, options) => send('POST', `${task(taskId)}/responsibility/transfer`, body, options),
+  // A lead's continuation that needs inspection: back to waiting (only once its agent has ended), then one pass.
+  rearmContinuation: (taskId, options) => send('POST', `${task(taskId)}/recovery/rearm`, { confirm_ended: true }, options),
+  wakeOrchestration: (taskId, options) => send('POST', `${task(taskId)}/orchestration/wake`, undefined, options),
   // Task policies (the agent's allocation task).
   saveAutoPolicy: (taskId, payload, options) => send('PUT', `${task(taskId)}/auto-allocation`, payload, options),
   removeAutoPolicy: (taskId, revision, options) => send('DELETE', `${task(taskId)}/auto-allocation?expected_revision=${encode(revision)}`, undefined, options),
@@ -102,8 +105,9 @@ export const agentActions = {
   unhideProject: (projectId, options) => send('POST', `/projects/${encode(projectId)}/unhide`, undefined, options),
   stopProjectWork: (projectId, options) => send('POST', `/projects/${encode(projectId)}/stop-work`, undefined, options),
   // folderMissing: the person chose to remove a project whose folder was already deleted (records only).
-  trashProject: (projectId, options, folderMissing = false) => send('POST', `/projects/${encode(projectId)}/trash`,
-    folderMissing ? { folder_missing: true } : undefined, options),
+  // keepFolder: Remove from Control Center, records only; the existing folder is never moved or changed.
+  trashProject: (projectId, options, folderMissing = false, keepFolder = false) => send('POST', `/projects/${encode(projectId)}/trash`,
+    folderMissing ? { folder_missing: true } : keepFolder ? { keep_folder: true } : undefined, options),
   restoreProject: (projectId, targetPath, options) => send('POST', `/projects/${encode(projectId)}/restore`,
     targetPath ? { target_path: targetPath } : {}, options),
   deleteProject: (projectId, confirmName, options) => send('DELETE', `/projects/${encode(projectId)}`, { confirm_name: confirmName }, options),

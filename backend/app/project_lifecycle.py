@@ -97,8 +97,11 @@ def describe(row):
         'trash': None if state is None else {
             'state': state, 'trashed_at': get('trashed_at'), 'original_root_path': get('original_root_path'),
             'path': get('trash_path'), 'kind': get('trash_kind'), 'error': get('lifecycle_error'),
-            # Removed after its folder had already been deleted: only its records are in the Trash.
-            'folder_missing': state is not None and get('trash_path') is None},
+            # Removed as records only (its folder had been deleted, or the person kept it): nothing on disk moved.
+            'folder_missing': state is not None and get('trash_path') is None,
+            # Removed while keeping its folder: the folder is still where it was, untouched.
+            'folder_kept': (state is not None and get('trash_path') is None and bool(get('original_root_path'))
+                            and os.path.isdir(get('original_root_path')))},
     }
 
 
@@ -480,10 +483,12 @@ def preview(store, project_id, agent_statuses, storage_root):
     }
 
 
-def move_to_trash(store, project_id, agent_statuses, storage_root, folder_missing=False):
+def move_to_trash(store, project_id, agent_statuses, storage_root, folder_missing=False, keep_folder=False):
     """Move the Project's folder into the Trash. With `folder_missing` (the person's explicit choice after
     being told the folder is gone), a Project whose folder no longer exists goes to the Trash as records
-    only: nothing on disk is moved or deleted, and its history and Task worktrees are kept."""
+    only: nothing on disk is moved or deleted, and its history and Task worktrees are kept. With `keep_folder`
+    (Remove from Control Center), the same records-only removal for a folder that exists: the folder is never
+    moved, changed or deleted, and Delete permanently later removes only this application's records and worktrees."""
     from .task_workspaces import task_lock
     with task_lock(store, f'project:{project_id}', blocking=False):
         with store._connection() as db:
@@ -500,7 +505,7 @@ def move_to_trash(store, project_id, agent_statuses, storage_root, folder_missin
                 raise LifecycleRefused('project_busy', 'Stop the work in this project first.', _activity_reasons(found),
                                        activity=found)
             missing = not os.path.lexists(root)
-            if missing and folder_missing:
+            if (missing and folder_missing) or keep_folder:
                 # Nothing to move. A placeholder location inside the Trash (never created) releases the
                 # original path, so the folder can be added or restored there again.
                 placeholder, key = canonical_path(trash_root() / 'missing' / str(uuid4()))

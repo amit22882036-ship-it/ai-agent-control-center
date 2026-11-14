@@ -20,7 +20,7 @@ import { projectDirectory, projectHue, projectLabel, projectMenu } from '../mode
 import { captureAnchors, playLensTransition } from '../lensTransition'
 import { rememberWork, requestReply } from '../workContext'
 import { pageShortcut } from '../keys.mjs'
-import { ATTENTION_KINDS, attentionInView, attentionKind, stepAttention } from '../model/attention.mjs'
+import { ATTENTION_KINDS, PLAN_APPROVAL_LABEL, attentionInView, attentionKind, stepAttention } from '../model/attention.mjs'
 import { StatusBead } from '../components/identity'
 
 const EMPTY = emptyStore()
@@ -44,6 +44,7 @@ function AttentionBar({ ids, selectedId, derived, summary, filtered, complete, o
   // or when the backend counts questions the loaded pages don't show.
   if ((!ids.length || index < 0) && !unlisted) return null
   const kind = index >= 0 ? attentionKind(derived, selectedId) : null
+  const plan = kind === 'reply' && derived.agents[selectedId]?.current?.awaitsPlanApproval === true
   const n = ids.length
   const where = filtered ? ' in this view' : complete ? '' : ' among loaded tasks'
   const text = !n ? `Nothing loaded${filtered ? ' in this view' : ''} needs you`
@@ -51,7 +52,7 @@ function AttentionBar({ ids, selectedId, derived, summary, filtered, complete, o
   const alone = n < 2 && index >= 0
   return <div className="a-attnbar" role="navigation" aria-label="Tasks that need you">
     <StatusBead state="ask" size={14} decorative />
-    <span className="a-attnbar-text">{text}{kind ? <span className="a-attnbar-kind"> · {ATTENTION_KINDS[kind].label}</span> : null}</span>
+    <span className="a-attnbar-text">{text}{kind ? <span className="a-attnbar-kind"> · {plan ? PLAN_APPROVAL_LABEL : ATTENTION_KINDS[kind].label}</span> : null}</span>
     {n > 0 && <span className="a-attnbar-steps">
       <Button size="sm" variant="ghost" icon="left" onClick={() => onStep(-1)} disabled={alone}
         aria-label="Previous task that needs you" title="Previous · Shift A" aria-keyshortcuts="Shift+A">Previous</Button>

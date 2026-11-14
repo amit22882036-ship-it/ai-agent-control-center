@@ -108,6 +108,8 @@ function normalizeAgent(raw, issues, taskId) {
     effort: text(raw.effort, 32),
     status: oneOf(raw.status, AGENT_STATUSES, 'agent.status', issues, taskId),
     asksUser: raw.asks_user === true,
+    // Its question is a plan waiting for the person's approval (Approve, Request changes, Work alone).
+    awaitsPlanApproval: raw.awaits_plan_approval === true,
     providerCondition: providerCondition(raw.provider_condition),
     autonomous: raw.autonomous === true,
     removed: raw.removed === true || removal?.state === 'removed',

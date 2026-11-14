@@ -103,7 +103,8 @@ export function progressView({ task, status, detail, orchestration }) {
   return {
     status: status ? { label: status.label, tone: status.tone, detail: status.detail } : null,
     facts, blockers, replanning,
-    continuation: continuation ? { phase: continuation.phase, text: CONTINUATION_TEXT[continuation.phase] || humanize(continuation.phase) } : null,
+    continuation: continuation ? { phase: continuation.phase, text: CONTINUATION_TEXT[continuation.phase] || humanize(continuation.phase),
+      reason: typeof continuation.last_error === 'string' ? continuation.last_error : null } : null,
     plan, issues,
     rounds: task?.rounds ?? 0,
     planRevision: task?.planRevision ?? decision?.revision ?? null,

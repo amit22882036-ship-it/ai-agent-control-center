@@ -20,6 +20,11 @@ export const ATTENTION_KINDS = {
   stopped: { label: 'Stopped: needs attention', short: 'Stopped: needs attention', action: 'Review' },
 }
 export const KIND_ORDER = ['reply', 'owner', 'recovery', 'integration', 'stopped']
+// A question that is a plan waiting for approval is still a reply (counted with questions), named as a plan.
+export const PLAN_APPROVAL_LABEL = 'Plan waiting for approval'
+export function attentionLabel(entry) {
+  return entry.plan ? PLAN_APPROVAL_LABEL : ATTENTION_KINDS[entry.kind].label
+}
 
 // The kind of attention a loaded Task needs, or null.
 export function attentionKind(derived, taskId) {
@@ -44,6 +49,7 @@ function item(store, derived, taskId, kind) {
     // Only the current Agent is named: a question is answered by whoever holds the Task now.
     agentId: agent?.id || null,
     agentName: agent ? agentLabel(agent) : null,
+    plan: kind === 'reply' && agent?.awaitsPlanApproval === true,
     projectId: task.projectId,
     updatedAt: task.updatedAt,
   }

@@ -113,3 +113,9 @@
 
 .atlas .a-plan-phase { display: grid; gap: 6px; margin: 4px 0 8px; }
 .atlas .a-plan-phase .a-act-row { margin: 0; }
+.atlas .a-plan-parts { margin: 0; padding-inline-start: 20px; display: grid; gap: 4px; }
+.atlas .a-plan-changes { display: grid; gap: 6px; justify-items: start; }
+.atlas .a-plan-changes .a-field { width: 100%; }
+.atlas .a-recover { display: grid; gap: 6px; justify-items: start; }
+.atlas .a-recover-confirm { display: grid; gap: 6px; }
+.atlas .a-recover-confirm .a-act-row { margin: 0; }

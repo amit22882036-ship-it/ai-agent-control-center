@@ -211,7 +211,8 @@ export default function ProjectPlates({ projects, order, stats, onCommit, onRena
               { label: 'Move down', icon: 'right', disabled: !reorderable || index === shown.length - 1, onSelect: () => commit(moveProject(visibleIds, project.id, 1), project.id) },
               { separator: true },
               { label: 'Hide', icon: 'eyeoff', onSelect: () => onHide(project) },
-              { label: 'Move to Trash…', icon: 'trash', danger: true, onSelect: () => onTrash(project) },
+              { label: 'Remove from Control Center…', icon: 'trash', onSelect: () => onTrash(project, 'remove') },
+              { label: 'Move folder to Trash…', icon: 'trash', danger: true, onSelect: () => onTrash(project, 'move') },
             ]} />
           </div>
         </div>
