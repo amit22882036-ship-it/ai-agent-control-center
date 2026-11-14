@@ -59,6 +59,10 @@ PACKAGES = {'codex': '@openai/codex', 'claude': '@anthropic-ai/claude-code', 'ge
 REGISTRY = 'https://registry.npmjs.org/-/package/{package}/dist-tags'
 NPM_REGISTRY = 'https://registry.npmjs.org/'
 EMPTY_CONFIG = '<empty-config>'  # Replaced at run time by an empty file in the operation's own folder.
+# A second, distinct empty file for npm's global configuration: npm 11 refuses one file loaded as both user and
+# global configuration ("double-loading config ... as global, previously loaded as user") and installs nothing.
+EMPTY_GLOBAL_CONFIG = '<empty-global-config>'
+GLOBAL_CONFIG_NAME = 'empty-global-npmrc'
 BLOCKING = ('running', 'uncertain')  # Statuses that hold the provider's maintenance gate.
 # The only variables an npm installation inherits (plus a PATH built here). Everything else,
 # including NODE_OPTIONS, NODE_PATH, NODE_EXTRA_CA_CERTS and every npm_config_* override, is dropped.
@@ -400,7 +404,7 @@ def npm_arguments(provider, version):
     take precedence over every npmrc file and environment setting."""
     prefix = (_env('APPDATA') or Path()) / 'npm'
     return ['install', '--global', f'{PACKAGES[provider]}@{version}', f'--prefix={prefix}', f'--registry={NPM_REGISTRY}',
-            f'--userconfig={EMPTY_CONFIG}', f'--globalconfig={EMPTY_CONFIG}', '--ignore-scripts', '--strict-ssl=true',
+            f'--userconfig={EMPTY_CONFIG}', f'--globalconfig={EMPTY_GLOBAL_CONFIG}', '--ignore-scripts', '--strict-ssl=true',
             '--no-audit', '--no-fund', '--update-notifier=false']
 
 
@@ -635,7 +639,9 @@ def start(connect, provider, plan_id, digest, publish=lambda: None, controller=N
 def command_for(plan, empty_config=None):
     """The process command for a plan: `.cmd` shims (npm, npm-installed CLIs) run through
     cmd.exe with fixed tokens, an executable runs directly; never shell=True."""
-    arguments = [argument.replace(EMPTY_CONFIG, str(empty_config)) if empty_config else argument for argument in plan.arguments]
+    global_config = Path(empty_config).with_name(GLOBAL_CONFIG_NAME) if empty_config else None
+    arguments = [argument.replace(EMPTY_CONFIG, str(empty_config)).replace(EMPTY_GLOBAL_CONFIG, str(global_config))
+                 if empty_config else argument for argument in plan.arguments]
     if Path(plan.executable).suffix.lower() == '.cmd':
         return providers._cmd_line(Path(plan.executable), [f'"{a}"' if ' ' in a else a for a in arguments])
     return [plan.executable, *arguments]
@@ -660,6 +666,7 @@ def _run(connect, operation_id, plan, publish, job_name, state):
     folder = Path(tempfile.mkdtemp(prefix='cc-provider-setup-'))  # Empty: no project npmrc or package.json.
     empty = folder / 'empty-npmrc'
     empty.write_text('', encoding='utf-8')
+    (folder / GLOBAL_CONFIG_NAME).write_text('', encoding='utf-8')
     launch = None
     try:
         options = dict(env=environment_for(plan), cwd=str(folder), shell=False)

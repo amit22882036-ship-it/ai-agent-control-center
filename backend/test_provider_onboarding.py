@@ -264,7 +264,7 @@ def onboarding_environment(test, root):
 
 def npm_args(provider, version, appdata):
     return ['install', '--global', f'{onboarding.PACKAGES[provider]}@{version}', f'--prefix={Path(appdata) / "npm"}',
-            '--registry=https://registry.npmjs.org/', '--userconfig=<empty-config>', '--globalconfig=<empty-config>',
+            '--registry=https://registry.npmjs.org/', '--userconfig=<empty-config>', '--globalconfig=<empty-global-config>',
             '--ignore-scripts', '--strict-ssl=true', '--no-audit', '--no-fund', '--update-notifier=false']
 
 
@@ -407,8 +407,9 @@ class OnboardingOperationTests(Store, unittest.TestCase):
         self.assertEqual(Path(effective['prefix']), self.appdata / 'npm')
         self.assertEqual(effective['ignore-scripts'], 'true')
         self.assertIsNone(effective['script-shell'])
-        self.assertEqual((Path(effective['userconfig']).name, Path(effective['globalconfig']).name), ('empty-npmrc', 'empty-npmrc'))
-        self.assertEqual(entry['cwd_entries'], ['empty-npmrc'])  # A fresh folder: no project npmrc or package.json.
+        # Two distinct empty files: npm 11 refuses one file loaded as both user and global configuration.
+        self.assertEqual((Path(effective['userconfig']).name, Path(effective['globalconfig']).name), ('empty-npmrc', 'empty-global-npmrc'))
+        self.assertEqual(sorted(entry['cwd_entries']), ['empty-global-npmrc', 'empty-npmrc'])  # No project npmrc or package.json.
         names = {name.upper() for name in entry['env']}
         self.assertFalse({'NODE_OPTIONS', 'NODE_PATH', 'NODE_EXTRA_CA_CERTS', 'NODE_TLS_REJECT_UNAUTHORIZED'} & names)
         self.assertFalse([name for name in names if name.startswith('NPM_CONFIG_')])
@@ -666,6 +667,8 @@ class OnboardingOperationTests(Store, unittest.TestCase):
         self.assertIn('/d /s /v:off /c', command)
         self.assertIn('@openai/codex@0.154.0', command)
         self.assertIn(f'"--userconfig={self.root / "with space" / "empty-npmrc"}"', command)
+        self.assertIn(f'"--globalconfig={self.root / "with space" / "empty-global-npmrc"}"', command)
+        self.assertNotIn('<empty', command)
 
     def test_requests_are_validated_in_the_backend(self):
         with self.assertRaisesRegex(ValueError, 'only for Codex'):
