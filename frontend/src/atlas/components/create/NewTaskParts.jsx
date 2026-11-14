@@ -2,13 +2,14 @@ import { SPLIT_POLICIES } from '../../model/planPhase.mjs'
 import Icon from '../Icon'
 import { AUTO_PROVIDERS } from '../../../allocationPresentation.mjs'
 import { providerLabel } from '../../../providerPresentation.mjs'
-import { toolState } from '../../model/newTask.mjs'
+import { HELPER_EFFORTS, toolState } from '../../model/newTask.mjs'
+import { PlainSelect } from '../agent/fields'
 import { TOOLS } from '../../vocabulary.mjs'
 
 const TOOL_COLOR = { claude: 'blue', codex: 'green', gemini: 'yellow', mock: 'neutral' }
 
 // Helpers: optional, only for a Claude Code or Codex lead, and only the two real policies.
-export function HelpersSection({ draft, view, update, policy, statuses, disabled }) {
+export function HelpersSection({ draft, view, update, policy, statuses, disabled, catalog = null }) {
   const lead = providerLabel(draft.provider)
   const model = view.config.model || 'its provider default'
   return <section className="a-nt-sec" aria-labelledby="nt-helpers">
@@ -58,9 +59,26 @@ export function HelpersSection({ draft, view, update, policy, statuses, disabled
             })}
           </div>
         </>}
-      <p className="a-note-i"><Icon name="info" size={14} /><span>Helpers don’t inherit {model}{view.config.effort ? ` · ${view.config.effort}` : ''}: each helper’s
-        model and effort come from the lead’s choice{draft.allocation === 'auto' ? ' or the automatic pick' : ''}. Limits and preferences for automatic choice can be
-        set on the task after it starts.</span></p>
+      <span className="a-lc-l" id="nt-hlimit">Helpers’ model and effort</span>
+      <p className="a-expl">Each helper uses {model}{view.config.effort ? ` · ${view.config.effort}` : ''} unless the lead picks another model or effort for
+        that part (lighter for simple work, stronger for hard parts) and says why. Your limit always applies.</p>
+      <div className="a-hlimit" role="group" aria-labelledby="nt-hlimit">
+        <PlainSelect label="Most effort a helper may use" value={draft.helperMaxEffort || 'lead'} disabled={disabled}
+          onChange={(helperMaxEffort) => update({ helperMaxEffort })}
+          options={[{ value: 'lead', label: `Same as the lead${view.config.effort ? ` (${view.config.effort})` : ''}` },
+            ...HELPER_EFFORTS.map((level) => ({ value: level, label: level[0].toUpperCase() + level.slice(1) })),
+            { value: 'none', label: 'No limit' }]} />
+        {draft.provider !== 'gemini' && (catalog?.models || []).some((item) => item.selectable) && <div className="a-pchips" role="group" aria-label="Models helpers may use (none checked: any listed model)">
+          {(catalog?.models || []).filter((item) => item.selectable).map((item) => {
+            const on = (draft.helperModels || []).includes(item.model_id)
+            return <label key={item.model_id} className={`a-pchip${on ? ' is-on' : ''}`}>
+              <input type="checkbox" name="helper-models" value={item.model_id} checked={on} disabled={disabled}
+                onChange={(event) => update({ helperModels: event.target.checked ? [...(draft.helperModels || []), item.model_id] : (draft.helperModels || []).filter((id) => id !== item.model_id) })} />
+              {item.display_name || item.model_id}</label>
+          })}
+        </div>}
+        <small className="a-fine">Models checked here are the only ones helpers may use; none checked allows any listed model. A higher effort is lowered to your limit, and a model outside it falls back to the lead’s.</small>
+      </div>
     </div>}
   </section>
 }

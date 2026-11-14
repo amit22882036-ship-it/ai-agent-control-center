@@ -29,12 +29,12 @@ class HelperModelTests(unittest.TestCase):
         self.assertEqual(manager._helper_model({'child_provider': 'codex'}, self.LEAD, 'codex'),
                          ('gpt-5.6-sol', 'high', 'inherited from the lead'))
         self.assertEqual(manager._helper_model({'child_provider': 'codex', 'child_effort': 'low'}, self.LEAD, 'codex'),
-                         ('gpt-5.6-sol', 'low', 'inherited from the lead'))
+                         ('gpt-5.6-sol', 'low', 'chosen by the lead'))
 
     def test_a_requested_model_wins_and_another_provider_uses_its_default(self):
         self.assertEqual(manager._helper_model({'child_provider': 'codex', 'child_model': 'gpt-5.6-terra',
                                                 'child_effort': 'medium'}, self.LEAD, 'codex'),
-                         ('gpt-5.6-terra', 'medium', 'requested by the lead'))
+                         ('gpt-5.6-terra', 'medium', 'chosen by the lead'))
         self.assertEqual(manager._helper_model({'child_provider': 'claude'}, self.LEAD, 'claude'),
                          (None, None, 'Claude Code default model'))
 
@@ -291,6 +291,75 @@ class StartupWakeTests(unittest.TestCase):
         self.assertTrue(all(c.kwargs == {'reason': 'startup'} for c in wake.call_args_list))
         with patch.object(manager, '_store', None):
             self.assertEqual(manager.wake_idle_parents(), [])
+
+
+
+class HelperChoiceTests(unittest.TestCase):
+    """The lead chooses a model and effort per helper, with a reason, within the person's limit (U18)."""
+    LEAD = {'agent_type': 'codex', 'model': 'gpt-5.6-sol', 'effort': 'medium'}
+
+    def setUp(self):
+        self.db = sqlite3.connect(':memory:')
+        self.db.executescript('''CREATE TABLE tasks (task_id TEXT PRIMARY KEY, parent_task_id TEXT);
+            INSERT INTO tasks VALUES ('root', NULL), ('child', 'root');
+            CREATE TABLE promotion_items (delegation_id TEXT, coordination TEXT);
+            INSERT INTO promotion_items VALUES ('d1', '{"reason": "Mechanical tests that follow a pattern."}');''')
+        from app import delegation_safety
+        delegation_safety.migrate_helper_limits(self.db)
+        self.addCleanup(self.db.close)
+
+    def resolve(self, record, **limits):
+        from unittest.mock import patch
+        from app import delegation_safety
+        if limits:
+            delegation_safety.set_helper_limits(self.db, 'root', limits.get('max_effort'), limits.get('models', []))
+        entries = {'gpt-5.6-luna': {'supported_efforts': ['low', 'medium', 'high', 'xhigh', 'max']},
+                   'gpt-5.6-sol': {'supported_efforts': ['low', 'medium', 'high', 'xhigh', 'max', 'ultra']}}
+        with patch.object(manager, '_store', None), \
+                patch.object(model_catalog, 'lookup', side_effect=lambda db, provider, model, scope=None: entries.get(model)):
+            return manager._resolved_helper_model(dict(record, delegation_id='d1'), self.LEAD, 'codex', task_id='child', db=self.db)
+
+    def test_the_leads_choice_and_reason_are_used(self):
+        model, effort, why = self.resolve({'child_model': 'gpt-5.6-luna', 'child_effort': 'low'})
+        self.assertEqual((model, effort), ('gpt-5.6-luna', 'low'))
+        self.assertEqual(why, 'chosen by the lead: Mechanical tests that follow a pattern.')
+
+    def test_what_the_lead_leaves_open_is_inherited(self):
+        self.assertEqual(self.resolve({}), ('gpt-5.6-sol', 'medium', 'inherited from the lead'))
+
+    def test_the_persons_limit_lowers_effort_and_keeps_models_in_the_allowed_list(self):
+        model, effort, why = self.resolve({'child_model': 'gpt-5.6-sol', 'child_effort': 'xhigh'}, max_effort='medium')
+        self.assertEqual((model, effort), ('gpt-5.6-sol', 'medium'))
+        self.assertIn('effort lowered from xhigh to medium by your helper limit', why)
+        model, effort, why = self.resolve({'child_model': 'gpt-6-astra', 'child_effort': 'low'}, models=['gpt-5.6-luna', 'gpt-5.6-sol'])
+        self.assertEqual((model, effort), ('gpt-5.6-sol', 'low'))  # Back to the lead's model, which is allowed.
+        self.assertIn('gpt-6-astra is not in your allowed helper models', why)
+
+    def test_an_effort_the_model_does_not_offer_falls_back_to_its_default(self):
+        model, effort, why = self.resolve({'child_model': 'gpt-5.6-luna', 'child_effort': 'ultra'})
+        self.assertEqual((model, effort), ('gpt-5.6-luna', None))
+        self.assertIn('ultra effort is not offered for gpt-5.6-luna', why)
+
+    def test_the_limit_is_found_up_the_tree_and_effort_order_is_respected(self):
+        from app import delegation_safety
+        delegation_safety.set_helper_limits(self.db, 'root', 'low', ['gpt-5.6-luna'])
+        self.assertEqual(delegation_safety.helper_limits(self.db, 'child'), {'max_effort': 'low', 'allowed_models': ['gpt-5.6-luna']})
+        self.assertEqual(delegation_safety.capped_effort('high', 'low'), 'low')
+        self.assertEqual(delegation_safety.capped_effort('low', 'high'), 'low')
+        self.assertEqual(delegation_safety.capped_effort(None, 'medium'), 'medium')
+        with self.assertRaises(ValueError):
+            delegation_safety.set_helper_limits(self.db, 'root', 'enormous')
+
+    def test_the_protocol_accepts_effort_and_reason_per_helper(self):
+        from app import orchestration
+        decision = json.dumps(dict(protocol=orchestration.PROTOCOL, decision_key='split', rationale='Two parts.',
+            delegate=[dict(proposal_id='docs', deliverable='Docs', responsibility='Only docs/', scope=dict(namespace='component', key='docs'),
+                           model='gpt-5.6-luna', effort='low', reason='Simple text edits.')]))
+        value = orchestration.validate(decision)
+        self.assertEqual({k: value['delegate'][0][k] for k in ('model', 'effort', 'reason')},
+                         {'model': 'gpt-5.6-luna', 'effort': 'low', 'reason': 'Simple text edits.'})
+        with self.assertRaises(ValueError):
+            orchestration.validate(decision.replace('Simple text edits.', 'x' * 400))
 
 
 if __name__ == '__main__':

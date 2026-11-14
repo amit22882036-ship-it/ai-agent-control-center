@@ -121,7 +121,7 @@ class TaskTests(unittest.TestCase):
             self.assertEqual(assignment['ended_at'] is None, record['status'] in ['running', 'waiting'])
         self.assertEqual(AgentStore(self.path).list_tasks(), store.list_tasks())
         with store._connection() as db:
-            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 41)
+            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 42)
 
     def test_startup_reconciles_running_and_retains_waiting_without_processes(self):
         # Use the real startup path but restore global runtime registries afterward.

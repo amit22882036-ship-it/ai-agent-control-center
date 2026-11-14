@@ -119,3 +119,4 @@
 .atlas .a-recover { display: grid; gap: 6px; justify-items: start; }
 .atlas .a-recover-confirm { display: grid; gap: 6px; }
 .atlas .a-recover-confirm .a-act-row { margin: 0; }
+.atlas .a-hlimit { display: grid; gap: 8px; justify-items: start; }

@@ -6,7 +6,8 @@ export function autonomyEligible(provider, parentId = null) {
   return MANAGED_PROVIDERS.includes(provider) && parentId === null
 }
 export function creationPayload(task, provider, sandbox, choice, parentId = null, projectId = undefined, model = undefined,
-  { effort = null, attempt = false, autoProviders = null, helperAccess = null, external = false, splitPolicy = null } = {}) {
+  { effort = null, attempt = false, autoProviders = null, helperAccess = null, external = false, splitPolicy = null,
+    helperMaxEffort = null, helperModels = [] } = {}) {
   if (parentId === null && projectId !== undefined && (typeof projectId !== 'string' || !projectId.trim())) throw new Error('Choose a valid Project before starting.')
   const real = provider !== 'mock'
   const selected = real && typeof model === 'string' && model.trim() ? { model: model.trim() } : {}
@@ -24,6 +25,9 @@ export function creationPayload(task, provider, sandbox, choice, parentId = null
   if (real && parentId === null && external === true) selected.external_integrations = true
   // With helpers, the lead plans first; the policy says how that plan becomes work.
   if (autonomous && splitPolicy) selected.split_policy = splitPolicy
+  // The person's limit on what the lead may choose per helper (real tools, a new lead with helpers only).
+  if (autonomous && real && helperMaxEffort) selected.helper_max_effort = helperMaxEffort
+  if (autonomous && real && Array.isArray(helperModels) && helperModels.length) selected.helper_models = [...new Set(helperModels)]
   return { ...(parentId === null && projectId !== undefined ? { project_id: projectId } : {}), task: task.trim(), agent_type: provider, sandbox,
     autonomous, ...selected }
 }

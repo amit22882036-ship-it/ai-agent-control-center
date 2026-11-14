@@ -41,7 +41,7 @@ test('the creation payload is the classic one, with helpers and Auto only for an
   const auto = { ...ready, autonomous: true, allocation: 'auto', autoProviders: ['claude', 'codex'], sandbox: 'workspace-write' }
   assert.deepEqual(newTaskPayload(auto, draftView(auto, context)), { project_id: 'p1', task: 'Fix the parser', agent_type: 'claude',
     sandbox: 'workspace-write', autonomous: true, model: 'Sonnet 4.6', effort: 'high', auto_allocation_providers: ['claude', 'codex'],
-    split_policy: 'lead_decides' })
+    split_policy: 'lead_decides', helper_max_effort: 'high' })  // The helpers' limit defaults to the lead's effort.
   assert.equal(newTaskPayload({ ...auto, splitPolicy: 'approve' }, draftView(auto, context)).split_policy, 'approve')
   assert.equal(newTaskPayload(solo, draftView(solo, context)).split_policy, undefined)
   const explicit = { ...auto, allocation: 'explicit' }
@@ -150,4 +150,20 @@ test('a plan waiting for approval is shown part by part, and named as a plan in 
   // "Asked you a question" hid that the answer is a plan approval.
   assert.equal(attentionLabel({ kind: 'reply', plan: true }), PLAN_APPROVAL_LABEL)
   assert.equal(attentionLabel({ kind: 'reply', plan: false }), 'Waiting for your reply')
+})
+
+test('the helpers limit follows the lead by default and is sent only for a real lead with helpers', async () => {
+  const { helperLimit } = await import('../src/atlas/model/newTask.mjs')
+  const { creationPayload } = await import('../src/autonomousCreation.mjs')
+  assert.equal(helperLimit(undefined, 'medium'), 'medium')
+  assert.equal(helperLimit('lead', null), null)
+  assert.equal(helperLimit('high', 'low'), 'high')
+  assert.equal(helperLimit('none', 'medium'), null)
+  const withHelpers = creationPayload('Do it', 'codex', 'workspace-write', true, null, 'p1', 'gpt-5.6-sol',
+    { effort: 'medium', helperMaxEffort: 'medium', helperModels: ['gpt-5.6-luna', 'gpt-5.6-luna', 'gpt-5.6-sol'] })
+  assert.equal(withHelpers.helper_max_effort, 'medium')
+  assert.deepEqual(withHelpers.helper_models, ['gpt-5.6-luna', 'gpt-5.6-sol'])
+  const alone = creationPayload('Do it', 'codex', 'workspace-write', false, null, 'p1', 'gpt-5.6-sol', { helperMaxEffort: 'medium', helperModels: ['x'] })
+  assert.equal(alone.helper_max_effort, undefined)
+  assert.equal(alone.helper_models, undefined)
 })

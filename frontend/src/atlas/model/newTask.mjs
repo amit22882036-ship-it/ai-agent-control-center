@@ -85,10 +85,21 @@ export function draftView(draft, { policy, statuses, catalog, projects = [] }) {
   return { real, tool, config, chosen, modelReady, canLead, helpers, auto, revokedAuto, project, problem, summary }
 }
 
+// The person's limit on what the lead may choose per helper; "Same as the lead" follows the lead's effort.
+export const HELPER_EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max']
+
+// The helpers' maximum effort sent for a choice: "Same as the lead" is the lead's effort (none when the lead uses its
+// provider's default), "No limit" sends nothing.
+export function helperLimit(choice, leadEffort) {
+  if (!choice || choice === 'lead') return leadEffort || null
+  return choice === 'none' ? null : choice
+}
+
 // The request body for POST /agents/start, built by the classic payload builder.
 export function newTaskPayload(draft, view) {
   return creationPayload(draft.text, draft.provider, draft.sandbox, draft.autonomous, null, view.project.project_id,
     view.config.model || undefined, { effort: view.config.effort, attempt: view.config.attempt,
       autoProviders: draft.allocation === 'auto' ? draft.autoProviders : null, helperAccess: draft.helperAccess,
-      external: draft.external === true, splitPolicy: draft.splitPolicy || 'lead_decides' })
+      external: draft.external === true, splitPolicy: draft.splitPolicy || 'lead_decides',
+      helperMaxEffort: helperLimit(draft.helperMaxEffort, view.config.effort), helperModels: draft.helperModels || [] })
 }

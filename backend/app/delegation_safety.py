@@ -3,6 +3,7 @@
 Callers hold BEGIN IMMEDIATE for ownership changes. No separate tree/Worker
 registry, lifetime quota, timer, or provider calls are introduced here.
 """
+import json
 import os
 
 from . import providers, work_control
@@ -55,6 +56,72 @@ def migrate_access(db):
         task_id TEXT PRIMARY KEY NOT NULL REFERENCES tasks(task_id),
         helper_access TEXT NOT NULL CHECK(helper_access IN ('workspace-write','full-access')),
         created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')))""")
+
+
+EFFORT_ORDER = ('none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra')
+
+
+def migrate_helper_limits(db):
+    """v42: the person's limit on the model and effort a lead may choose for its helpers."""
+    db.execute("""CREATE TABLE IF NOT EXISTS task_helper_limits (
+        task_id TEXT PRIMARY KEY NOT NULL REFERENCES tasks(task_id),
+        max_effort TEXT,
+        allowed_models TEXT NOT NULL DEFAULT '[]',
+        created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')))""")
+    # The model and effort a helper launched with, and why (chosen by the lead, inherited, limited).
+    db.execute("""CREATE TABLE IF NOT EXISTS task_helper_choices (
+        task_id TEXT PRIMARY KEY NOT NULL REFERENCES tasks(task_id),
+        model TEXT, effort TEXT, why TEXT NOT NULL,
+        created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')))""")
+
+
+def record_helper_choice(db, task_id, model, effort, why):
+    if db.execute("SELECT 1 FROM sqlite_master WHERE name='task_helper_choices'").fetchone():
+        db.execute('INSERT OR REPLACE INTO task_helper_choices(task_id,model,effort,why) VALUES (?,?,?,?)',
+                   (task_id, model, effort, str(why)[:600]))
+
+
+def helper_choice(db, task_id):
+    if not db.execute("SELECT 1 FROM sqlite_master WHERE name='task_helper_choices'").fetchone():
+        return None
+    row = db.execute('SELECT model,effort,why FROM task_helper_choices WHERE task_id=?', (task_id,)).fetchone()
+    return {'model': row[0], 'effort': row[1], 'why': row[2]} if row else None
+
+
+def set_helper_limits(db, task_id, max_effort=None, allowed_models=()):
+    if max_effort is not None and max_effort not in EFFORT_ORDER:
+        raise ValueError('The helpers\' maximum effort must be one of: ' + ', '.join(EFFORT_ORDER))
+    models = list(dict.fromkeys(allowed_models or []))
+    if len(models) > 32 or any(not isinstance(m, str) or not m.strip() or len(m) > 128 for m in models):
+        raise ValueError('Allowed helper models are up to 32 model identifiers')
+    db.execute('INSERT OR REPLACE INTO task_helper_limits(task_id,max_effort,allowed_models) VALUES (?,?,?)',
+               (task_id, max_effort, json.dumps(models)))
+
+
+def helper_limits(db, task_id):
+    """The limit of the nearest Task up the tree that has one ({'max_effort','allowed_models'}), or None."""
+    if not db.execute("SELECT 1 FROM sqlite_master WHERE name='task_helper_limits'").fetchone():
+        return None
+    seen = set()
+    while task_id and task_id not in seen:
+        seen.add(task_id)
+        row = db.execute('SELECT max_effort,allowed_models FROM task_helper_limits WHERE task_id=?', (task_id,)).fetchone()
+        if row:
+            return {'max_effort': row[0], 'allowed_models': json.loads(row[1] or '[]')}
+        parent = db.execute('SELECT parent_task_id FROM tasks WHERE task_id=?', (task_id,)).fetchone()
+        task_id = parent[0] if parent else None
+    return None
+
+
+def capped_effort(effort, maximum):
+    """`effort` lowered to `maximum` when it is higher (unknown levels are never raised or guessed)."""
+    if not maximum or maximum not in EFFORT_ORDER:
+        return effort
+    if effort is None:
+        return maximum
+    if effort in EFFORT_ORDER and EFFORT_ORDER.index(effort) > EFFORT_ORDER.index(maximum):
+        return maximum
+    return effort
 
 
 def set_helper_access(db, task_id, helper_access):

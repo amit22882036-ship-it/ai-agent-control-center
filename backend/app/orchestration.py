@@ -19,7 +19,7 @@ FIELDS = {'protocol', 'decision_key', 'rationale', 'delegate'}
 OPTIONAL_FIELDS = {'continuation'}
 ITEM_FIELDS = {'proposal_id', 'deliverable', 'responsibility', 'scope'}
 OPTIONAL_ITEM_FIELDS = {'depends_on', 'parallel', 'resources', 'depends_on_task_ids', 'reuse_task_id',
-                        'provider', 'model', 'allocation'}
+                        'provider', 'model', 'allocation', 'effort', 'reason'}
 REJECTION_REASON_LIMIT = 500
 _PLACEHOLDER_TASK = '00000000-0000-4000-8000-000000000000'  # Structural validation only, never stored.
 # Company and product names agents naturally write for a Child's provider, mapped to Control Center's ids.
@@ -66,7 +66,7 @@ def _parts(item):
                      if isinstance(item.get('resources', []), list) else item.get('resources'),
                      depends_on_task_ids=item.get('depends_on_task_ids', []),
                      reuse_task_id=item.get('reuse_task_id'))
-    selection.update({k: item[k] for k in ('provider', 'model', 'allocation') if k in item})
+    selection.update({k: item[k] for k in ('provider', 'model', 'allocation', 'effort', 'reason') if k in item})
     if 'provider' in selection:
         selection['provider'] = provider_id(selection['provider'])
     return proposal, selection
@@ -286,8 +286,44 @@ def example():
                            rationale='The CLI is a separable file with a stable parse_row interface.',
                            delegate=[dict(proposal_id='cli', deliverable='JSON command-line interface in cli.py with tests',
                                           responsibility='Edit only cli.py and test_cli.py; call parse_row unchanged.',
-                                          scope=dict(namespace='component', key='csv/cli'))]),
+                                          scope=dict(namespace='component', key='csv/cli'), effort='low',
+                                          reason='A thin wrapper over a stable interface.')]),
                       separators=(',', ':'))
+
+
+def helper_choices(db, task_id):
+    """Planning-prompt data: the models and efforts the lead may choose per helper, short guidance, and the
+    person's limit. Descriptive only; the backend applies the limit at launch."""
+    from . import delegation_safety, model_catalog, provider_policy
+    try:
+        allowed, _ = provider_policy.effective(db, task_id)
+    except Exception:  # A policy read never blocks the prompt.
+        allowed = None
+    options = []
+    for provider in (allowed if allowed is not None else ['codex', 'claude']):
+        if provider not in ('codex', 'claude', 'gemini'):
+            continue
+        try:
+            view = model_catalog.catalog_view(db, provider)
+        except Exception:
+            continue
+        names = [f'{m["model_id"]}[{"/".join(m.get("supported_efforts") or []) or "default effort"}]'
+                 for m in view.get('models', []) if m.get('selectable')]
+        if names:
+            options.append(f'{provider}: ' + ', '.join(names[:12]))
+    limits = delegation_safety.helper_limits(db, task_id) or {}
+    rules = []
+    if limits.get('max_effort'):
+        rules.append(f"helpers' effort is at most {limits['max_effort']} (higher is lowered)")
+    if limits.get('allowed_models'):
+        rules.append('helpers may use only ' + ', '.join(limits['allowed_models'][:12]))
+    return ('Choosing each helper\'s model and effort: decide per part, by how hard it is. A light model and low '
+            'effort suit simple, mechanical or well-specified work (small edits, constants, boilerplate, tests that '
+            'follow a pattern); a strong model and high effort suit architecture, parsers and algorithms, subtle bugs '
+            'and cross-module design. When the parts differ in difficulty, set model and effort on each part with a '
+            'short reason; omit them only for a part your own model and effort fit.'
+            + (' Available (data only): ' + '; '.join(options) + '.' if options else '')
+            + (' The person\'s limit: ' + '; '.join(rules) + '.' if rules else '') + '\n')
 
 
 def instruction(db, task_id):
@@ -308,8 +344,10 @@ def instruction(db, task_id):
             '"mode":"exclusive","recursive":true} for a folder; ' + _resources_accepted() + '), '
             'depends_on_task_ids and reuse_task_id (known same-Project Task UUIDs only), and either provider (one of '
             'codex, claude or gemini; omit it to use your own) with an optional model (a model id of that provider; '
-            'omit it for its default) or, '
+            'omit it to use yours), an optional effort (one the model lists) and a short reason (<=200 characters) '
+            'for that choice, or, '
             'only when an Auto allocation section follows, allocation.\n'
+            + helper_choices(db, task_id) +
             'Keys are 1-64 ASCII letters, digits, ".", "_" or "-", starting with a letter or digit. Never invent IDs.\n'
             'Example (shape only; use your own content):\n' + example() + '\n'
             'Every delegated responsibility is required work; blocked or rejected work is never success. Do not do '

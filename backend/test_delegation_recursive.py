@@ -526,7 +526,7 @@ class RecursiveTests(unittest.TestCase):
             self.assertNotIn('recursive_delegation_enabled', {r['name'] for r in db.execute('PRAGMA table_info(agents)')})
         AgentStore(self.store.path)
         with self.store._connection() as db:
-            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 41)
+            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 42)
             self.assertIsNone(db.execute('PRAGMA foreign_key_check').fetchone())
 
     def real_workspaces(self):

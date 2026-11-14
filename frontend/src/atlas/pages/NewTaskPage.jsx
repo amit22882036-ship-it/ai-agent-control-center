@@ -168,7 +168,7 @@ export default function NewTaskPage({ live, navigate, route }) {
             helpers={view.helpers} helperAccess={draft.helperAccess} onHelperAccess={(helperAccess) => update({ helperAccess })}
             external={draft.external === true} onExternal={(external) => update({ external })} notices={notices.notices} />
         </section>
-        <HelpersSection draft={draft} view={view} update={update} policy={context.policy} statuses={context.statuses} disabled={starting} />
+        <HelpersSection draft={draft} view={view} update={update} policy={context.policy} statuses={context.statuses} disabled={starting} catalog={models.catalog} />
       </div>
       <StartCard draft={draft} view={{ ...view, problem: blocked }} starting={starting} onStart={() => start()} onCancel={() => navigate('work')} outcome={outcomeView} />
     </div>

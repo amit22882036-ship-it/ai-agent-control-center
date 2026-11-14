@@ -53,14 +53,17 @@ def validate(message):
         if 'provider' in item and item['provider'] not in providers.IDS:
             raise ValueError('Unknown Child provider; use one of ' + ', '.join(providers.IDS))
         if 'model' in item:
-            if item['model'] is not None and 'provider' not in item:
-                raise ValueError('A Child model requires an explicit Child provider')
+            # Without a provider, the model is one of the Parent's own provider.
             providers.validate_model(item['model'])
+        if 'effort' in item:
+            providers.validate_effort(item['effort'])
+        if 'reason' in item and (not isinstance(item['reason'], str) or len(item['reason']) > 300):
+            raise ValueError('A helper choice reason is a short text (at most 300 characters)')
         if 'allocation' in item:
             # Auto allocation asks the backend to choose; it is exclusive with an explicit
             # request and grants nothing by itself (the user's policy authorizes it).
-            if 'provider' in item or 'model' in item:
-                raise ValueError('An item requests either an explicit provider/model or Auto allocation, not both')
+            if 'provider' in item or 'model' in item or 'effort' in item:
+                raise ValueError('An item requests either an explicit provider/model/effort or Auto allocation, not both')
             allocation.validate_request(item['allocation'])
         key = planning.key(item['proposal_id'])
         if key in seen:
@@ -118,7 +121,7 @@ def migrate(db):
 
 
 ITEM_FIELDS = {'proposal_id', 'scope', 'resources', 'depends_on_task_ids', 'reuse_task_id'}
-OPTIONAL_ITEM_FIELDS = {'provider', 'model', 'allocation'}
+OPTIONAL_ITEM_FIELDS = {'provider', 'model', 'allocation', 'effort', 'reason'}
 
 
 def _managed_provider(provider):
@@ -231,9 +234,11 @@ def accept(db, origin, message, *, session_id, message_id):
     for item, request in zip(value['items'], requests):
         record = db.execute('SELECT delegation_id FROM delegations WHERE parent_task_id=? AND request_key=?',
                             (task['task_id'], request['request_key'])).fetchone()
-        if item.get('provider') is not None:
-            db.execute('''UPDATE delegations SET child_provider=?,child_model=? WHERE delegation_id=?
-                AND child_provider IS NULL AND child_model IS NULL''', (item['provider'], item.get('model'), record[0]))
+        if any(item.get(key) is not None for key in ('provider', 'model', 'effort')):
+            # The lead's explicit choice for this helper; checked against the person's limit at launch.
+            db.execute('''UPDATE delegations SET child_provider=?,child_model=?,child_effort=? WHERE delegation_id=?
+                AND child_provider IS NULL AND child_model IS NULL AND child_effort IS NULL''',
+                       (item.get('provider'), item.get('model'), item.get('effort'), record[0]))
         db.execute('''INSERT OR IGNORE INTO promotion_items(task_id,proposal_id,decision_key,revision,
             proposal,coordination,delegation_id,disposition,reason) VALUES (?,?,?,?,?,?,?,'pending','Admission pending')''',
             (task['task_id'], item['proposal_id'], value['decision_key'], value['revision'],

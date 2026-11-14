@@ -235,7 +235,7 @@ function ActivityTab({ store, derived, id, activity, assignments }) {
   </>
 }
 
-function DetailsTab({ store, derived, id, projectName, decision = null, planPhase = null }) {
+function DetailsTab({ store, derived, id, projectName, decision = null, planPhase = null, helperChoice = null }) {
   const task = store.tasks[id]
   const who = whoView(derived, id)
   const agent = who.agent
@@ -246,6 +246,7 @@ function DetailsTab({ store, derived, id, projectName, decision = null, planPhas
         <dt>Tool</dt><dd>{TOOLS[agent.tool]?.label || 'Not reported'}</dd>
         <dt>Model</dt><dd>{agent.model || 'Not reported'}</dd>
         <dt>Effort</dt><dd>{agent.effort || 'Not reported'}</dd>
+        {helperChoice?.why && <><dt>Why this model</dt><dd className="a-bidi" dir="auto">{helperChoice.why[0].toUpperCase() + helperChoice.why.slice(1)}</dd></>}
         <dt>Agent status</dt><dd>{AGENT_STATUS[agent.status] || 'Not reported'}{agent.removed ? ' · removed' : ''}</dd>
         <dt>Helpers</dt><dd>{agent.autonomous ? 'May bring in helpers' : 'Works without helpers'}</dd>
         {agent.autonomous && decision && <><dt>Plan</dt><dd><PlanApproval phase={planPhaseView(planPhase)} agentId={agent.id} />{planText(decision)}
@@ -327,7 +328,7 @@ export default function TaskInspector({ store, derived, taskId, selection, proje
       {tab === 'output' && (agentScope.agentId ? <OutputHistory key={agentScope.agentId} agentId={agentScope.agentId} version={version}
         historical={agentScope.target.kind !== 'current'} /> : <EmptyState icon="layers" title="No output yet">No agent has worked on this task.</EmptyState>)}
       {tab === 'settings' && <><DetailsTab store={store} derived={derived} id={taskId} projectName={projectName} decision={orchestration.data?.decision || null}
-        planPhase={orchestration.data?.plan_phase || null} />
+        planPhase={orchestration.data?.plan_phase || null} helperChoice={task.data?.task_id === taskId ? task.data.helper_choice || null : null} />
         <AgentSettingsPanels agent={agentScope} taskId={taskId} /></>}
     </div>
   </Inspector>

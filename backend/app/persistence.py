@@ -22,7 +22,7 @@ class ControllerConflict(RuntimeError):
 
 
 # The schema this code writes. A database written by a newer version is refused, never altered.
-SCHEMA_VERSION = 41
+SCHEMA_VERSION = 42
 
 
 class AgentStore:
@@ -407,8 +407,15 @@ class AgentStore:
                         db.execute('BEGIN IMMEDIATE')
                     plan_phase.migrate(db)
                     db.execute('PRAGMA user_version = 41')
+                    version = 41
+                if version == 41:
+                    if not db.in_transaction:
+                        db.execute('BEGIN IMMEDIATE')
+                    delegation_safety.migrate_helper_limits(db)
+                    db.execute('PRAGMA user_version = 42')
                 project_lifecycle.validate_schema(db)
                 db.execute('SELECT task_id,helper_access FROM task_access LIMIT 0')
+                db.execute('SELECT task_id,max_effort,allowed_models FROM task_helper_limits LIMIT 0')
                 db.execute('SELECT task_id,allowed FROM task_external_access LIMIT 0')
                 db.execute('SELECT task_id,policy,phase,retries,plan_revision FROM task_plan_phase LIMIT 0')
                 db.execute('SELECT task_id,decision_key,plan_revision,promotion_decision_key,content,receipt FROM orchestration_decisions LIMIT 0')

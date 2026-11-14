@@ -2237,7 +2237,8 @@ def start_agent(task: str, agent_type: AgentType = "mock", sandbox: CodexSandbox
                 recursive_delegation_enabled: bool = False, planning_enabled: bool = False, _materialization=None,
                 model: str | None = None, effort: str | None = None, attempt_unverified: bool = False,
                 auto_allocation_providers: list | None = None, helper_access: str | None = None,
-                external_integrations: bool = False, split_policy: str | None = None) -> str:
+                external_integrations: bool = False, split_policy: str | None = None,
+                helper_max_effort: str | None = None, helper_models: list | None = None) -> str:
     """A new Agent with its own default provider, model and effort (never shared with another Agent).
 
     `auto_allocation_providers` is the user's Auto allocation authorization for a new autonomous
@@ -2255,6 +2256,12 @@ def start_agent(task: str, agent_type: AgentType = "mock", sandbox: CodexSandbox
         raise ValueError('Helper access applies to a new root agent with Full Access.')
     if external_integrations and (parent_id is not None or task_id is not None):
         raise ValueError('External integrations are chosen when creating a new root task; helpers inherit it.')
+    if helper_max_effort is not None or helper_models:
+        # The person's limit on what the lead may choose for its helpers: a new root that may bring in helpers.
+        if parent_id is not None or task_id is not None or not delegation_protocol_enabled:
+            raise ValueError('A helper limit applies to a new root task whose lead may bring in helpers.')
+        if helper_max_effort is not None and helper_max_effort not in delegation_safety.EFFORT_ORDER:
+            raise ValueError('The helpers\' maximum effort must be one of: ' + ', '.join(delegation_safety.EFFORT_ORDER))
     if split_policy is not None:
         plan_phase.validate_policy(split_policy)
         existing = _store.get_task(task_id) if (task_id is not None and _store is not None) else None
@@ -2275,7 +2282,7 @@ def start_agent(task: str, agent_type: AgentType = "mock", sandbox: CodexSandbox
                             planning_enabled=planning_enabled, _materialization=_materialization, model=model,
                             effort=effort, auto_allocation_providers=auto_allocation_providers,
                             helper_access=helper_access, external_integrations=external_integrations,
-                            split_policy=split_policy)
+                            split_policy=split_policy, helper_max_effort=helper_max_effort, helper_models=helper_models)
     if substituted:
         with _data_lock:
             if agent_id in agent_outputs:
@@ -2298,7 +2305,8 @@ def _unoffered_default_fallback(agent_type, model, materialization):
 def _start_agent(task, agent_type, sandbox, parent_id, *, task_id, project_id, delegation_protocol_enabled,
                  child_materialization_enabled, hybrid_delegation_enabled, recursive_delegation_enabled,
                  planning_enabled, _materialization, model, effort, auto_allocation_providers=None,
-                 helper_access=None, external_integrations=False, split_policy=None):
+                 helper_access=None, external_integrations=False, split_policy=None, helper_max_effort=None,
+                 helper_models=None):
     providers.adapter(agent_type)  # Unknown providers are refused before anything else.
     if project_id is not None and (parent_id is not None or task_id is not None):
         raise ValueError('Project selection is only available for new root Tasks')
@@ -2348,6 +2356,11 @@ def _start_agent(task, agent_type, sandbox, parent_id, *, task_id, project_id, d
         with _store._connection() as db:
             db.execute('BEGIN IMMEDIATE')
             delegation_safety.set_helper_access(db, task_id, helper_access)
+    if (helper_max_effort is not None or helper_models) and _store is not None:
+        # The person's helper limit, stored before the first prompt is built (the prompt states it).
+        with _store._connection() as db:
+            db.execute('BEGIN IMMEDIATE')
+            delegation_safety.set_helper_limits(db, task_id, helper_max_effort, helper_models or [])
     if external_integrations and _store is not None:
         # The person's explicit choice for this root and its helpers, stored before anything launches.
         with _store._connection() as db:
@@ -2472,7 +2485,7 @@ def _launch_prepared_agent(task, parent_id, task_id, parent_task, command, agent
                 record, _, provider = delegation_materialization.authorize(db, identifier, limits)
                 expected = record.get('child_provider') or provider['agent_type']
                 # The model and effort the helper must run with (requested, or inherited from the lead).
-                want_model, want_effort, _ = _resolved_helper_model(record, provider, expected)
+                want_model, want_effort, _ = _resolved_helper_model(record, provider, expected, task_id=task_id, db=db)
                 if (record['child_task_id'] != task_id or expected != agent_type
                         or (agent_type in providers.REAL and delegation_safety.helper_sandbox(db, task_id, provider['sandbox']) != sandbox)
                         or (want_model != model) or (want_effort != effort)):
@@ -3066,7 +3079,7 @@ def _launch_delegated_child(task_id, identifier, limits):
     # Stage 2F: the Child's provider is the one the Parent requested (never a
     # substitute) or, without a request, the Parent's own; access never widens.
     child_provider = record.get('child_provider') or provider['agent_type']
-    model, effort, why = _resolved_helper_model(record, provider, child_provider)
+    model, effort, why = _resolved_helper_model(record, provider, child_provider, task_id=task_id)
     # An automated launch: never an unverified model, never a self-granted attempt.
     previous, _launch.automated = getattr(_launch, 'automated', False), True
     try:
@@ -3081,14 +3094,65 @@ def _launch_delegated_child(task_id, identifier, limits):
         if agent_id in agent_outputs:
             agent_outputs[agent_id].append(f"--- Model: {model or 'the provider default'}"
                                            f"{', ' + effort + ' effort' if effort else ''} ({why}) ---")
+    if _store is not None:
+        with _store._connection() as db:
+            db.execute('BEGIN IMMEDIATE')
+            delegation_safety.record_helper_choice(db, task_id, model, effort, why)
     return agent_id
 
 
-def _resolved_helper_model(record, lead, child_provider):
-    model, effort, why = _helper_model(record, lead, child_provider)
+def helper_choice(task_id):
+    """The model and effort a helper task launched with, and why; None for a task that is not a helper."""
+    if _store is None:
+        return None
+    with _store._connection() as db:
+        return delegation_safety.helper_choice(db, task_id)
+
+
+def _resolved_helper_model(record, lead, child_provider, task_id=None, db=None):
+    """(model, effort, why) a helper launches with: the lead's choice (or inheritance), kept within the person's
+    helper limit (a disallowed model falls back to inheriting; a higher effort is lowered), then a default the CLI
+    offers. The same answer at launch and when the launch is checked."""
+    from contextlib import nullcontext
+    with (nullcontext(db) if db is not None else (_store._connection() if _store is not None else nullcontext(None))) as conn:
+        reason = _helper_reason(conn, record) if conn is not None else None
+        limits = delegation_safety.helper_limits(conn, task_id) if conn is not None and task_id else None
+        supported = None
+    model, effort, why = _helper_model(record, lead, child_provider, reason)
+    notes = []
+    allowed = (limits or {}).get('allowed_models') or []
+    if model and allowed and model not in allowed:
+        notes.append(f'{model} is not in your allowed helper models')
+        fallback = lead.get('model') if child_provider == lead['agent_type'] and lead.get('model') in allowed else allowed[0]
+        model, why = fallback, ('inherited from the lead' if fallback == lead.get('model') else 'first allowed helper model')
+    capped = delegation_safety.capped_effort(effort, (limits or {}).get('max_effort'))
+    if capped != effort:
+        notes.append(f"effort {'set' if effort is None else 'lowered from ' + effort} to {capped} by your helper limit")
+        effort = capped
     if model is None:
         model, why = _offered_default(child_provider, why)
-    return model, effort, why
+    if model and effort and (db is not None or _store is not None):
+        with (nullcontext(db) if db is not None else _store._connection()) as conn:
+            entry = model_catalog.lookup(conn, child_provider, model)
+        supported = entry and entry.get('supported_efforts')
+        if supported and effort not in supported:
+            notes.append(f'{effort} effort is not offered for {model}; its default effort is used')
+            effort = None
+    return model, effort, why + (f"; {'; '.join(notes)}" if notes else '')
+
+
+def _helper_reason(db, record):
+    """The lead's short reason for this helper's model and effort, from its delegation decision, or None."""
+    try:
+        row = db.execute('SELECT coordination FROM promotion_items WHERE delegation_id=? ORDER BY rowid DESC LIMIT 1',
+                         (record.get('delegation_id'),)).fetchone()
+    except sqlite3.Error:
+        return None
+    try:
+        reason = json.loads(row[0]).get('reason') if row and row[0] else None
+    except (ValueError, AttributeError):
+        return None
+    return ' '.join(str(reason).split())[:200] if reason else None
 
 
 def _offered_default(provider, why):
@@ -3107,17 +3171,18 @@ def _offered_default(provider, why):
                         f'using {substitute}')
 
 
-def _helper_model(record, lead, child_provider):
-    """(model, effort, reason) of a delegated helper. A helper of the lead's provider without its own model
-    runs on the lead's model and effort, never on the provider CLI's global default (which may not be
-    available to this account). A different provider uses the model the lead named, else its default."""
-    requested = record.get('child_provider')
-    if requested and record.get('child_model'):
-        return record['child_model'], record.get('child_effort'), 'requested by the lead'
-    if child_provider == lead['agent_type'] and lead.get('model'):
-        effort = record.get('child_effort') if requested and record.get('child_effort') else lead.get('effort')
-        return lead['model'], effort, 'inherited from the lead'
-    effort = record.get('child_effort') if requested else None
+def _helper_model(record, lead, child_provider, reason=None):
+    """(model, effort, why) of a delegated helper. The lead may choose a model and effort per helper (its own
+    provider unless it names another); what it leaves open is inherited from the lead (same provider), never the
+    provider CLI's global default (which may not be available to this account). Another provider without a
+    chosen model uses its default."""
+    same = child_provider == lead['agent_type']
+    chosen = 'chosen by the lead' + (f': {reason}' if reason else '')
+    model, effort = record.get('child_model'), record.get('child_effort')
+    if model:
+        return model, effort or (lead.get('effort') if same else None), chosen
+    if same and lead.get('model'):
+        return lead['model'], effort or lead.get('effort'), chosen if effort else 'inherited from the lead'
     return None, effort, f"{providers.LABELS.get(child_provider, child_provider)} default model"
 
 

@@ -301,7 +301,7 @@ class DelegationTests(unittest.TestCase):
         self.assertEqual(self.snapshot(exclude=('delegations',)), before)
         self.assertEqual(self.store.list_delegations(self.parent['task_id']), [])
         with self.store._connection() as db:
-            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 41)
+            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 42)
             self.assertEqual(db.execute('PRAGMA foreign_key_check').fetchall(), [])
             delegations.migrate(db)
         self.assertEqual(self.snapshot(exclude=('delegations',)), before)
@@ -322,7 +322,7 @@ class DelegationTests(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             AgentStore(self.path)
         with closing(sqlite3.connect(self.path)) as db:
-            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 41)
+            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 42)
 
 
 if __name__ == '__main__':

@@ -240,7 +240,7 @@ class ExecutionMigrationTests(unittest.TestCase):
         before = self.snapshot(path)
         AgentStore(path)
         with closing(sqlite3.connect(path)) as db:
-            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 41)
+            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 42)
             self.assertEqual(db.execute('PRAGMA foreign_key_check').fetchall(), [])
             self.assertEqual(db.execute('PRAGMA integrity_check').fetchone()[0], 'ok')
             # No historical execution or controller is manufactured, even for a running Agent.

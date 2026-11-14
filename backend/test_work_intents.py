@@ -432,7 +432,7 @@ class WorkIntentTests(unittest.TestCase):
             before = {t: db.execute(f'SELECT rowid,{columns[t]} FROM {t} ORDER BY rowid').fetchall() for t in tables}
         AgentStore(self.path)
         with closing(sqlite3.connect(self.path)) as db:
-            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 41)
+            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 42)
             self.assertEqual(db.execute('SELECT * FROM work_intents').fetchall(), [])
             self.assertEqual(db.execute('PRAGMA foreign_key_check').fetchall(), [])
             for table in tables:

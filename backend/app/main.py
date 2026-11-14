@@ -121,6 +121,10 @@ class StartAgentRequest(BaseModel):
     # With helpers: how the lead's plan becomes work (lead_decides, approve, always). Sent by the New task
     # page; omitted, the lead keeps the earlier single-turn behaviour.
     split_policy: Literal['lead_decides', 'approve', 'always'] | None = None
+    # With helpers: the person's limit on what the lead may choose per helper (a maximum effort, and optionally
+    # the only models it may pick). Above the limit is lowered; a model outside it falls back to inheriting.
+    helper_max_effort: str | None = None
+    helper_models: list[str] | None = None
 
     @field_validator('model')
     @classmethod
@@ -247,7 +251,9 @@ def _start_agent_response(request: StartAgentRequest, parent_id: str | None = No
                                       if request.auto_allocation_providers is not None else {}),
                                    **({'helper_access': request.helper_access} if request.helper_access is not None else {}),
                                    **({'external_integrations': True} if request.external_integrations else {}),
-                                   **({'split_policy': request.split_policy} if request.split_policy is not None else {}))
+                                   **({'split_policy': request.split_policy} if request.split_policy is not None else {}),
+                                   **({'helper_max_effort': request.helper_max_effort} if request.helper_max_effort is not None else {}),
+                                   **({'helper_models': request.helper_models} if request.helper_models else {}))
         else:
             if request.helper_access is not None:
                 raise ValueError('Helper access applies to a new root agent with Full Access.')
@@ -255,6 +261,8 @@ def _start_agent_response(request: StartAgentRequest, parent_id: str | None = No
                 raise ValueError('External integrations are chosen when creating a new root task; helpers inherit it.')
             if request.split_policy is not None:
                 raise ValueError('A split policy applies to a new root task whose lead may bring in helpers.')
+            if request.helper_max_effort is not None or request.helper_models:
+                raise ValueError('A helper limit applies to a new root task whose lead may bring in helpers.')
             agent_id = start_agent(request.task, request.agent_type, request.sandbox, parent_id=parent_id, **model)
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
@@ -579,7 +587,9 @@ def get_task_route(task_id: str):
     result = _task_action(lambda: manager.get_tasks(task_id))
     if not result:
         raise HTTPException(status_code=404, detail='Task not found')
-    return result[0]
+    choice = manager.helper_choice(task_id)
+    # A helper's model and effort and why (chosen by its lead, inherited, or lowered by the person's limit).
+    return {**result[0], 'helper_choice': choice} if choice else result[0]
 
 
 @app.get('/tasks/{task_id}/assignments')
