@@ -291,6 +291,23 @@ def example():
                       separators=(',', ':'))
 
 
+# How heavy a model family is, by the end of its id, for the lead's per-helper choice. Extend here; a model of no
+# known family is listed as unknown weight (Claude and Gemini families are not mapped yet).
+MODEL_WEIGHTS = (
+    ('-luna', 'light: fast, for simple or mechanical work'),
+    ('-terra', 'balanced'),
+    ('-sol', 'strong: architecture, parsers, hard bugs'),
+)
+
+
+def model_weight(model_id):
+    name = str(model_id or '').lower()
+    for suffix, weight in MODEL_WEIGHTS:
+        if name.endswith(suffix):
+            return weight
+    return 'unknown weight'
+
+
 def helper_choices(db, task_id):
     """Planning-prompt data: the models and efforts the lead may choose per helper, short guidance, and the
     person's limit. Descriptive only; the backend applies the limit at launch."""
@@ -307,7 +324,7 @@ def helper_choices(db, task_id):
             view = model_catalog.catalog_view(db, provider)
         except Exception:
             continue
-        names = [f'{m["model_id"]}[{"/".join(m.get("supported_efforts") or []) or "default effort"}]'
+        names = [f'{m["model_id"]}[{"/".join(m.get("supported_efforts") or []) or "default effort"}; {model_weight(m["model_id"])}]'
                  for m in view.get('models', []) if m.get('selectable')]
         if names:
             options.append(f'{provider}: ' + ', '.join(names[:12]))
@@ -321,7 +338,9 @@ def helper_choices(db, task_id):
             'effort suit simple, mechanical or well-specified work (small edits, constants, boilerplate, tests that '
             'follow a pattern); a strong model and high effort suit architecture, parsers and algorithms, subtle bugs '
             'and cross-module design. When the parts differ in difficulty, set model and effort on each part with a '
-            'short reason; omit them only for a part your own model and effort fit.'
+            'short reason; omit them only for a part your own model and effort fit. Each model below is marked light, '
+            'balanced, strong or unknown weight: prefer a known light model for simple parts, and never pick an '
+            'unknown-weight model just to save effort.'
             + (' Available (data only): ' + '; '.join(options) + '.' if options else '')
             + (' The person\'s limit: ' + '; '.join(rules) + '.' if rules else '') + '\n')
 

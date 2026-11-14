@@ -362,5 +362,32 @@ class HelperChoiceTests(unittest.TestCase):
             orchestration.validate(decision.replace('Simple text edits.', 'x' * 400))
 
 
+
+class ModelWeightTests(unittest.TestCase):
+    """The lead sees which models are light, balanced or strong, so a simple part gets a known light model."""
+
+    def test_families_are_named_and_unknown_ones_say_so(self):
+        from app import orchestration
+        self.assertTrue(orchestration.model_weight('gpt-5.6-luna').startswith('light'))
+        self.assertEqual(orchestration.model_weight('gpt-5.6-terra'), 'balanced')
+        self.assertTrue(orchestration.model_weight('GPT-6.1-Sol').startswith('strong'))
+        self.assertEqual(orchestration.model_weight('gpt-6-astra'), 'unknown weight')
+        self.assertEqual(orchestration.model_weight('claude-sonnet'), 'unknown weight')
+
+    def test_the_leads_model_list_carries_each_weight_and_the_rule(self):
+        from unittest.mock import patch
+        from app import orchestration, provider_policy
+        models = [{'model_id': m, 'selectable': True, 'supported_efforts': ['low', 'high']}
+                  for m in ('gpt-6-astra', 'gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna')]
+        with patch.object(provider_policy, 'effective', return_value=(['codex'], [])),                 patch.object(model_catalog, 'catalog_view', return_value={'models': models}):
+            text = orchestration.helper_choices(sqlite3.connect(':memory:'), 'task')
+        self.assertIn('gpt-5.6-luna[low/high; light: fast, for simple or mechanical work]', text)
+        self.assertIn('gpt-5.6-sol[low/high; strong: architecture, parsers, hard bugs]', text)
+        self.assertIn('gpt-5.6-terra[low/high; balanced]', text)
+        self.assertIn('gpt-6-astra[low/high; unknown weight]', text)
+        self.assertIn('prefer a known light model for simple parts', text)
+        self.assertIn('never pick an unknown-weight model just to save effort', text)
+
+
 if __name__ == '__main__':
     unittest.main()
